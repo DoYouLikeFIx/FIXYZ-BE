@@ -1,0 +1,32 @@
+plugins {
+  id 'org.springframework.boot'
+  id 'io.spring.dependency-management'
+  id 'org.springdoc.openapi-gradle-plugin'
+}
+
+def springdocPort = 18082
+
+openApi {
+  apiDocsUrl = "http://localhost:${springdocPort}/v3/api-docs"
+  outputDir = file("$buildDir/openapi")
+  outputFileName = "${project.name}.json"
+  waitTimeInSeconds = 30
+  customBootRun {
+    args = ["--spring.profiles.active=openapi"]
+  }
+}
+
+tasks.named('forkedSpringBootRun') {
+  dependsOn(':core-common:jar')
+}
+
+dependencies {
+  implementation project(':core-common')
+
+  implementation 'org.springframework.boot:spring-boot-starter-web'
+  implementation 'org.springframework.boot:spring-boot-starter-actuator'
+  implementation 'org.springframework.boot:spring-boot-starter-validation'
+  implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.15'
+
+  testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}

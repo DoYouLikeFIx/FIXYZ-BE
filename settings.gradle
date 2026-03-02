@@ -1,0 +1,11 @@
+rootProject.name = 'fixyz-be'
+
+include(
+  'core-common',
+  'channel-domain',
+  'channel-service',
+  'corebank-domain',
+  'corebank-service',
+  'fep-gateway',
+  'fep-simulator'
+)
