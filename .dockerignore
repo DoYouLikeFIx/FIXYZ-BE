@@ -1,0 +1,5 @@
+.gradle
+build
+**/build
+node_modules
+.git
