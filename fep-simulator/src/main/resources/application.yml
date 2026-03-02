@@ -1,0 +1,26 @@
+server:
+  port: 8082
+
+internal:
+  secret: ${INTERNAL_SECRET:local-internal-secret}
+
+spring:
+  application:
+    name: fep-simulator
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    version: OPENAPI_3_0
+  swagger-ui:
+    path: /swagger-ui/index.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
