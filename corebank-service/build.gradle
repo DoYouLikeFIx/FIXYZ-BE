@@ -36,4 +36,9 @@ dependencies {
   runtimeOnly 'com.h2database:h2'
 
   testImplementation 'org.springframework.boot:spring-boot-starter-test'
+  testImplementation platform("org.testcontainers:testcontainers-bom:${rootProject.ext.testcontainersVersion}")
+  testImplementation 'org.testcontainers:junit-jupiter'
+  testImplementation 'org.testcontainers:testcontainers'
+  testImplementation 'org.testcontainers:mysql'
+  testImplementation "org.wiremock:wiremock-standalone:${rootProject.ext.wiremockVersion}"
 }
