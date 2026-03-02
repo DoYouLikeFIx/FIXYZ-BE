@@ -28,5 +28,11 @@ dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-validation'
   implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.15'
 
+  testRuntimeOnly 'com.mysql:mysql-connector-j'
   testImplementation 'org.springframework.boot:spring-boot-starter-test'
+  testImplementation platform("org.testcontainers:testcontainers-bom:${rootProject.ext.testcontainersVersion}")
+  testImplementation 'org.testcontainers:junit-jupiter'
+  testImplementation 'org.testcontainers:testcontainers'
+  testImplementation 'org.testcontainers:mysql'
+  testImplementation "org.wiremock:wiremock-standalone:${rootProject.ext.wiremockVersion}"
 }
