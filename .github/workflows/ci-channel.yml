@@ -1,0 +1,35 @@
+name: ci-channel
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci-channel:
+    name: ci-channel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Verify channel lane
+        run: |
+          ./gradlew --no-daemon --stacktrace \
+            :core-common:test \
+            :channel-domain:test \
+            :channel-service:test
