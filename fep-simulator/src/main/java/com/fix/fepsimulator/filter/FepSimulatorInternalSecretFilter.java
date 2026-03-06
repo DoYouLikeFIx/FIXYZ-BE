@@ -1,5 +1,6 @@
 package com.fix.fepsimulator.filter;
 
+import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,9 +23,9 @@ public class FepSimulatorInternalSecretFilter extends OncePerRequestFilter {
   protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
     if (request.getRequestURI().startsWith("/fep-internal/")) {
-      String provided = request.getHeader("X-Internal-Secret");
+      String provided = request.getHeader(CommonHeaders.X_INTERNAL_SECRET);
       if (provided == null || !provided.equals(expectedSecret)) {
-        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing or invalid X-Internal-Secret");
+        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing or invalid " + CommonHeaders.X_INTERNAL_SECRET);
         return;
       }
     }

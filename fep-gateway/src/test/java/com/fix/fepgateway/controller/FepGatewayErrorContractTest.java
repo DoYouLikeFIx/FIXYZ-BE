@@ -8,10 +8,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 class FepGatewayErrorContractTest {
 
   @Autowired
@@ -21,9 +23,10 @@ class FepGatewayErrorContractTest {
   void shouldReturnStandardizedErrorEnvelope() throws Exception {
     mockMvc.perform(get("/api/v1/errors/boom"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"))
         .andExpect(jsonPath("$.message").value("gateway bad request"))
         .andExpect(jsonPath("$.path").value("/api/v1/errors/boom"))
+        .andExpect(jsonPath("$.correlationId").isNotEmpty())
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
   }
 }
