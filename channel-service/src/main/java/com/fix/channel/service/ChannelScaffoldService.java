@@ -1,0 +1,190 @@
+package com.fix.channel.service;
+
+import com.fix.channel.entity.AuditLog;
+import com.fix.channel.entity.Member;
+import com.fix.channel.entity.Notification;
+import com.fix.channel.entity.OrderSession;
+import com.fix.channel.entity.OtpVerification;
+import com.fix.channel.entity.SecurityEvent;
+import com.fix.channel.repository.AuditLogRepository;
+import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.repository.NotificationRepository;
+import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.repository.OtpVerificationRepository;
+import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.vo.AdminSecurityEventCommand;
+import com.fix.channel.vo.AdminSecurityEventResult;
+import com.fix.channel.vo.AuthLoginCommand;
+import com.fix.channel.vo.AuthLoginResult;
+import com.fix.channel.vo.CsrfBootstrapCommand;
+import com.fix.channel.vo.CsrfBootstrapResult;
+import com.fix.channel.vo.NotificationItemVo;
+import com.fix.channel.vo.NotificationStreamCommand;
+import com.fix.channel.vo.NotificationStreamResult;
+import com.fix.channel.vo.OrderSessionCreateCommand;
+import com.fix.channel.vo.OrderSessionQueryCommand;
+import com.fix.channel.vo.OrderSessionResult;
+import com.fix.channel.vo.OtpVerifyCommand;
+import com.fix.channel.vo.OtpVerifyResult;
+import com.fix.channel.vo.SecurityEventItemVo;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
+import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class ChannelScaffoldService {
+
+  private final MemberRepository memberRepository;
+  private final OtpVerificationRepository otpVerificationRepository;
+  private final OrderSessionRepository orderSessionRepository;
+  private final NotificationRepository notificationRepository;
+  private final AuditLogRepository auditLogRepository;
+  private final SecurityEventRepository securityEventRepository;
+
+  public ChannelScaffoldService(
+      MemberRepository memberRepository,
+      OtpVerificationRepository otpVerificationRepository,
+      OrderSessionRepository orderSessionRepository,
+      NotificationRepository notificationRepository,
+      AuditLogRepository auditLogRepository,
+      SecurityEventRepository securityEventRepository
+  ) {
+    this.memberRepository = memberRepository;
+    this.otpVerificationRepository = otpVerificationRepository;
+    this.orderSessionRepository = orderSessionRepository;
+    this.notificationRepository = notificationRepository;
+    this.auditLogRepository = auditLogRepository;
+    this.securityEventRepository = securityEventRepository;
+  }
+
+  @Transactional(readOnly = true)
+  public CsrfBootstrapResult bootstrapCsrf(CsrfBootstrapCommand command, CsrfToken token) {
+    return CsrfBootstrapResult.of(token.getToken(), token.getHeaderName(), token.getParameterName(), "SESSION");
+  }
+
+  @Transactional
+  public AuthLoginResult login(AuthLoginCommand command) {
+    Member member = memberRepository.findByMemberNo(command.getMemberNo())
+        .orElseGet(() -> memberRepository.save(Member.of(
+            command.getMemberNo(),
+            command.getMemberNo().toLowerCase() + "@fixyz.local",
+            "ACTIVE"
+        )));
+
+    auditLogRepository.save(AuditLog.of(
+        member.getId(),
+        "AUTH_LOGIN",
+        "MEMBER",
+        String.valueOf(member.getId()),
+        "SESSION login bootstrap"
+    ));
+
+    return AuthLoginResult.of(member.getId(), "SESSION");
+  }
+
+  @Transactional
+  public OtpVerifyResult verifyOtp(OtpVerifyCommand command) {
+    OtpVerification verification = otpVerificationRepository.findTopByMemberIdOrderByIdDesc(command.getMemberId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "otp verification not issued"));
+
+    boolean matched = verification.getOtpCode().equals(command.getOtpCode())
+        && verification.getExpiresAt().isAfter(Instant.now());
+
+    if (matched) {
+      verification.verify();
+      otpVerificationRepository.save(verification);
+    } else {
+      securityEventRepository.save(SecurityEvent.of(
+          command.getMemberId(),
+          "OTP_VERIFY_FAILED",
+          "0.0.0.0",
+          "channel-service",
+          "MEDIUM"
+      ));
+    }
+
+    return OtpVerifyResult.of(matched);
+  }
+
+  @Transactional
+  public OrderSessionResult createOrderSession(OrderSessionCreateCommand command) {
+    OrderSession session = orderSessionRepository.findByClOrdId(command.getClOrdId())
+        .orElseGet(() -> orderSessionRepository.save(OrderSession.open(
+            command.getMemberId(),
+            command.getClOrdId(),
+            command.getOrderRef()
+        )));
+
+    auditLogRepository.save(AuditLog.of(
+        command.getMemberId(),
+        "ORDER_SESSION_CREATE",
+        "ORDER_SESSION",
+        String.valueOf(session.getId()),
+        "clOrdId=" + session.getClOrdId()
+    ));
+
+    return OrderSessionResult.of(session.getId(), session.getClOrdId(), session.getStatus());
+  }
+
+  @Transactional(readOnly = true)
+  public OrderSessionResult getOrderSession(OrderSessionQueryCommand command) {
+    OrderSession session = null;
+
+    if (command.getSessionId() != null) {
+      session = orderSessionRepository.findById(command.getSessionId()).orElse(null);
+    }
+    if (session == null && command.getClOrdId() != null && !command.getClOrdId().isBlank()) {
+      session = orderSessionRepository.findByClOrdId(command.getClOrdId()).orElse(null);
+    }
+    if (session == null) {
+      throw new BusinessException(ErrorCode.CHANNEL_SESSION_NOT_FOUND, "order session not found");
+    }
+
+    return OrderSessionResult.of(session.getId(), session.getClOrdId(), session.getStatus());
+  }
+
+  @Transactional(readOnly = true)
+  public NotificationStreamResult streamNotifications(NotificationStreamCommand command) {
+    int limit = command.getLimit() == null ? 20 : command.getLimit();
+    List<NotificationItemVo> items = notificationRepository.findTop20ByMemberIdOrderByIdDesc(command.getMemberId())
+        .stream()
+        .limit(Math.max(1, limit))
+        .map(notification -> NotificationItemVo.of(
+            notification.getId(),
+            notification.getChannel(),
+            notification.getMessage(),
+            notification.isDelivered()
+        ))
+        .toList();
+
+    return NotificationStreamResult.of(items);
+  }
+
+  @Transactional(readOnly = true)
+  public AdminSecurityEventResult getSecurityEvents(AdminSecurityEventCommand command) {
+    int limit = command.getLimit() == null ? 20 : command.getLimit();
+    List<SecurityEventItemVo> items = securityEventRepository.findTop20ByMemberIdOrderByIdDesc(command.getMemberId())
+        .stream()
+        .sorted(Comparator.comparing(SecurityEvent::getId).reversed())
+        .limit(Math.max(1, limit))
+        .map(event -> SecurityEventItemVo.of(
+            event.getId(),
+            event.getEventType(),
+            event.getSeverity(),
+            event.getIpAddress()
+        ))
+        .toList();
+
+    return AdminSecurityEventResult.of(items);
+  }
+
+  @Transactional
+  public void bootstrapNotification(Long memberId, String channel, String message) {
+    notificationRepository.save(Notification.pending(memberId, channel, message));
+  }
+}
