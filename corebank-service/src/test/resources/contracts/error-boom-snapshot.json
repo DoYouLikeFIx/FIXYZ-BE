@@ -1,0 +1,5 @@
+{
+  "code": "BAD_REQUEST",
+  "message": "corebank bad request",
+  "path": "/api/v1/errors/boom"
+}

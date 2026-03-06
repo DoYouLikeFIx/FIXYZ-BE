@@ -1,0 +1,337 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "OpenAPI definition",
+    "version": "v0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:18081",
+      "description": "Generated server url"
+    }
+  ],
+  "paths": {
+    "/internal/v1/orders": {
+      "post": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "createOrder",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalOrderCreateRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/portfolio": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "portfolio",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalPortfolioRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalPortfolioResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/ping": {
+      "get": {
+        "tags": [
+          "corebank-controller"
+        ],
+        "operationId": "internalPing",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/orders/{clOrdId}/requery": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "requeryOrder",
+        "parameters": [
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalOrderRequeryRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ping": {
+      "get": {
+        "tags": [
+          "corebank-controller"
+        ],
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/errors/boom": {
+      "get": {
+        "tags": [
+          "corebank-controller"
+        ],
+        "operationId": "boom",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "InternalOrderCreateRequest": {
+        "required": [
+          "accountId",
+          "clOrdId",
+          "price",
+          "quantity",
+          "side",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "clOrdId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "side": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "quantity": {
+            "minimum": 0.0001,
+            "exclusiveMinimum": false,
+            "type": "number"
+          },
+          "price": {
+            "minimum": 0.0001,
+            "exclusiveMinimum": false,
+            "type": "number"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseInternalOrderResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalOrderResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalOrderResponse": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "clOrdId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "orderQuantity": {
+            "type": "number"
+          }
+        }
+      },
+      "InternalPortfolioRequest": {
+        "required": [
+          "accountId",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseInternalPortfolioResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalPortfolioResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalPortfolioResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "accountNo": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "dailySellLimit": {
+            "type": "number"
+          },
+          "todaySellQuantity": {
+            "type": "number"
+          }
+        }
+      },
+      "InternalOrderRequeryRequest": {
+        "type": "object"
+      }
+    }
+  }
+}

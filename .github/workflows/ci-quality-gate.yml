@@ -1,0 +1,54 @@
+name: ci-quality-gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci-quality-gate:
+    name: ci-quality-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Verify quality gate tests
+        run: |
+          ./gradlew --no-daemon --stacktrace \
+            :core-common:test \
+            :channel-domain:test \
+            :channel-service:test \
+            :corebank-domain:test \
+            :corebank-service:test \
+            :fep-gateway:test \
+            :fep-simulator:test
+
+      - name: Generate OpenAPI docs
+        run: |
+          ./gradlew --no-daemon --stacktrace \
+            :channel-service:generateOpenApiDocs \
+            :corebank-service:generateOpenApiDocs \
+            :fep-gateway:generateOpenApiDocs \
+            :fep-simulator:generateOpenApiDocs
+
+      - name: Verify OpenAPI snapshots
+        run: |
+          git diff --no-index --ignore-cr-at-eol --exit-code contracts/openapi/channel-service.json channel-service/build/openapi/channel-service.json
+          git diff --no-index --ignore-cr-at-eol --exit-code contracts/openapi/corebank-service.json corebank-service/build/openapi/corebank-service.json
+          git diff --no-index --ignore-cr-at-eol --exit-code contracts/openapi/fep-gateway.json fep-gateway/build/openapi/fep-gateway.json
+          git diff --no-index --ignore-cr-at-eol --exit-code contracts/openapi/fep-simulator.json fep-simulator/build/openapi/fep-simulator.json

@@ -4,4 +4,6 @@ plugins {
 
 dependencies {
   api project(':core-common')
+
+  testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'
 }

@@ -11,6 +11,7 @@ public enum ErrorCode {
   CHANNEL_SESSION_NOT_FOUND("CHANNEL_001", "Channel session not found", 404),
   CORE_RESOURCE_NOT_FOUND("CORE_001", "Resource not found", 404),
   ORD_INVALID_REQUEST("ORD_001", "Invalid order request", 400),
+  RATE_LIMIT_EXCEEDED("RATE_001", "Rate limit exceeded", 429),
   FEP_GATEWAY_UNAVAILABLE("FEP_001", "FEP gateway unavailable", 503),
   SYS_RESOURCE_NOT_FOUND("SYS_404", "Resource not found", 404),
   SYS_INTERNAL_ERROR("SYS_500", "Internal server error", 500);
