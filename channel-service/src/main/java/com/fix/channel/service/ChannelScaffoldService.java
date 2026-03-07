@@ -32,11 +32,13 @@ import com.fix.common.error.ErrorCode;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class ChannelScaffoldService {
 
   private final MemberRepository memberRepository;
@@ -45,22 +47,6 @@ public class ChannelScaffoldService {
   private final NotificationRepository notificationRepository;
   private final AuditLogRepository auditLogRepository;
   private final SecurityEventRepository securityEventRepository;
-
-  public ChannelScaffoldService(
-      MemberRepository memberRepository,
-      OtpVerificationRepository otpVerificationRepository,
-      OrderSessionRepository orderSessionRepository,
-      NotificationRepository notificationRepository,
-      AuditLogRepository auditLogRepository,
-      SecurityEventRepository securityEventRepository
-  ) {
-    this.memberRepository = memberRepository;
-    this.otpVerificationRepository = otpVerificationRepository;
-    this.orderSessionRepository = orderSessionRepository;
-    this.notificationRepository = notificationRepository;
-    this.auditLogRepository = auditLogRepository;
-    this.securityEventRepository = securityEventRepository;
-  }
 
   @Transactional(readOnly = true)
   public CsrfBootstrapResult bootstrapCsrf(CsrfBootstrapCommand command, CsrfToken token) {

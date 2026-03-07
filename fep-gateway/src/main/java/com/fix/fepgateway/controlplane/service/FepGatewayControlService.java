@@ -15,28 +15,18 @@ import com.fix.fepgateway.vo.GatewayOrderReplayCommand;
 import com.fix.fepgateway.vo.GatewayOrderResult;
 import com.fix.fepgateway.vo.GatewayOrderStatusCommand;
 import com.fix.fepgateway.vo.GatewayOrderSubmitCommand;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class FepGatewayControlService {
 
   private final GatewayOrderRepository gatewayOrderRepository;
   private final GatewayOrderCancelRepository gatewayOrderCancelRepository;
   private final GatewayOrderReplayRepository gatewayOrderReplayRepository;
   private final FixDataPlaneService fixDataPlaneService;
-
-  public FepGatewayControlService(
-      GatewayOrderRepository gatewayOrderRepository,
-      GatewayOrderCancelRepository gatewayOrderCancelRepository,
-      GatewayOrderReplayRepository gatewayOrderReplayRepository,
-      FixDataPlaneService fixDataPlaneService
-  ) {
-    this.gatewayOrderRepository = gatewayOrderRepository;
-    this.gatewayOrderCancelRepository = gatewayOrderCancelRepository;
-    this.gatewayOrderReplayRepository = gatewayOrderReplayRepository;
-    this.fixDataPlaneService = fixDataPlaneService;
-  }
 
   @Transactional
   public GatewayOrderResult submitOrder(GatewayOrderSubmitCommand command) {

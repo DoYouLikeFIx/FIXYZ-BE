@@ -13,25 +13,17 @@ import com.fix.fepsimulator.vo.SimulatorChaosResult;
 import com.fix.fepsimulator.vo.SimulatorRuleQueryCommand;
 import com.fix.fepsimulator.vo.SimulatorRuleResult;
 import com.fix.fepsimulator.vo.SimulatorRuleUpsertCommand;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class FepSimulatorControlService {
 
   private final SimulatorConnectionRepository simulatorConnectionRepository;
   private final SimulatorMessageRepository simulatorMessageRepository;
   private final SimulatorRuleRepository simulatorRuleRepository;
-
-  public FepSimulatorControlService(
-      SimulatorConnectionRepository simulatorConnectionRepository,
-      SimulatorMessageRepository simulatorMessageRepository,
-      SimulatorRuleRepository simulatorRuleRepository
-  ) {
-    this.simulatorConnectionRepository = simulatorConnectionRepository;
-    this.simulatorMessageRepository = simulatorMessageRepository;
-    this.simulatorRuleRepository = simulatorRuleRepository;
-  }
 
   @Transactional
   public SimulatorRuleResult upsertRule(SimulatorRuleUpsertCommand command) {

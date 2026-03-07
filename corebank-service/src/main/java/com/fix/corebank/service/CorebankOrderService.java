@@ -25,11 +25,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Locale;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class CorebankOrderService {
 
   private final AccountRepository accountRepository;
@@ -39,24 +41,6 @@ public class CorebankOrderService {
   private final JournalEntryRepository journalEntryRepository;
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
-
-  public CorebankOrderService(
-      AccountRepository accountRepository,
-      OrderRepository orderRepository,
-      PositionRepository positionRepository,
-      ExecutionRepository executionRepository,
-      JournalEntryRepository journalEntryRepository,
-      LedgerEntryRepository ledgerEntryRepository,
-      LedgerEntryRefRepository ledgerEntryRefRepository
-  ) {
-    this.accountRepository = accountRepository;
-    this.orderRepository = orderRepository;
-    this.positionRepository = positionRepository;
-    this.executionRepository = executionRepository;
-    this.journalEntryRepository = journalEntryRepository;
-    this.ledgerEntryRepository = ledgerEntryRepository;
-    this.ledgerEntryRefRepository = ledgerEntryRefRepository;
-  }
 
   @Transactional(readOnly = true)
   public PortfolioResult getPortfolio(PortfolioQueryCommand command) {
