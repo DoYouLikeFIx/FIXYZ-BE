@@ -22,7 +22,12 @@ import org.springframework.test.web.servlet.MockMvc;
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect"
+    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+    "spring.session.store-type=none",
+    "spring.autoconfigure.exclude="
+        + "org.springframework.boot.autoconfigure.session.SessionAutoConfiguration,"
+        + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
+        + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
 })
 class ChannelErrorContractTest {
 

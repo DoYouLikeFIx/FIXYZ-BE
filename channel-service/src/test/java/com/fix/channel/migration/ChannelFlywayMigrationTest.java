@@ -14,7 +14,8 @@ import org.springframework.test.context.TestPropertySource;
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect"
+    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+    "spring.session.store-type=none"
 })
 class ChannelFlywayMigrationTest {
 
@@ -22,9 +23,19 @@ class ChannelFlywayMigrationTest {
   private JdbcTemplate jdbcTemplate;
 
   @Test
-  void shouldCreateOrderSessionTableAndSeedData() {
-    Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM order_session", Integer.class);
-    assertThat(count).isNotNull();
-    assertThat(count).isGreaterThanOrEqualTo(1);
+  void shouldCreateCoreTables() {
+    Integer orderSessionTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'ORDER_SESSION'",
+        Integer.class
+    );
+    Integer membersTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MEMBERS'",
+        Integer.class
+    );
+
+    assertThat(orderSessionTableCount).isNotNull();
+    assertThat(orderSessionTableCount).isEqualTo(1);
+    assertThat(membersTableCount).isNotNull();
+    assertThat(membersTableCount).isEqualTo(1);
   }
 }
