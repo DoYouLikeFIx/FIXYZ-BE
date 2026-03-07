@@ -3,22 +3,28 @@ package com.fix.channel.vo;
 public class AuthLoginResult {
 
   private final Long memberId;
-  private final String sessionMode;
+  private final String email;
+  private final String name;
 
-  private AuthLoginResult(Long memberId, String sessionMode) {
+  private AuthLoginResult(Long memberId, String email, String name) {
     this.memberId = memberId;
-    this.sessionMode = sessionMode;
+    this.email = email;
+    this.name = name;
   }
 
-  public static AuthLoginResult of(Long memberId, String sessionMode) {
-    return new AuthLoginResult(memberId, sessionMode);
+  public static AuthLoginResult of(Long memberId, String email, String name) {
+    return new AuthLoginResult(memberId, email, name);
   }
 
   public Long getMemberId() {
     return memberId;
   }
 
-  public String getSessionMode() {
-    return sessionMode;
+  public String getEmail() {
+    return email;
+  }
+
+  public String getName() {
+    return name;
   }
 }
