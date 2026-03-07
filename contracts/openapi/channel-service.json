@@ -455,8 +455,14 @@
             "format": "int64"
           },
           "limit": {
+            "maximum": 100,
+            "minimum": 1,
             "type": "integer",
             "format": "int32"
+          },
+          "cursorId": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -575,8 +581,14 @@
             "format": "int64"
           },
           "limit": {
+            "maximum": 100,
+            "minimum": 1,
             "type": "integer",
             "format": "int32"
+          },
+          "cursorId": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
