@@ -4,14 +4,16 @@ public class AdminSecurityEventCommand {
 
   private final Long memberId;
   private final Integer limit;
+  private final Long cursorId;
 
-  private AdminSecurityEventCommand(Long memberId, Integer limit) {
+  private AdminSecurityEventCommand(Long memberId, Integer limit, Long cursorId) {
     this.memberId = memberId;
     this.limit = limit;
+    this.cursorId = cursorId;
   }
 
-  public static AdminSecurityEventCommand of(Long memberId, Integer limit) {
-    return new AdminSecurityEventCommand(memberId, limit);
+  public static AdminSecurityEventCommand of(Long memberId, Integer limit, Long cursorId) {
+    return new AdminSecurityEventCommand(memberId, limit, cursorId);
   }
 
   public Long getMemberId() {
@@ -20,5 +22,9 @@ public class AdminSecurityEventCommand {
 
   public Integer getLimit() {
     return limit;
+  }
+
+  public Long getCursorId() {
+    return cursorId;
   }
 }

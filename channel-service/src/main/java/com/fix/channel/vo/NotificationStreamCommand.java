@@ -4,14 +4,16 @@ public class NotificationStreamCommand {
 
   private final Long memberId;
   private final Integer limit;
+  private final Long cursorId;
 
-  private NotificationStreamCommand(Long memberId, Integer limit) {
+  private NotificationStreamCommand(Long memberId, Integer limit, Long cursorId) {
     this.memberId = memberId;
     this.limit = limit;
+    this.cursorId = cursorId;
   }
 
-  public static NotificationStreamCommand of(Long memberId, Integer limit) {
-    return new NotificationStreamCommand(memberId, limit);
+  public static NotificationStreamCommand of(Long memberId, Integer limit, Long cursorId) {
+    return new NotificationStreamCommand(memberId, limit, cursorId);
   }
 
   public Long getMemberId() {
@@ -20,5 +22,9 @@ public class NotificationStreamCommand {
 
   public Integer getLimit() {
     return limit;
+  }
+
+  public Long getCursorId() {
+    return cursorId;
   }
 }
