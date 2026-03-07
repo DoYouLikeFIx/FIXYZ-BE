@@ -1,0 +1,5 @@
+{
+  "code": "BAD_REQUEST",
+  "message": "channel bad request",
+  "path": "/api/v1/errors/boom"
+}

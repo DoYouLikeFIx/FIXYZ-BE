@@ -1,0 +1,312 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "OpenAPI definition",
+    "version": "v0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:18083",
+      "description": "Generated server url"
+    }
+  ],
+  "paths": {
+    "/simulator/v1/rules": {
+      "post": {
+        "tags": [
+          "fep-simulator-rule-controller"
+        ],
+        "operationId": "upsertRule",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SimulatorRuleUpsertRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSimulatorRuleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/simulator/v1/chaos": {
+      "post": {
+        "tags": [
+          "fep-simulator-rule-controller"
+        ],
+        "operationId": "runChaos",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SimulatorChaosRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSimulatorChaosResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/simulator/v1/rules/{ruleCode}": {
+      "get": {
+        "tags": [
+          "fep-simulator-rule-controller"
+        ],
+        "operationId": "getRule",
+        "parameters": [
+          {
+            "name": "ruleCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SimulatorRuleQueryRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSimulatorRuleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep-internal/v1/ping": {
+      "get": {
+        "tags": [
+          "fep-simulator-controller"
+        ],
+        "operationId": "internalPing",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ping": {
+      "get": {
+        "tags": [
+          "fep-simulator-controller"
+        ],
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/errors/boom": {
+      "get": {
+        "tags": [
+          "fep-simulator-controller"
+        ],
+        "operationId": "boom",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SimulatorRuleUpsertRequest": {
+        "required": [
+          "action",
+          "enabled",
+          "ruleCode"
+        ],
+        "type": "object",
+        "properties": {
+          "ruleCode": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "action": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseSimulatorRuleResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SimulatorRuleResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SimulatorRuleResponse": {
+        "type": "object",
+        "properties": {
+          "ruleCode": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "activeInRepository": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SimulatorChaosRequest": {
+        "required": [
+          "connectionKey",
+          "intensity",
+          "scenario"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "scenario": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "intensity": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseSimulatorChaosResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SimulatorChaosResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SimulatorChaosResponse": {
+        "type": "object",
+        "properties": {
+          "connectionKey": {
+            "type": "string"
+          },
+          "scenario": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "SimulatorRuleQueryRequest": {
+        "type": "object"
+      }
+    }
+  }
+}

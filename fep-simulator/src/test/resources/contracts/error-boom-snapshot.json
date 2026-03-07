@@ -1,0 +1,5 @@
+{
+  "code": "VALIDATION_001",
+  "message": "simulator bad request",
+  "path": "/api/v1/errors/boom"
+}

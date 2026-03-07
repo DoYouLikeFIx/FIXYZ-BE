@@ -1,7 +1,7 @@
 package com.fix.fepgateway.controller;
 
 import com.fix.common.error.ErrorCode;
-import com.fix.common.error.FixException;
+import com.fix.common.error.BusinessException;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,7 +16,7 @@ public class FepGatewayController {
 
   @GetMapping("/api/v1/errors/boom")
   public void boom() {
-    throw new FixException(ErrorCode.BAD_REQUEST, "gateway bad request");
+    throw new BusinessException(ErrorCode.VALIDATION_FAILED, "gateway bad request");
   }
 
   @GetMapping("/fep-internal/v1/ping")

@@ -12,7 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("prod")
+@ActiveProfiles({"test", "prod"})
 class FepGatewayProdDocsDisabledTest {
 
   @Autowired

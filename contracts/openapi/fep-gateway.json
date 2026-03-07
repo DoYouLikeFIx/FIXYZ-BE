@@ -1,0 +1,430 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "OpenAPI definition",
+    "version": "v0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:18082",
+      "description": "Generated server url"
+    }
+  ],
+  "paths": {
+    "/fep/v1/orders": {
+      "post": {
+        "tags": [
+          "fep-gateway-order-controller"
+        ],
+        "operationId": "submit",
+        "parameters": [
+          {
+            "name": "X-ClOrdID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FepOrderSubmitRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep/v1/orders/{clOrdId}/replay": {
+      "post": {
+        "tags": [
+          "fep-gateway-order-controller"
+        ],
+        "operationId": "replay",
+        "parameters": [
+          {
+            "name": "X-ClOrdID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FepOrderReplayRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep/v1/orders/{clOrdId}/cancel": {
+      "post": {
+        "tags": [
+          "fep-gateway-order-controller"
+        ],
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "X-ClOrdID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FepOrderCancelRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep-internal/v1/orders/{clOrdId}/status": {
+      "post": {
+        "tags": [
+          "fep-gateway-internal-controller"
+        ],
+        "operationId": "updateStatus",
+        "parameters": [
+          {
+            "name": "X-ClOrdID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FepInternalOrderStatusRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep/v1/orders/{clOrdId}/status": {
+      "get": {
+        "tags": [
+          "fep-gateway-order-controller"
+        ],
+        "operationId": "status",
+        "parameters": [
+          {
+            "name": "X-ClOrdID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FepOrderStatusRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep-internal/v1/ping": {
+      "get": {
+        "tags": [
+          "fep-gateway-controller"
+        ],
+        "operationId": "internalPing",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ping": {
+      "get": {
+        "tags": [
+          "fep-gateway-controller"
+        ],
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/errors/boom": {
+      "get": {
+        "tags": [
+          "fep-gateway-controller"
+        ],
+        "operationId": "boom",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "FepOrderSubmitRequest": {
+        "required": [
+          "clOrdId",
+          "qty",
+          "side",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "side": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "qty": {
+            "minimum": 0.0001,
+            "exclusiveMinimum": false,
+            "type": "number"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseFepOrderResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FepOrderResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FepOrderResponse": {
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "plane": {
+            "type": "string"
+          }
+        }
+      },
+      "FepOrderReplayRequest": {
+        "required": [
+          "clOrdId",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "FepOrderCancelRequest": {
+        "required": [
+          "clOrdId",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "FepInternalOrderStatusRequest": {
+        "required": [
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "FepOrderStatusRequest": {
+        "type": "object"
+      }
+    }
+  }
+}
