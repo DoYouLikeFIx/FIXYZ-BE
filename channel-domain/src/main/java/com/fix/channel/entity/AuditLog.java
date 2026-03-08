@@ -31,19 +31,53 @@ public class AuditLog extends BaseTimeEntity {
   @Column(name = "detail", length = 1000)
   private String detail;
 
+  @Column(name = "ip_address", length = 64)
+  private String ipAddress;
+
+  @Column(name = "user_agent", length = 255)
+  private String userAgent;
+
+  @Column(name = "correlation_id", length = 128)
+  private String correlationId;
+
   protected AuditLog() {
   }
 
-  private AuditLog(Long memberId, String action, String targetType, String targetId, String detail) {
+  private AuditLog(
+      Long memberId,
+      String action,
+      String targetType,
+      String targetId,
+      String detail,
+      String ipAddress,
+      String userAgent,
+      String correlationId
+  ) {
     this.memberId = memberId;
     this.action = action;
     this.targetType = targetType;
     this.targetId = targetId;
     this.detail = detail;
+    this.ipAddress = ipAddress;
+    this.userAgent = userAgent;
+    this.correlationId = correlationId;
   }
 
   public static AuditLog of(Long memberId, String action, String targetType, String targetId, String detail) {
-    return new AuditLog(memberId, action, targetType, targetId, detail);
+    return new AuditLog(memberId, action, targetType, targetId, detail, null, null, null);
+  }
+
+  public static AuditLog of(
+      Long memberId,
+      String action,
+      String targetType,
+      String targetId,
+      String detail,
+      String ipAddress,
+      String userAgent,
+      String correlationId
+  ) {
+    return new AuditLog(memberId, action, targetType, targetId, detail, ipAddress, userAgent, correlationId);
   }
 
   public Long getId() {
@@ -68,5 +102,17 @@ public class AuditLog extends BaseTimeEntity {
 
   public String getDetail() {
     return detail;
+  }
+
+  public String getIpAddress() {
+    return ipAddress;
+  }
+
+  public String getUserAgent() {
+    return userAgent;
+  }
+
+  public String getCorrelationId() {
+    return correlationId;
   }
 }

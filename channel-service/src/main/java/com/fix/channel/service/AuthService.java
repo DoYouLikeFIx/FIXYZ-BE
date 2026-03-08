@@ -11,6 +11,7 @@ import com.fix.channel.vo.AuthRegisterResult;
 import com.fix.channel.vo.AuthSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.time.Duration;
@@ -147,26 +148,46 @@ public class AuthService {
   public AuthSessionResult currentSession(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     if (session == null) {
-      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required");
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
 
     Object memberIdAttr = session.getAttribute("AUTH_MEMBER_ID");
     if (!(memberIdAttr instanceof Number memberIdNumber)) {
-      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required");
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
 
     Long memberId = memberIdNumber.longValue();
     Member member = memberRepository.findById(memberId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required"));
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
 
-    return AuthSessionResult.of(member.getId(), member.getEmail(), member.getName());
+    return AuthSessionResult.of(
+        member.getMemberNo(),
+        resolveUsername(member.getEmail()),
+        member.getEmail(),
+        member.getName(),
+        member.getRole(),
+        false,
+        null
+    );
   }
 
   public void logout(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     if (session == null) {
-      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required");
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
+
+    Long memberId = extractMemberId(session);
+    auditLogRepository.save(AuditLog.of(
+        memberId,
+        "LOGOUT",
+        "SESSION",
+        session.getId(),
+        "logout completed",
+        resolveClientIp(request),
+        resolveUserAgent(request),
+        resolveCorrelationId(request)
+    ));
 
     session.invalidate();
     SecurityContextHolder.clearContext();
@@ -199,5 +220,45 @@ public class AuthService {
     sessions.keySet().stream()
         .filter(sessionId -> !sessionId.equals(currentSessionId))
         .forEach(sessionRepository::deleteById);
+  }
+
+  private Long extractMemberId(HttpSession session) {
+    Object memberIdAttr = session.getAttribute("AUTH_MEMBER_ID");
+    if (memberIdAttr instanceof Number memberIdNumber) {
+      return memberIdNumber.longValue();
+    }
+    return null;
+  }
+
+  private String resolveUsername(String email) {
+    int atIndex = email.indexOf('@');
+    if (atIndex > 0) {
+      return email.substring(0, atIndex);
+    }
+    return email;
+  }
+
+  private String resolveClientIp(HttpServletRequest request) {
+    String forwardedFor = request.getHeader("X-Forwarded-For");
+    if (forwardedFor != null && !forwardedFor.isBlank()) {
+      return forwardedFor.split(",")[0].trim();
+    }
+    return request.getRemoteAddr();
+  }
+
+  private String resolveUserAgent(HttpServletRequest request) {
+    String userAgent = request.getHeader("User-Agent");
+    if (userAgent == null || userAgent.isBlank()) {
+      return "unknown";
+    }
+    return userAgent;
+  }
+
+  private String resolveCorrelationId(HttpServletRequest request) {
+    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
+    if (correlationId == null || correlationId.isBlank()) {
+      return UUID.randomUUID().toString();
+    }
+    return correlationId;
   }
 }

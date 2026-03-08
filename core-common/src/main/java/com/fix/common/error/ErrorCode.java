@@ -8,7 +8,10 @@ public enum ErrorCode {
 
   VALIDATION_FAILED("VALIDATION_001", "Validation failed", 400),
   AUTH_UNAUTHORIZED("AUTH_001", "Unauthorized", 401),
+  AUTH_REQUIRED("AUTH-003", "Authentication required", 401),
   CHANNEL_SESSION_NOT_FOUND("CHANNEL_001", "Channel session not found", 404),
+  CHANNEL_SESSION_EXPIRED("CHANNEL-001", "Channel session expired", 410),
+  CURRENT_PASSWORD_MISMATCH("CURRENT_PASSWORD_MISMATCH", "Current password mismatch", 400),
   CORE_RESOURCE_NOT_FOUND("CORE_001", "Resource not found", 404),
   ORD_INVALID_REQUEST("ORD_001", "Invalid order request", 400),
   RATE_LIMIT_EXCEEDED("RATE_001", "Rate limit exceeded", 429),

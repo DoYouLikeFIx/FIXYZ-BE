@@ -9,9 +9,11 @@ import com.fix.channel.vo.MemberProfileResult;
 import com.fix.channel.vo.MemberProfileUpdateCommand;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -50,7 +52,10 @@ public class MemberService {
         "MEMBER_PROFILE_UPDATE",
         "MEMBER",
         String.valueOf(member.getId()),
-        "beforeName=" + beforeName + ", afterName=" + updatedName
+        "beforeName=" + beforeName + ", afterName=" + updatedName,
+        resolveClientIp(request),
+        resolveUserAgent(request),
+        resolveCorrelationId(request)
     ));
 
     return toProfileResult(member);
@@ -61,7 +66,7 @@ public class MemberService {
     Member member = requireAuthenticatedMember(request);
 
     if (!passwordEncoder.matches(command.getCurrentPassword(), member.getPasswordHash())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "current password mismatch");
+      throw new BusinessException(ErrorCode.CURRENT_PASSWORD_MISMATCH, "current password mismatch");
     }
 
     member.updatePasswordHash(passwordEncoder.encode(command.getNewPassword()));
@@ -71,7 +76,10 @@ public class MemberService {
         "MEMBER_PASSWORD_UPDATE",
         "MEMBER",
         String.valueOf(member.getId()),
-        "password changed"
+        "password changed",
+        resolveClientIp(request),
+        resolveUserAgent(request),
+        resolveCorrelationId(request)
     ));
 
     invalidateAllMemberSessions(member.getEmail());
@@ -85,17 +93,17 @@ public class MemberService {
   private Member requireAuthenticatedMember(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     if (session == null) {
-      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required");
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
 
     Object memberIdAttr = session.getAttribute("AUTH_MEMBER_ID");
     if (!(memberIdAttr instanceof Number memberIdNumber)) {
-      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required");
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
 
     Long memberId = memberIdNumber.longValue();
     return memberRepository.findById(memberId)
-        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required"));
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
   }
 
   private MemberProfileResult toProfileResult(Member member) {
@@ -118,5 +126,29 @@ public class MemberService {
     @SuppressWarnings("unchecked")
     Map<String, ? extends Session> sessions = sessionRepository.findByPrincipalName(email);
     sessions.keySet().forEach(sessionRepository::deleteById);
+  }
+
+  private String resolveClientIp(HttpServletRequest request) {
+    String forwardedFor = request.getHeader("X-Forwarded-For");
+    if (forwardedFor != null && !forwardedFor.isBlank()) {
+      return forwardedFor.split(",")[0].trim();
+    }
+    return request.getRemoteAddr();
+  }
+
+  private String resolveUserAgent(HttpServletRequest request) {
+    String userAgent = request.getHeader("User-Agent");
+    if (userAgent == null || userAgent.isBlank()) {
+      return "unknown";
+    }
+    return userAgent;
+  }
+
+  private String resolveCorrelationId(HttpServletRequest request) {
+    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
+    if (correlationId == null || correlationId.isBlank()) {
+      return UUID.randomUUID().toString();
+    }
+    return correlationId;
   }
 }

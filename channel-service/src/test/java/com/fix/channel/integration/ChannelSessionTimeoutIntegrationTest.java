@@ -70,9 +70,9 @@ class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationT
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("AUTH_001"))
-        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(status().isGone())
+        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
+        .andExpect(jsonPath("$.message").value("channel session expired"))
         .andExpect(jsonPath("$.path").value("/api/v1/auth/session"));
   }
 

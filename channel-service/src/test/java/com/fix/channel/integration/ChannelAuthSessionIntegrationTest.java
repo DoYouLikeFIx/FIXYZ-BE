@@ -3,6 +3,7 @@ package com.fix.channel.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -117,9 +118,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", firstSessionId))
             .param("memberId", String.valueOf(saved.getId())))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("AUTH_001"))
-        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(status().isGone())
+        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
+        .andExpect(jsonPath("$.message").value("channel session expired"))
         .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
 
     mockMvc.perform(get("/api/v1/notifications/stream")
@@ -152,10 +153,21 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", sessionId))
             .param("memberId", String.valueOf(saved.getId())))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("AUTH_001"))
-        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(status().isGone())
+        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
+        .andExpect(jsonPath("$.message").value("channel session expired"))
         .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getMemberId()).isEqualTo(saved.getId());
+          assertThat(log.getAction()).isEqualTo("LOGOUT");
+          assertThat(log.getTargetType()).isEqualTo("SESSION");
+          assertThat(log.getTargetId()).isEqualTo(sessionId);
+          assertThat(log.getIpAddress()).isNotBlank();
+          assertThat(log.getUserAgent()).isNotBlank();
+          assertThat(log.getCorrelationId()).isNotBlank();
+        });
   }
 
   @Test
@@ -209,16 +221,19 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
             .cookie(new Cookie("SESSION", sessionId)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.memberId").value(saved.getId()))
+        .andExpect(jsonPath("$.data.memberUuid").value(saved.getMemberNo()))
+        .andExpect(jsonPath("$.data.username").value("session.user"))
         .andExpect(jsonPath("$.data.email").value("session.user@fixyz.com"))
-        .andExpect(jsonPath("$.data.name").value("Session User"));
+        .andExpect(jsonPath("$.data.name").value("Session User"))
+        .andExpect(jsonPath("$.data.role").value("ROLE_USER"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false));
   }
 
   @Test
   void shouldReturnUnauthorizedEnvelopeWhenSessionCookieMissingOnSessionEndpoint() throws Exception {
     mockMvc.perform(get("/api/v1/auth/session"))
         .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
         .andExpect(jsonPath("$.message").value("authentication required"))
         .andExpect(jsonPath("$.path").value("/api/v1/auth/session"));
   }
@@ -244,7 +259,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   void shouldRequireAuthenticationForMemberProfileEndpoint() throws Exception {
     mockMvc.perform(get("/api/v1/members/me"))
         .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
         .andExpect(jsonPath("$.message").value("authentication required"))
         .andExpect(jsonPath("$.path").value("/api/v1/members/me"));
   }
@@ -276,6 +291,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
           assertThat(log.getTargetType()).isEqualTo("MEMBER");
           assertThat(log.getTargetId()).isEqualTo(String.valueOf(saved.getId()));
           assertThat(log.getDetail()).contains("beforeName=Old Name", "afterName=New Name");
+          assertThat(log.getIpAddress()).isNotBlank();
+          assertThat(log.getUserAgent()).isNotBlank();
+          assertThat(log.getCorrelationId()).isNotBlank();
         });
   }
 
@@ -308,9 +326,8 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
             .header("X-CSRF-TOKEN", csrfToken)
             .param("currentPassword", "Abcd1234!")
             .param("newPassword", "Qwer1234!"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.message").value("password updated"));
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""));
 
     Member updated = memberRepository.findById(saved.getId()).orElseThrow();
     assertThat(passwordEncoder.matches("Qwer1234!", updated.getPasswordHash())).isTrue();
@@ -323,13 +340,16 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
           assertThat(log.getTargetType()).isEqualTo("MEMBER");
           assertThat(log.getTargetId()).isEqualTo(String.valueOf(saved.getId()));
           assertThat(log.getDetail()).isEqualTo("password changed");
+          assertThat(log.getIpAddress()).isNotBlank();
+          assertThat(log.getUserAgent()).isNotBlank();
+          assertThat(log.getCorrelationId()).isNotBlank();
         });
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))
-        .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("AUTH_001"))
-        .andExpect(jsonPath("$.message").value("authentication required"));
+        .andExpect(status().isGone())
+        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
+        .andExpect(jsonPath("$.message").value("channel session expired"));
 
     mockMvc.perform(post("/api/v1/auth/login")
             .with(csrf())
@@ -361,7 +381,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
             .param("currentPassword", "Wrong1234!")
             .param("newPassword", "Qwer1234!"))
         .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+        .andExpect(jsonPath("$.code").value("CURRENT_PASSWORD_MISMATCH"))
         .andExpect(jsonPath("$.message").value("current password mismatch"));
   }
 
