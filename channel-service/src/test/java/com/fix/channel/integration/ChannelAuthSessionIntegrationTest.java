@@ -241,6 +241,15 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   }
 
   @Test
+  void shouldRequireAuthenticationForMemberProfileEndpoint() throws Exception {
+    mockMvc.perform(get("/api/v1/members/me"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/members/me"));
+  }
+
+  @Test
   void shouldUpdateMyProfileAndPersistAuditTrail() throws Exception {
     Member saved = memberRepository.save(
         Member.registerUser("M-IT-PROFILE-002", "profile.update@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Old Name")
@@ -268,6 +277,22 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
           assertThat(log.getTargetId()).isEqualTo(String.valueOf(saved.getId()));
           assertThat(log.getDetail()).contains("beforeName=Old Name", "afterName=New Name");
         });
+  }
+
+  @Test
+  void shouldRejectProfileUpdateWhenNameValidationFails() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-PROFILE-003", "profile.invalid@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Valid Name")
+    );
+    String sessionId = loginAndGetSessionId("profile.invalid@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("name", "A"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"));
   }
 
   @Test
