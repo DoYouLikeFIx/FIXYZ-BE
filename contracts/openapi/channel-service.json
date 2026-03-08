@@ -259,14 +259,6 @@
             "schema": {
               "$ref": "#/components/schemas/CsrfBootstrapRequest"
             }
-          },
-          {
-            "name": "csrfToken",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/CsrfToken"
-            }
           }
         ],
         "responses": {
@@ -659,20 +651,6 @@
         "type": "object",
         "properties": {
           "clientRequestId": {
-            "type": "string"
-          }
-        }
-      },
-      "CsrfToken": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string"
-          },
-          "parameterName": {
-            "type": "string"
-          },
-          "headerName": {
             "type": "string"
           }
         }

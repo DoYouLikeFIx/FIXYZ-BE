@@ -62,8 +62,16 @@ public class AuthController {
   @GetMapping("/csrf")
   public ApiResponse<CsrfBootstrapResponse> bootstrapCsrf(
       @ModelAttribute CsrfBootstrapRequest request,
-      CsrfToken csrfToken
+      HttpServletRequest httpServletRequest
   ) {
+    // 스프링 시큐리티가 request attribute로 주입한 CSRF 토큰을 직접 조회한다.
+    CsrfToken csrfToken = (CsrfToken) httpServletRequest.getAttribute(CsrfToken.class.getName());
+    if (csrfToken == null) {
+      csrfToken = (CsrfToken) httpServletRequest.getAttribute("_csrf");
+    }
+    if (csrfToken == null) {
+      throw new IllegalStateException("CSRF token is not available");
+    }
     return ApiResponse.success(CsrfBootstrapResponse.from(channelScaffoldService.bootstrapCsrf(request.toVo(), csrfToken)));
   }
 
