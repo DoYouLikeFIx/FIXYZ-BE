@@ -1,21 +1,17 @@
 package com.fix.channel.service;
 
 import com.fix.channel.entity.AuditLog;
-import com.fix.channel.entity.Member;
 import com.fix.channel.entity.Notification;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OtpVerification;
 import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
-import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.NotificationRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.OtpVerificationRepository;
 import com.fix.channel.repository.SecurityEventRepository;
 import com.fix.channel.vo.AdminSecurityEventCommand;
 import com.fix.channel.vo.AdminSecurityEventResult;
-import com.fix.channel.vo.AuthLoginCommand;
-import com.fix.channel.vo.AuthLoginResult;
 import com.fix.channel.vo.CsrfBootstrapCommand;
 import com.fix.channel.vo.CsrfBootstrapResult;
 import com.fix.channel.vo.NotificationItemVo;
@@ -46,7 +42,6 @@ public class ChannelScaffoldService {
   private static final int DEFAULT_LIMIT = 20;
   private static final int MAX_LIMIT = 100;
 
-  private final MemberRepository memberRepository;
   private final OtpVerificationRepository otpVerificationRepository;
   private final OrderSessionRepository orderSessionRepository;
   private final NotificationRepository notificationRepository;
@@ -56,26 +51,6 @@ public class ChannelScaffoldService {
   @Transactional(readOnly = true)
   public CsrfBootstrapResult bootstrapCsrf(CsrfBootstrapCommand command, CsrfToken token) {
     return CsrfBootstrapResult.of(token.getToken(), token.getHeaderName(), token.getParameterName(), "SESSION");
-  }
-
-  @Transactional
-  public AuthLoginResult login(AuthLoginCommand command) {
-    Member member = memberRepository.findByMemberNo(command.getMemberNo())
-        .orElseGet(() -> memberRepository.save(Member.of(
-            command.getMemberNo(),
-            command.getMemberNo().toLowerCase() + "@fixyz.local",
-            "ACTIVE"
-        )));
-
-    auditLogRepository.save(AuditLog.of(
-        member.getId(),
-        "AUTH_LOGIN",
-        "MEMBER",
-        String.valueOf(member.getId()),
-        "SESSION login bootstrap"
-    ));
-
-    return AuthLoginResult.of(member.getId(), "SESSION");
   }
 
   @Transactional

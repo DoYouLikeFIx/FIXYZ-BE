@@ -65,6 +65,6 @@ CREATE TABLE IF NOT EXISTS security_events (
   version BIGINT
 );
 
-CREATE INDEX IF NOT EXISTS idx_order_sessions_member_id ON order_sessions(member_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_member_id ON notifications(member_id);
-CREATE INDEX IF NOT EXISTS idx_security_events_member_id ON security_events(member_id);
+CREATE INDEX idx_order_sessions_member_id ON order_sessions(member_id);
+CREATE INDEX idx_notifications_member_id ON notifications(member_id);
+CREATE INDEX idx_security_events_member_id ON security_events(member_id);

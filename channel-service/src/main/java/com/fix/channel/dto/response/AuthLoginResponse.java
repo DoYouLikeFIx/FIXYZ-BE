@@ -5,22 +5,28 @@ import com.fix.channel.vo.AuthLoginResult;
 public class AuthLoginResponse {
 
   private final Long memberId;
-  private final String sessionMode;
+  private final String email;
+  private final String name;
 
-  private AuthLoginResponse(Long memberId, String sessionMode) {
+  private AuthLoginResponse(Long memberId, String email, String name) {
     this.memberId = memberId;
-    this.sessionMode = sessionMode;
+    this.email = email;
+    this.name = name;
   }
 
   public static AuthLoginResponse from(AuthLoginResult result) {
-    return new AuthLoginResponse(result.getMemberId(), result.getSessionMode());
+    return new AuthLoginResponse(result.getMemberId(), result.getEmail(), result.getName());
   }
 
   public Long getMemberId() {
     return memberId;
   }
 
-  public String getSessionMode() {
-    return sessionMode;
+  public String getEmail() {
+    return email;
+  }
+
+  public String getName() {
+    return name;
   }
 }

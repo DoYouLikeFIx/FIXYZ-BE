@@ -69,6 +69,36 @@
         }
       }
     },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "register",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AuthRegisterRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAuthRegisterResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/otp/verify": {
       "post": {
         "tags": [
@@ -92,6 +122,26 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseOtpVerifyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAuthLogoutResponse"
                 }
               }
             }
@@ -208,14 +258,6 @@
             "required": true,
             "schema": {
               "$ref": "#/components/schemas/CsrfBootstrapRequest"
-            }
-          },
-          {
-            "name": "csrfToken",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/CsrfToken"
             }
           }
         ],
@@ -342,6 +384,68 @@
           }
         }
       },
+      "AuthRegisterRequest": {
+        "required": [
+          "email",
+          "name",
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "minLength": 1,
+            "pattern": "^(?\u003d.*[A-Z])(?\u003d.*\\d)(?\u003d.*[@$!%*?\u0026])[A-Za-z\\d@$!%*?\u0026]{8,}$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 2,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseAuthRegisterResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuthRegisterResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuthRegisterResponse": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "OtpVerifyRequest": {
         "required": [
           "memberId",
@@ -385,16 +489,43 @@
           }
         }
       },
+      "ApiResponseAuthLogoutResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuthLogoutResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuthLogoutResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "AuthLoginRequest": {
         "required": [
-          "memberNo",
+          "email",
           "password"
         ],
         "type": "object",
         "properties": {
-          "memberNo": {
+          "email": {
             "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "format": "email"
           },
           "password": {
             "minLength": 1,
@@ -427,7 +558,10 @@
             "type": "integer",
             "format": "int64"
           },
-          "sessionMode": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           }
         }
@@ -517,20 +651,6 @@
         "type": "object",
         "properties": {
           "clientRequestId": {
-            "type": "string"
-          }
-        }
-      },
-      "CsrfToken": {
-        "type": "object",
-        "properties": {
-          "parameterName": {
-            "type": "string"
-          },
-          "token": {
-            "type": "string"
-          },
-          "headerName": {
             "type": "string"
           }
         }
