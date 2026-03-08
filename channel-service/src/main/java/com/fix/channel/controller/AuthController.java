@@ -7,6 +7,7 @@ import com.fix.channel.dto.request.OtpVerifyRequest;
 import com.fix.channel.dto.response.AuthLoginResponse;
 import com.fix.channel.dto.response.AuthLogoutResponse;
 import com.fix.channel.dto.response.AuthRegisterResponse;
+import com.fix.channel.dto.response.AuthSessionResponse;
 import com.fix.channel.dto.response.CsrfBootstrapResponse;
 import com.fix.channel.dto.response.OtpVerifyResponse;
 import com.fix.channel.service.AuthService;
@@ -81,6 +82,11 @@ public class AuthController {
       HttpServletRequest httpServletRequest
   ) {
     return ApiResponse.success(AuthLoginResponse.from(authService.login(request.toVo(), httpServletRequest)));
+  }
+
+  @GetMapping("/session")
+  public ApiResponse<AuthSessionResponse> currentSession(HttpServletRequest httpServletRequest) {
+    return ApiResponse.success(AuthSessionResponse.from(authService.currentSession(httpServletRequest)));
   }
 
   @PostMapping("/logout")

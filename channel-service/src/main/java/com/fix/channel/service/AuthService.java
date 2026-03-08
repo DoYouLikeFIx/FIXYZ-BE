@@ -8,6 +8,7 @@ import com.fix.channel.vo.AuthLoginCommand;
 import com.fix.channel.vo.AuthLoginResult;
 import com.fix.channel.vo.AuthRegisterCommand;
 import com.fix.channel.vo.AuthRegisterResult;
+import com.fix.channel.vo.AuthSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
@@ -41,6 +43,8 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   @SuppressWarnings("rawtypes")
   private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
+  @Value("${spring.session.timeout:${server.servlet.session.timeout:30m}}")
+  private Duration sessionTimeout = Duration.ofMinutes(30);
 
   @Transactional
   public AuthRegisterResult register(AuthRegisterCommand command) {
@@ -117,7 +121,7 @@ public class AuthService {
     }
 
     HttpSession session = request.getSession(true);
-    session.setMaxInactiveInterval((int) Duration.ofMinutes(30).toSeconds());
+    session.setMaxInactiveInterval((int) sessionTimeout.toSeconds());
     session.setAttribute("AUTH_MEMBER_ID", member.getId());
     session.setAttribute("AUTH_MEMBER_NAME", member.getName());
     session.setAttribute(
@@ -137,6 +141,25 @@ public class AuthService {
     expireOtherSessions(member.getEmail(), session.getId());
 
     return AuthLoginResult.of(member.getId(), member.getEmail(), member.getName());
+  }
+
+  @Transactional(readOnly = true)
+  public AuthSessionResult currentSession(HttpServletRequest request) {
+    HttpSession session = request.getSession(false);
+    if (session == null) {
+      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required");
+    }
+
+    Object memberIdAttr = session.getAttribute("AUTH_MEMBER_ID");
+    if (!(memberIdAttr instanceof Number memberIdNumber)) {
+      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required");
+    }
+
+    Long memberId = memberIdNumber.longValue();
+    Member member = memberRepository.findById(memberId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required"));
+
+    return AuthSessionResult.of(member.getId(), member.getEmail(), member.getName());
   }
 
   public void logout(HttpServletRequest request) {

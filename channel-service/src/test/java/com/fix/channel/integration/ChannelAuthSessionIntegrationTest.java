@@ -111,7 +111,10 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", firstSessionId))
             .param("memberId", String.valueOf(saved.getId())))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
 
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", secondSessionId))
@@ -143,7 +146,10 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", sessionId))
             .param("memberId", String.valueOf(saved.getId())))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
   }
 
   @Test
@@ -183,6 +189,32 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
         .andExpect(jsonPath("$.message").value("member already exists"));
+  }
+
+  @Test
+  void shouldReturnCurrentSessionProfileWhenAuthenticated() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-SESSION-001", "session.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Session User")
+    );
+
+    String sessionId = loginAndGetSessionId("session.user@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(get("/api/v1/auth/session")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.memberId").value(saved.getId()))
+        .andExpect(jsonPath("$.data.email").value("session.user@fixyz.com"))
+        .andExpect(jsonPath("$.data.name").value("Session User"));
+  }
+
+  @Test
+  void shouldReturnUnauthorizedEnvelopeWhenSessionCookieMissingOnSessionEndpoint() throws Exception {
+    mockMvc.perform(get("/api/v1/auth/session"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/auth/session"));
   }
 
   private String loginAndGetSessionId(String email, String password) throws Exception {
