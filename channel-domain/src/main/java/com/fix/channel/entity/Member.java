@@ -94,4 +94,8 @@ public class Member extends BaseTimeEntity {
   public void activate() {
     this.status = "ACTIVE";
   }
+
+  public void updateProfileName(String name) {
+    this.name = name;
+  }
 }

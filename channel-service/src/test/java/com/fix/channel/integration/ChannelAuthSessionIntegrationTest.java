@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.Member;
+import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import jakarta.servlet.http.Cookie;
@@ -39,6 +41,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   private MemberRepository memberRepository;
 
   @Autowired
+  private AuditLogRepository auditLogRepository;
+
+  @Autowired
   private PasswordEncoder passwordEncoder;
 
   @Autowired
@@ -53,6 +58,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   @BeforeEach
   void setUp() {
     memberRepository.deleteAll();
+    auditLogRepository.deleteAll();
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
       return null;
@@ -215,6 +221,53 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(jsonPath("$.code").value("AUTH_001"))
         .andExpect(jsonPath("$.message").value("authentication required"))
         .andExpect(jsonPath("$.path").value("/api/v1/auth/session"));
+  }
+
+  @Test
+  void shouldReadMyProfileWhenAuthenticated() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-PROFILE-001", "profile.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Profile User")
+    );
+    String sessionId = loginAndGetSessionId("profile.user@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(get("/api/v1/members/me")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.memberId").value(saved.getId()))
+        .andExpect(jsonPath("$.data.email").value("profile.user@fixyz.com"))
+        .andExpect(jsonPath("$.data.name").value("Profile User"))
+        .andExpect(jsonPath("$.data.role").value("ROLE_USER"));
+  }
+
+  @Test
+  void shouldUpdateMyProfileAndPersistAuditTrail() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-PROFILE-002", "profile.update@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Old Name")
+    );
+    String sessionId = loginAndGetSessionId("profile.update@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("name", "New Name"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.memberId").value(saved.getId()))
+        .andExpect(jsonPath("$.data.name").value("New Name"));
+
+    Member updated = memberRepository.findById(saved.getId()).orElseThrow();
+    assertThat(updated.getName()).isEqualTo("New Name");
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getMemberId()).isEqualTo(saved.getId());
+          assertThat(log.getAction()).isEqualTo("MEMBER_PROFILE_UPDATE");
+          assertThat(log.getTargetType()).isEqualTo("MEMBER");
+          assertThat(log.getTargetId()).isEqualTo(String.valueOf(saved.getId()));
+          assertThat(log.getDetail()).contains("beforeName=Old Name", "afterName=New Name");
+        });
   }
 
   private String loginAndGetSessionId(String email, String password) throws Exception {
