@@ -270,6 +270,93 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         });
   }
 
+  @Test
+  void shouldChangePasswordAndInvalidateCurrentSession() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-PW-001", "pw.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Pw User")
+    );
+    String sessionId = loginAndGetSessionId("pw.user@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me/password")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("currentPassword", "Abcd1234!")
+            .param("newPassword", "Qwer1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.message").value("password updated"));
+
+    Member updated = memberRepository.findById(saved.getId()).orElseThrow();
+    assertThat(passwordEncoder.matches("Qwer1234!", updated.getPasswordHash())).isTrue();
+    assertThat(passwordEncoder.matches("Abcd1234!", updated.getPasswordHash())).isFalse();
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getMemberId()).isEqualTo(saved.getId());
+          assertThat(log.getAction()).isEqualTo("MEMBER_PASSWORD_UPDATE");
+          assertThat(log.getTargetType()).isEqualTo("MEMBER");
+          assertThat(log.getTargetId()).isEqualTo(String.valueOf(saved.getId()));
+          assertThat(log.getDetail()).isEqualTo("password changed");
+        });
+
+    mockMvc.perform(get("/api/v1/auth/session")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.message").value("authentication required"));
+
+    mockMvc.perform(post("/api/v1/auth/login")
+            .with(csrf())
+            .param("email", "pw.user@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.message").value("invalid credentials"));
+
+    mockMvc.perform(post("/api/v1/auth/login")
+            .with(csrf())
+            .param("email", "pw.user@fixyz.com")
+            .param("password", "Qwer1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  void shouldRejectPasswordChangeWhenCurrentPasswordMismatch() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-PW-002", "pw.mismatch@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Mismatch User")
+    );
+    String sessionId = loginAndGetSessionId("pw.mismatch@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me/password")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("currentPassword", "Wrong1234!")
+            .param("newPassword", "Qwer1234!"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+        .andExpect(jsonPath("$.message").value("current password mismatch"));
+  }
+
+  @Test
+  void shouldRejectPasswordChangeWhenNewPasswordPolicyInvalid() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-PW-003", "pw.policy@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Policy User")
+    );
+    String sessionId = loginAndGetSessionId("pw.policy@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me/password")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("currentPassword", "Abcd1234!")
+            .param("newPassword", "weakpw"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"));
+  }
+
   private String loginAndGetSessionId(String email, String password) throws Exception {
     MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
             .with(csrf())

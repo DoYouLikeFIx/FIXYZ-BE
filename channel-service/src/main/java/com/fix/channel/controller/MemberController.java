@@ -1,6 +1,8 @@
 package com.fix.channel.controller;
 
+import com.fix.channel.dto.request.MemberPasswordUpdateRequest;
 import com.fix.channel.dto.request.MemberProfileUpdateRequest;
+import com.fix.channel.dto.response.MemberPasswordUpdateResponse;
 import com.fix.channel.dto.response.MemberProfileResponse;
 import com.fix.channel.service.MemberService;
 import com.fix.common.error.ApiResponse;
@@ -35,5 +37,14 @@ public class MemberController {
     return ApiResponse.success(MemberProfileResponse.from(
         memberService.updateMyProfile(request.toVo(), httpServletRequest)
     ));
+  }
+
+  @PatchMapping("/me/password")
+  public ApiResponse<MemberPasswordUpdateResponse> updateMyPassword(
+      @Valid @ModelAttribute MemberPasswordUpdateRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    memberService.updateMyPassword(request.toVo(), httpServletRequest);
+    return ApiResponse.success(MemberPasswordUpdateResponse.of("password updated"));
   }
 }
