@@ -33,6 +33,9 @@ import org.springframework.test.web.servlet.MvcResult;
 })
 class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationTestBase {
 
+  private static final long SESSION_EXPIRE_AWAIT_MS = 8_000L;
+  private static final long SESSION_EXPIRE_POLL_MS = 200L;
+
   @Autowired
   private MockMvc mockMvc;
 
@@ -66,7 +69,7 @@ class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationT
     String sessionId = loginAndGetSessionId("timeout.user@fixyz.com", "Abcd1234!");
     assertThat(sessionRepository.findById(sessionId)).isNotNull();
 
-    Thread.sleep(3000L);
+    awaitSessionExpiration(sessionId);
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))
@@ -88,5 +91,16 @@ class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationT
     assertThat(sessionCookie).isNotNull();
     assertThat(sessionCookie.getValue()).isNotBlank();
     return sessionCookie.getValue();
+  }
+
+  private void awaitSessionExpiration(String sessionId) throws InterruptedException {
+    long deadline = System.currentTimeMillis() + SESSION_EXPIRE_AWAIT_MS;
+    while (System.currentTimeMillis() < deadline) {
+      if (sessionRepository.findById(sessionId) == null) {
+        return;
+      }
+      Thread.sleep(SESSION_EXPIRE_POLL_MS);
+    }
+    assertThat(sessionRepository.findById(sessionId)).isNull();
   }
 }

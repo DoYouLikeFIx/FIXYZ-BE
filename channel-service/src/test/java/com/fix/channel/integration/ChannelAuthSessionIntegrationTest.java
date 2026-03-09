@@ -171,6 +171,32 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   }
 
   @Test
+  void shouldRejectLogoutWhenSessionMemberIdMissing() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-LOGOUT-002", "logout.missing@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Logout Missing")
+    );
+
+    String sessionId = loginAndGetSessionId("logout.missing@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    Session persisted = sessionRepository.findById(sessionId);
+    assertThat(persisted).isNotNull();
+    persisted.removeAttribute("AUTH_MEMBER_ID");
+    saveSession(persisted);
+
+    mockMvc.perform(post("/api/v1/auth/logout")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/auth/logout"));
+
+    assertThat(auditLogRepository.findAll())
+        .noneSatisfy(log -> assertThat(log.getAction()).isEqualTo("LOGOUT"));
+  }
+
+  @Test
   void shouldReturnSameUnauthorizedEnvelopeForWrongPasswordAndUnknownEmail() throws Exception {
     memberRepository.save(
         Member.registerUser("M-IT-LOGIN-002", "known.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Known User")
@@ -314,6 +340,22 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   }
 
   @Test
+  void shouldRejectProfileUpdateWhenTrimmedNameValidationFails() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-PROFILE-004", "profile.trim@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Trim User")
+    );
+    String sessionId = loginAndGetSessionId("profile.trim@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("name", " A "))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"));
+  }
+
+  @Test
   void shouldChangePasswordAndInvalidateCurrentSession() throws Exception {
     Member saved = memberRepository.save(
         Member.registerUser("M-IT-PW-001", "pw.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Pw User")
@@ -431,5 +473,10 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     String csrfToken = root.path("data").path("token").asText();
     assertThat(csrfToken).isNotBlank();
     return csrfToken;
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private void saveSession(Session session) {
+    ((SessionRepository) sessionRepository).save(session);
   }
 }

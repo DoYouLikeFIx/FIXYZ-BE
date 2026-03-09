@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import com.fix.channel.entity.AuditLog;
+import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
@@ -49,7 +50,7 @@ public class MemberService {
 
     auditLogRepository.save(AuditLog.of(
         member.getId(),
-        "MEMBER_PROFILE_UPDATE",
+        AuditAction.MEMBER_PROFILE_UPDATE,
         "MEMBER",
         String.valueOf(member.getId()),
         "beforeName=" + beforeName + ", afterName=" + updatedName,
@@ -73,7 +74,7 @@ public class MemberService {
 
     auditLogRepository.save(AuditLog.of(
         member.getId(),
-        "MEMBER_PASSWORD_UPDATE",
+        AuditAction.MEMBER_PASSWORD_UPDATE,
         "MEMBER",
         String.valueOf(member.getId()),
         "password changed",

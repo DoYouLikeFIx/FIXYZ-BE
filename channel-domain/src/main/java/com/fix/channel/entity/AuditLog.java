@@ -69,6 +69,16 @@ public class AuditLog extends BaseTimeEntity {
 
   public static AuditLog of(
       Long memberId,
+      AuditAction action,
+      String targetType,
+      String targetId,
+      String detail
+  ) {
+    return of(memberId, action.value(), targetType, targetId, detail);
+  }
+
+  public static AuditLog of(
+      Long memberId,
       String action,
       String targetType,
       String targetId,
@@ -78,6 +88,19 @@ public class AuditLog extends BaseTimeEntity {
       String correlationId
   ) {
     return new AuditLog(memberId, action, targetType, targetId, detail, ipAddress, userAgent, correlationId);
+  }
+
+  public static AuditLog of(
+      Long memberId,
+      AuditAction action,
+      String targetType,
+      String targetId,
+      String detail,
+      String ipAddress,
+      String userAgent,
+      String correlationId
+  ) {
+    return of(memberId, action.value(), targetType, targetId, detail, ipAddress, userAgent, correlationId);
   }
 
   public Long getId() {

@@ -6,6 +6,7 @@ public enum ErrorCode {
   UNAUTHORIZED("UNAUTHORIZED", "Unauthorized", 401),
   INTERNAL_ERROR("INTERNAL_ERROR", "Internal server error", 500),
 
+  // Keep externally contracted API codes as-is (separator may vary by legacy/story contract).
   VALIDATION_FAILED("VALIDATION_001", "Validation failed", 400),
   AUTH_UNAUTHORIZED("AUTH_001", "Unauthorized", 401),
   AUTH_REQUIRED("AUTH-003", "Authentication required", 401),

@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import com.fix.channel.entity.AuditLog;
+import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
@@ -14,6 +15,8 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +32,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
 import org.springframework.stereotype.Service;
@@ -76,7 +80,7 @@ public class AuthService {
 
     auditLogRepository.save(AuditLog.of(
         saved.getId(),
-        "AUTH_REGISTER",
+        AuditAction.AUTH_REGISTER,
         "MEMBER",
         String.valueOf(saved.getId()),
         "email=" + saved.getEmail()
@@ -99,7 +103,7 @@ public class AuthService {
     if (member == null) {
       auditLogRepository.save(AuditLog.of(
           null,
-          "AUTH_LOGIN_FAILURE",
+          AuditAction.AUTH_LOGIN_FAILURE,
           "MEMBER",
           null,
           "email=" + email
@@ -112,7 +116,7 @@ public class AuthService {
     if (!matched || !active) {
       auditLogRepository.save(AuditLog.of(
           member.getId(),
-          "AUTH_LOGIN_FAILURE",
+          AuditAction.AUTH_LOGIN_FAILURE,
           "MEMBER",
           String.valueOf(member.getId()),
           "email=" + email
@@ -122,7 +126,7 @@ public class AuthService {
 
     auditLogRepository.save(AuditLog.of(
         member.getId(),
-        "AUTH_LOGIN_SUCCESS",
+        AuditAction.AUTH_LOGIN_SUCCESS,
         "MEMBER",
         String.valueOf(member.getId()),
         "email=" + email
@@ -189,9 +193,13 @@ public class AuthService {
     }
 
     Long memberId = extractMemberId(session);
+    if (memberId == null) {
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
+    }
+
     auditLogRepository.save(AuditLog.of(
         memberId,
-        "LOGOUT",
+        AuditAction.LOGOUT,
         "SESSION",
         session.getId(),
         "logout completed",
@@ -211,6 +219,33 @@ public class AuthService {
   }
 
   private boolean isDuplicateMemberEmail(DataIntegrityViolationException ex) {
+    Throwable current = ex;
+    while (current != null) {
+      if (current instanceof ConstraintViolationException constraintViolation) {
+        if (containsIgnoreCase(constraintViolation.getConstraintName(), "uk_members_email")) {
+          return true;
+        }
+        SQLException sqlException = constraintViolation.getSQLException();
+        if (isDuplicateSqlException(sqlException)) {
+          return true;
+        }
+      }
+
+      if (current instanceof SQLIntegrityConstraintViolationException sqlIntegrity) {
+        if (isDuplicateSqlException(sqlIntegrity)) {
+          return true;
+        }
+      }
+
+      if (current instanceof SQLException sqlException) {
+        if (isDuplicateSqlException(sqlException)) {
+          return true;
+        }
+      }
+
+      current = current.getCause();
+    }
+
     return containsIgnoreCase(ex.getMessage(), "uk_members_email")
         || containsIgnoreCase(ex.getMessage(), "duplicate")
         || containsIgnoreCase(ex.getMessage(), "members.email");
@@ -221,6 +256,23 @@ public class AuthService {
       return false;
     }
     return text.toLowerCase(Locale.ROOT).contains(token.toLowerCase(Locale.ROOT));
+  }
+
+  private boolean isDuplicateSqlException(SQLException ex) {
+    if (ex == null) {
+      return false;
+    }
+
+    if ("23505".equals(ex.getSQLState())) {
+      return true;
+    }
+
+    if (ex.getErrorCode() == 1062) {
+      return true;
+    }
+
+    return "23000".equals(ex.getSQLState())
+        && containsIgnoreCase(ex.getMessage(), "duplicate");
   }
 
   private ResponseCookie expiredSessionCookie() {
