@@ -23,12 +23,12 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(BusinessException.class)
   public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), request);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request);
   }
 
   @ExceptionHandler(SystemException.class)
   public ResponseEntity<ApiErrorResponse> handleSystemException(SystemException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), request);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request);
   }
 
   @ExceptionHandler({
@@ -54,8 +54,17 @@ public class GlobalExceptionHandler {
   }
 
   private ResponseEntity<ApiErrorResponse> build(ErrorCode errorCode, String message, HttpServletRequest request) {
+    return build(errorCode, message, null, request);
+  }
+
+  private ResponseEntity<ApiErrorResponse> build(
+      ErrorCode errorCode,
+      String message,
+      com.fix.common.error.ErrorMetadata metadata,
+      HttpServletRequest request
+  ) {
     String correlationId = resolveCorrelationId(request);
-    ApiErrorResponse response = ApiErrorResponse.from(errorCode, message, request.getRequestURI(), correlationId);
+    ApiErrorResponse response = ApiErrorResponse.from(errorCode, message, request.getRequestURI(), correlationId, metadata);
 
     return ResponseEntity
         .status(errorCode.httpStatus())
