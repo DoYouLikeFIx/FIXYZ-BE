@@ -39,17 +39,17 @@ class FepGatewayDtoVoBoundaryArchTest {
           .should().dependOnClassesThat().resideInAnyPackage("..dto..", "..controller..", "..controlplane.controller..");
 
   @ArchTest
-  static final ArchRule dtoShouldNotUseRecord =
+  static final ArchRule dtoShouldUseRecord =
       classes()
           .that().resideInAnyPackage("..dto.request..", "..dto.response..")
-          .should(notBeRecord());
+          .should(beRecord());
 
-  private static ArchCondition<JavaClass> notBeRecord() {
-    return new ArchCondition<>("not be a record") {
+  private static ArchCondition<JavaClass> beRecord() {
+    return new ArchCondition<>("be a record") {
       @Override
       public void check(JavaClass item, ConditionEvents events) {
-        if (item.isRecord()) {
-          events.add(SimpleConditionEvent.violated(item, item.getName() + " must be class, not record"));
+        if (!item.isRecord()) {
+          events.add(SimpleConditionEvent.violated(item, item.getName() + " must be record, not class"));
         }
       }
     };
