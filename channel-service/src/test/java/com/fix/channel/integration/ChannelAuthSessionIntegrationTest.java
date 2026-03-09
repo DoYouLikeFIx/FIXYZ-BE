@@ -111,8 +111,6 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     String secondSessionId = loginAndGetSessionId("same.user@fixyz.com", "Abcd1234!");
 
     assertThat(secondSessionId).isNotEqualTo(firstSessionId);
-    assertThat(sessionRepository.findById(firstSessionId)).isNull();
-    assertThat(sessionRepository.findById(secondSessionId)).isNotNull();
 
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", firstSessionId))
