@@ -2,6 +2,7 @@ package com.fix.corebank.dto.request;
 
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.common.validation.ContractPatterns;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -32,11 +33,13 @@ public class InternalOrderCreateRequest {
   @DecimalMin("0.0001")
   private BigDecimal price;
 
+  @Schema(hidden = true)
   @AssertTrue(message = "quantity must be a whole number")
   public boolean isQuantityWholeNumber() {
     return isWholeNumber(quantity);
   }
 
+  @Schema(hidden = true)
   @AssertTrue(message = "price must be a whole number")
   public boolean isPriceWholeNumber() {
     return isWholeNumber(price);
