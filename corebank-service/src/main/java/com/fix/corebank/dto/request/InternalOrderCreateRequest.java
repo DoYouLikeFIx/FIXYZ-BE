@@ -1,9 +1,12 @@
 package com.fix.corebank.dto.request;
 
 import com.fix.corebank.vo.InternalOrderCreateCommand;
+import com.fix.common.validation.ContractPatterns;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import java.math.BigDecimal;
 
 public class InternalOrderCreateRequest {
@@ -12,6 +15,7 @@ public class InternalOrderCreateRequest {
   private Long accountId;
 
   @NotBlank
+  @Pattern(regexp = ContractPatterns.UUID_V4)
   private String clOrdId;
 
   @NotBlank
@@ -27,6 +31,16 @@ public class InternalOrderCreateRequest {
   @NotNull
   @DecimalMin("0.0001")
   private BigDecimal price;
+
+  @AssertTrue(message = "quantity must be a whole number")
+  public boolean isQuantityWholeNumber() {
+    return isWholeNumber(quantity);
+  }
+
+  @AssertTrue(message = "price must be a whole number")
+  public boolean isPriceWholeNumber() {
+    return isWholeNumber(price);
+  }
 
   public InternalOrderCreateCommand toVo() {
     return InternalOrderCreateCommand.of(accountId, clOrdId, symbol, side, quantity, price);
@@ -78,5 +92,9 @@ public class InternalOrderCreateRequest {
 
   public void setPrice(BigDecimal price) {
     this.price = price;
+  }
+
+  private boolean isWholeNumber(BigDecimal value) {
+    return value == null || value.stripTrailingZeros().scale() <= 0;
   }
 }
