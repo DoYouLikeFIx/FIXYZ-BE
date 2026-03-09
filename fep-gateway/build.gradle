@@ -20,6 +20,34 @@ tasks.named('forkedSpringBootRun') {
   dependsOn(':core-common:jar')
 }
 
+tasks.register('verifyCommittedOpenApi') {
+  dependsOn tasks.named('generateOpenApiDocs')
+
+  doLast {
+    File generated = file("$buildDir/openapi/${project.name}.json")
+    File committed = rootProject.file("contracts/openapi/${project.name}.json")
+
+    if (!generated.exists()) {
+      throw new GradleException("Generated OpenAPI file is missing: ${generated}")
+    }
+    if (!committed.exists()) {
+      throw new GradleException("Committed OpenAPI file is missing: ${committed}")
+    }
+
+    String generatedText = generated.getText('UTF-8').replace("\r\n", "\n")
+    String committedText = committed.getText('UTF-8').replace("\r\n", "\n")
+    if (generatedText != committedText) {
+      throw new GradleException(
+          "Committed OpenAPI snapshot is out of date. Regenerate :fep-gateway:generateOpenApiDocs and sync contracts/openapi/${project.name}.json."
+      )
+    }
+  }
+}
+
+tasks.named('check') {
+  dependsOn tasks.named('verifyCommittedOpenApi')
+}
+
 dependencies {
   implementation project(':core-common')
 
