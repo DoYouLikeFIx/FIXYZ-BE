@@ -1,28 +1,32 @@
-package com.fix.fepgateway.filter;
+package com.fix.fepgateway.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
-public class FepGatewayInternalSecretFilter extends OncePerRequestFilter {
+@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+public class InternalSecretFilter extends OncePerRequestFilter {
 
+  // TODO: extract to core-common when adding a 4th service
   private final String expectedSecret;
   private final ObjectMapper objectMapper;
 
-  public FepGatewayInternalSecretFilter(
+  public InternalSecretFilter(
       @Value("${internal.secret:local-internal-secret}") String expectedSecret,
       ObjectMapper objectMapper
   ) {
@@ -49,10 +53,7 @@ public class FepGatewayInternalSecretFilter extends OncePerRequestFilter {
   }
 
   private void writeUnauthorizedResponse(HttpServletRequest request, HttpServletResponse response) throws IOException {
-    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-    if (correlationId == null || correlationId.isBlank()) {
-      correlationId = UUID.randomUUID().toString();
-    }
+    String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
 
     ApiErrorResponse body = ApiErrorResponse.from(
         ErrorCode.AUTH_REQUIRED,
