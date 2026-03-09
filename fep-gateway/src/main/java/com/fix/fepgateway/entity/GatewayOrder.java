@@ -13,6 +13,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Locale;
 
 @Entity
 @Table(name = "gateway_orders")
@@ -247,11 +248,12 @@ public class GatewayOrder extends BaseTimeEntity {
   }
 
   public GatewayOrderResult toResult(Instant queryTime) {
+    FepOrdStatus resolvedStatus = resolveOrdStatus();
     return new GatewayOrderResult(
         clOrdId,
         fepOrderId,
-        FepExecType.valueOf(execType),
-        FepOrdStatus.valueOf(status),
+        resolveExecType(resolvedStatus),
+        resolvedStatus,
         executedQty,
         executedPrice,
         leavesQty,
@@ -325,6 +327,36 @@ public class GatewayOrder extends BaseTimeEntity {
   public void seedRequestedPriceIfMissing(Long requestedPrice) {
     if (this.requestedPrice == null && requestedPrice != null && requestedPrice > 0) {
       this.requestedPrice = requestedPrice;
+    }
+  }
+
+  private FepExecType resolveExecType(FepOrdStatus resolvedStatus) {
+    if (execType != null && !execType.isBlank()) {
+      try {
+        return FepExecType.valueOf(execType.trim().toUpperCase(Locale.ROOT));
+      } catch (IllegalArgumentException ignored) {
+        // Fall through to legacy/default mapping.
+      }
+    }
+
+    return switch (resolvedStatus) {
+      case FILLED -> FepExecType.FILL;
+      case PARTIALLY_FILLED -> FepExecType.PARTIAL_FILL;
+      case REJECTED -> FepExecType.REJECTED;
+      case CANCELED -> FepExecType.CANCELED;
+      case PENDING, UNKNOWN, MALFORMED -> FepExecType.PENDING_NEW;
+    };
+  }
+
+  private FepOrdStatus resolveOrdStatus() {
+    if (status == null || status.isBlank()) {
+      return FepOrdStatus.UNKNOWN;
+    }
+
+    try {
+      return FepOrdStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException ignored) {
+      return FepOrdStatus.UNKNOWN;
     }
   }
 }
