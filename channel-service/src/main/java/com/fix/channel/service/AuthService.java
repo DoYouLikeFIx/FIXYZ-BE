@@ -47,6 +47,7 @@ public class AuthService {
   private final MemberRepository memberRepository;
   private final AuditLogRepository auditLogRepository;
   private final PasswordEncoder passwordEncoder;
+  private final LoginIpRateLimitService loginIpRateLimitService;
   @SuppressWarnings("rawtypes")
   private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
   @Value("${server.servlet.session.cookie.name:SESSION}")
@@ -97,10 +98,16 @@ public class AuthService {
   @Transactional
   public AuthLoginResult login(AuthLoginCommand command, HttpServletRequest request) {
     String email = normalizeEmail(command.getEmail());
+    String clientIp = resolveClientIp(request);
+    if (loginIpRateLimitService.isBlocked(clientIp)) {
+      throw new BusinessException(ErrorCode.RATE_LIMIT_EXCEEDED, "rate limit exceeded");
+    }
+
     Member member = memberRepository.findByEmail(email).orElse(null);
 
     // 계정 존재 여부가 드러나지 않도록 실패 응답을 동일하게 유지한다.
     if (member == null) {
+      loginIpRateLimitService.recordFailure(clientIp);
       auditLogRepository.save(AuditLog.of(
           null,
           AuditAction.AUTH_LOGIN_FAILURE,
@@ -114,6 +121,7 @@ public class AuthService {
     boolean matched = passwordEncoder.matches(command.getPassword(), member.getPasswordHash());
     boolean active = ACTIVE_STATUS.equals(member.getStatus());
     if (!matched || !active) {
+      loginIpRateLimitService.recordFailure(clientIp);
       auditLogRepository.save(AuditLog.of(
           member.getId(),
           AuditAction.AUTH_LOGIN_FAILURE,

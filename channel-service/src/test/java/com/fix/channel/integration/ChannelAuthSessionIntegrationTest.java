@@ -217,6 +217,27 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   }
 
   @Test
+  void shouldRateLimitAfterFiveFailedLoginAttemptsFromSameIp() throws Exception {
+    for (int attempt = 0; attempt < 5; attempt++) {
+      mockMvc.perform(post("/api/v1/auth/login")
+              .with(csrf())
+              .param("email", "unknown.user@fixyz.com")
+              .param("password", "Wrong1234!"))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("AUTH_001"))
+          .andExpect(jsonPath("$.message").value("invalid credentials"));
+    }
+
+    mockMvc.perform(post("/api/v1/auth/login")
+            .with(csrf())
+            .param("email", "unknown.user@fixyz.com")
+            .param("password", "Wrong1234!"))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("RATE_001"))
+        .andExpect(jsonPath("$.message").value("rate limit exceeded"));
+  }
+
+  @Test
   void shouldRejectDuplicateRegistrationEmail() throws Exception {
     memberRepository.save(
         Member.registerUser("M-IT-REG-001", "dup.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Dup User")
