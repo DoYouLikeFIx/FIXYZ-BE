@@ -24,7 +24,11 @@ public enum ErrorCode {
   FEP_ORDER_NOT_FOUND("9008", "FEP order not found", 404),
   ORD_INVALID_REQUEST("ORD_001", "Invalid order request", 400),
   RATE_LIMIT_EXCEEDED("RATE_001", "Rate limit exceeded", 429),
-  FEP_GATEWAY_UNAVAILABLE("FEP_001", "FEP gateway unavailable", 503),
+  FEP_GATEWAY_UNAVAILABLE("FEP-001", "Exchange service unavailable", 503),
+  FEP_GATEWAY_TIMEOUT("FEP-002", "Exchange connectivity timeout", 504),
+  FEP_ORDER_REJECTED("FEP-003", "Exchange rejected order", 400),
+  FEP_INVALID_SESSION_STATE("FEP-004", "Invalid FIX session state", 503),
+  FEP_UNKNOWN_EXTERNAL("FEP-999", "Unknown external error", 502),
   SYS_RESOURCE_NOT_FOUND("SYS_404", "Resource not found", 404),
   SYS_INTERNAL_ERROR("SYS_500", "Internal server error", 500);
 
