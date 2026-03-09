@@ -3,6 +3,7 @@ package com.fix.fepgateway.controlplane.controller;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.validation.ContractPatterns;
 import com.fix.common.web.CommonHeaders;
+import com.fix.fepgateway.contract.validation.ClOrdIdContractValidator;
 import com.fix.fepgateway.controlplane.service.FepGatewayControlService;
 import com.fix.fepgateway.dto.request.FepInternalOrderStatusRequest;
 import com.fix.fepgateway.dto.response.FepOrderResponse;
@@ -37,7 +38,7 @@ public class FepGatewayInternalController {
       @PathVariable String clOrdId,
       @Valid @RequestBody FepInternalOrderStatusRequest request
   ) {
-    ClOrdIdHeaderValidator.requireExactMatch(clOrdIdHeader, clOrdId);
+    ClOrdIdContractValidator.requireExactMatch(clOrdIdHeader, clOrdId);
     return ApiResponse.success(
         FepOrderResponse.from(fepGatewayControlService.internalUpdateStatus(request.toVo(clOrdId)))
     );

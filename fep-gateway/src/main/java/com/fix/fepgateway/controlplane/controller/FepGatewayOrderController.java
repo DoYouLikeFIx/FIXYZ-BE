@@ -4,6 +4,7 @@ import com.fix.common.error.ApiResponse;
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.validation.ContractPatterns;
 import com.fix.common.web.CommonHeaders;
+import com.fix.fepgateway.contract.validation.ClOrdIdContractValidator;
 import com.fix.fepgateway.controlplane.service.FepGatewayControlService;
 import com.fix.fepgateway.dto.request.FepOrderCancelRequest;
 import com.fix.fepgateway.dto.request.FepOrderReplayRequest;
@@ -45,7 +46,7 @@ public class FepGatewayOrderController {
       @RequestHeader(CommonHeaders.X_CL_ORD_ID) String clOrdIdHeader,
       @Valid @RequestBody FepOrderSubmitRequest request
   ) {
-    ClOrdIdHeaderValidator.requireExactMatch(clOrdIdHeader, request.clOrdId());
+    ClOrdIdContractValidator.requireExactMatch(clOrdIdHeader, request.clOrdId());
     return ApiResponse.success(FepOrderResponse.from(fepGatewayControlService.submitOrder(request.toVo())));
   }
 
