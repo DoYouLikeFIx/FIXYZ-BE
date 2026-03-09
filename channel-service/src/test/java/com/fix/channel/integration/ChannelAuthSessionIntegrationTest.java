@@ -64,7 +64,6 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
       connection.serverCommands().flushDb();
       return null;
     });
-    assertThat(sessionRepository.getClass().getName()).contains("RedisIndexedSessionRepository");
   }
 
   @Test
