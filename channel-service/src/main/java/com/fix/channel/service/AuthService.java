@@ -14,7 +14,6 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
-import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -22,6 +21,8 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
@@ -44,15 +45,18 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   @SuppressWarnings("rawtypes")
   private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
-  @Value("${spring.session.timeout:${server.servlet.session.timeout:30m}}")
-  private Duration sessionTimeout = Duration.ofMinutes(30);
+  @Value("${server.servlet.session.cookie.name:SESSION}")
+  private String sessionCookieName;
+  @Value("${server.servlet.session.cookie.http-only:true}")
+  private boolean sessionCookieHttpOnly;
+  @Value("${server.servlet.session.cookie.same-site:strict}")
+  private String sessionCookieSameSite;
+  @Value("${server.servlet.session.cookie.secure:false}")
+  private boolean sessionCookieSecure;
 
   @Transactional
   public AuthRegisterResult register(AuthRegisterCommand command) {
     String email = normalizeEmail(command.getEmail());
-    if (memberRepository.existsByEmail(email)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "member already exists");
-    }
 
     Member member = Member.registerUser(
         nextMemberNo(),
@@ -60,7 +64,15 @@ public class AuthService {
         passwordEncoder.encode(command.getPassword()),
         command.getName().trim()
     );
-    Member saved = memberRepository.save(member);
+    Member saved;
+    try {
+      saved = memberRepository.saveAndFlush(member);
+    } catch (DataIntegrityViolationException ex) {
+      if (isDuplicateMemberEmail(ex)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "member already exists");
+      }
+      throw ex;
+    }
 
     auditLogRepository.save(AuditLog.of(
         saved.getId(),
@@ -122,7 +134,6 @@ public class AuthService {
     }
 
     HttpSession session = request.getSession(true);
-    session.setMaxInactiveInterval((int) sessionTimeout.toSeconds());
     session.setAttribute("AUTH_MEMBER_ID", member.getId());
     session.setAttribute("AUTH_MEMBER_NAME", member.getName());
     session.setAttribute(
@@ -171,7 +182,7 @@ public class AuthService {
     );
   }
 
-  public void logout(HttpServletRequest request) {
+  public ResponseCookie logout(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     if (session == null) {
       throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
@@ -191,10 +202,35 @@ public class AuthService {
 
     session.invalidate();
     SecurityContextHolder.clearContext();
+
+    return expiredSessionCookie();
   }
 
   private String normalizeEmail(String email) {
     return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private boolean isDuplicateMemberEmail(DataIntegrityViolationException ex) {
+    return containsIgnoreCase(ex.getMessage(), "uk_members_email")
+        || containsIgnoreCase(ex.getMessage(), "duplicate")
+        || containsIgnoreCase(ex.getMessage(), "members.email");
+  }
+
+  private boolean containsIgnoreCase(String text, String token) {
+    if (text == null || token == null) {
+      return false;
+    }
+    return text.toLowerCase(Locale.ROOT).contains(token.toLowerCase(Locale.ROOT));
+  }
+
+  private ResponseCookie expiredSessionCookie() {
+    return ResponseCookie.from(sessionCookieName, "")
+        .path("/")
+        .httpOnly(sessionCookieHttpOnly)
+        .secure(sessionCookieSecure)
+        .sameSite(sessionCookieSameSite)
+        .maxAge(0)
+        .build();
   }
 
   private String nextMemberNo() {
