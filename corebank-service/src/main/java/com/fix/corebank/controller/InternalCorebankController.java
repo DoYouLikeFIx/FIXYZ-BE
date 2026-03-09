@@ -1,6 +1,7 @@
 package com.fix.corebank.controller;
 
 import com.fix.common.error.ApiResponse;
+import com.fix.common.validation.ContractPatterns;
 import com.fix.corebank.dto.request.InternalOrderCreateRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
 import com.fix.corebank.dto.request.InternalPortfolioRequest;
@@ -8,6 +9,8 @@ import com.fix.corebank.dto.response.InternalOrderResponse;
 import com.fix.corebank.dto.response.InternalPortfolioResponse;
 import com.fix.corebank.service.CorebankOrderService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@Validated
 @RequestMapping("/internal/v1")
 public class InternalCorebankController {
 
@@ -37,6 +41,7 @@ public class InternalCorebankController {
 
   @GetMapping("/orders/{clOrdId}/requery")
   public ApiResponse<InternalOrderResponse> requeryOrder(
+      @Pattern(regexp = ContractPatterns.UUID_V4)
       @PathVariable String clOrdId,
       @ModelAttribute InternalOrderRequeryRequest request
   ) {
