@@ -10,11 +10,10 @@ import com.fix.channel.vo.MemberProfileResult;
 import com.fix.channel.vo.MemberProfileUpdateCommand;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
-import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.Map;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -146,10 +145,6 @@ public class MemberService {
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {
-    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-    if (correlationId == null || correlationId.isBlank()) {
-      return UUID.randomUUID().toString();
-    }
-    return correlationId;
+    return CorrelationIdSupport.ensureCorrelationId(request);
   }
 }
