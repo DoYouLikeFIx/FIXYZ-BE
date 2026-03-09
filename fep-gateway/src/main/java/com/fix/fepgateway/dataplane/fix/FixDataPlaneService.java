@@ -249,7 +249,7 @@ public class FixDataPlaneService {
       GatewayOrder order,
       long totalQty
   ) {
-    long executedPrice = order.isMarketOrder() ? command.getExecutionPrice() : order.referencePrice();
+    long executedPrice = resolveVirtualFillPrice(command, order);
     return new GatewayReplayExecution(
         new GatewayExecutionOutcome(
             order.getFepOrderId(),
@@ -264,5 +264,27 @@ public class FixDataPlaneService {
         null,
         FepReplayExecutionSource.VIRTUAL_FILL
     );
+  }
+
+  private long resolveVirtualFillPrice(GatewayOrderReplayCommand command, GatewayOrder order) {
+    if (order.isMarketOrder()) {
+      Long executionPrice = command.getExecutionPrice();
+      if (executionPrice == null || executionPrice <= 0) {
+        throw new BusinessException(
+            ErrorCode.CONTRACT_VALIDATION_FAILED,
+            "executionPrice is required for MARKET virtual fill replay"
+        );
+      }
+      return executionPrice;
+    }
+
+    Long referencePrice = order.referencePrice();
+    if (referencePrice == null || referencePrice <= 0) {
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          "reference price is required for virtual fill replay"
+      );
+    }
+    return referencePrice;
   }
 }
