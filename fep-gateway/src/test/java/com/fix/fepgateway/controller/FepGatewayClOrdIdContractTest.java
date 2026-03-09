@@ -17,42 +17,125 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("test")
 class FepGatewayClOrdIdContractTest {
 
+  private static final String VALID_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174001";
+  private static final String OTHER_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174002";
+  private static final String CANCEL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174003";
+
   @Autowired
   private MockMvc mockMvc;
 
   @Test
   void shouldAcceptSubmitWhenHeaderMatchesBodyClOrdId() throws Exception {
     mockMvc.perform(post("/fep/v1/orders")
-            .header(CommonHeaders.X_CL_ORD_ID, "CL-1001")
-            .param("clOrdId", "CL-1001")
-            .param("symbol", "AAPL")
-            .param("side", "BUY")
-            .param("qty", "10"))
+            .contentType("application/json")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-clord-1001")
+            .header(CommonHeaders.X_CL_ORD_ID, VALID_CL_ORD_ID)
+            .content("""
+                {
+                  "clOrdId": "%s",
+                  "accountId": "ACC-001",
+                  "symbol": "005930",
+                  "securityExchange": "KRX",
+                  "side": "BUY",
+                  "orderType": "LIMIT",
+                  "qty": 10,
+                  "price": 72000,
+                  "currency": "KRW",
+                  "referenceId": "ref-1001"
+                }
+                """.formatted(VALID_CL_ORD_ID)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.clOrdId").value("CL-1001"))
-        .andExpect(jsonPath("$.data.plane").value("CONTROL_PLANE_HTTP"));
+        .andExpect(jsonPath("$.data.clOrdId").value(VALID_CL_ORD_ID))
+        .andExpect(jsonPath("$.data.ordStatus").value("FILLED"));
   }
 
   @Test
   void shouldRejectSubmitWhenHeaderDoesNotMatchBodyClOrdId() throws Exception {
     mockMvc.perform(post("/fep/v1/orders")
-            .header(CommonHeaders.X_CL_ORD_ID, "CL-1002")
-            .param("clOrdId", "CL-9999")
-            .param("symbol", "AAPL")
-            .param("side", "BUY")
-            .param("qty", "10"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("ORD_001"));
+            .contentType("application/json")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-clord-1002")
+            .header(CommonHeaders.X_CL_ORD_ID, VALID_CL_ORD_ID)
+            .content("""
+                {
+                  "clOrdId": "%s",
+                  "accountId": "ACC-001",
+                  "symbol": "005930",
+                  "securityExchange": "KRX",
+                  "side": "BUY",
+                  "orderType": "LIMIT",
+                  "qty": 10,
+                  "price": 72000,
+                  "currency": "KRW",
+                  "referenceId": "ref-1002"
+                }
+                """.formatted(OTHER_CL_ORD_ID)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
   }
 
   @Test
-  void shouldRejectCancelWhenPathAndBodyClOrdIdDiffer() throws Exception {
-    mockMvc.perform(post("/fep/v1/orders/CL-2001/cancel")
-            .header(CommonHeaders.X_CL_ORD_ID, "CL-2001")
-            .param("clOrdId", "CL-7777")
-            .param("reason", "manual cancel"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("ORD_001"));
+  void shouldRejectCancelWhenPathAndBodyOrigClOrdIdDiffer() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders/{clOrdId}/cancel", CANCEL_CL_ORD_ID)
+            .contentType("application/json")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-clord-2001")
+            .content("""
+                {
+                  "origClOrdId": "%s",
+                  "symbol": "005930",
+                  "side": "BUY",
+                  "cancelQty": 10,
+                  "reason": "RECOVERY"
+                }
+                """.formatted(OTHER_CL_ORD_ID)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
+  }
+
+  @Test
+  void shouldRejectSubmitWhenHeaderIsNotUuidV4() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType("application/json")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-clord-1003")
+            .header(CommonHeaders.X_CL_ORD_ID, "not-a-uuid")
+            .content("""
+                {
+                  "clOrdId": "%s",
+                  "accountId": "ACC-001",
+                  "symbol": "005930",
+                  "securityExchange": "KRX",
+                  "side": "BUY",
+                  "orderType": "LIMIT",
+                  "qty": 10,
+                  "price": 72000,
+                  "currency": "KRW",
+                  "referenceId": "ref-1003"
+                }
+                """.formatted(VALID_CL_ORD_ID)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
+  }
+
+  @Test
+  void shouldRejectCancelWhenOrigClOrdIdIsNotUuidV4() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders/{clOrdId}/cancel", CANCEL_CL_ORD_ID)
+            .contentType("application/json")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-clord-2002")
+            .content("""
+                {
+                  "origClOrdId": "legacy-id",
+                  "symbol": "005930",
+                  "side": "BUY",
+                  "cancelQty": 10,
+                  "reason": "RECOVERY"
+                }
+                """))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
   }
 }
