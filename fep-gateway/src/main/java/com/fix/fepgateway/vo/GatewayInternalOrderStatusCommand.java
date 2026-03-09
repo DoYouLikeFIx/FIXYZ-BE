@@ -4,14 +4,63 @@ public class GatewayInternalOrderStatusCommand {
 
   private final String clOrdId;
   private final String status;
+  private final Long executedQty;
+  private final Long executedPrice;
+  private final String recoveryStatus;
+  private final String requeryStatus;
+  private final Long requeryExecutedQty;
+  private final Long requeryExecutedPrice;
+  private final String cancelFailureMode;
+  private final Long referencePrice;
 
-  private GatewayInternalOrderStatusCommand(String clOrdId, String status) {
+  private GatewayInternalOrderStatusCommand(
+      String clOrdId,
+      String status,
+      Long executedQty,
+      Long executedPrice,
+      String recoveryStatus,
+      String requeryStatus,
+      Long requeryExecutedQty,
+      Long requeryExecutedPrice,
+      String cancelFailureMode,
+      Long referencePrice
+  ) {
     this.clOrdId = clOrdId;
     this.status = status;
+    this.executedQty = executedQty;
+    this.executedPrice = executedPrice;
+    this.recoveryStatus = recoveryStatus;
+    this.requeryStatus = requeryStatus;
+    this.requeryExecutedQty = requeryExecutedQty;
+    this.requeryExecutedPrice = requeryExecutedPrice;
+    this.cancelFailureMode = cancelFailureMode;
+    this.referencePrice = referencePrice;
   }
 
-  public static GatewayInternalOrderStatusCommand of(String clOrdId, String status) {
-    return new GatewayInternalOrderStatusCommand(clOrdId, status);
+  public static GatewayInternalOrderStatusCommand of(
+      String clOrdId,
+      String status,
+      Long executedQty,
+      Long executedPrice,
+      String recoveryStatus,
+      String requeryStatus,
+      Long requeryExecutedQty,
+      Long requeryExecutedPrice,
+      String cancelFailureMode,
+      Long referencePrice
+  ) {
+    return new GatewayInternalOrderStatusCommand(
+        clOrdId,
+        status,
+        executedQty,
+        executedPrice,
+        recoveryStatus,
+        requeryStatus,
+        requeryExecutedQty,
+        requeryExecutedPrice,
+        cancelFailureMode,
+        referencePrice
+    );
   }
 
   public String getClOrdId() {
@@ -20,5 +69,37 @@ public class GatewayInternalOrderStatusCommand {
 
   public String getStatus() {
     return status;
+  }
+
+  public Long getExecutedQty() {
+    return executedQty;
+  }
+
+  public Long getExecutedPrice() {
+    return executedPrice;
+  }
+
+  public String getRecoveryStatus() {
+    return recoveryStatus;
+  }
+
+  public String getRequeryStatus() {
+    return requeryStatus;
+  }
+
+  public Long getRequeryExecutedQty() {
+    return requeryExecutedQty;
+  }
+
+  public Long getRequeryExecutedPrice() {
+    return requeryExecutedPrice;
+  }
+
+  public String getCancelFailureMode() {
+    return cancelFailureMode;
+  }
+
+  public Long getReferencePrice() {
+    return referencePrice;
   }
 }
