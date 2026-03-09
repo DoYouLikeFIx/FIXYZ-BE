@@ -1,4 +1,4 @@
-package com.fix.fepgateway.scenario;
+package com.fix.fepgateway.controller;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -13,11 +13,13 @@ import com.fix.fepgateway.entity.GatewayOrder;
 import com.fix.fepgateway.repository.GatewayOrderRepository;
 import com.fix.fepgateway.vo.GatewayExecutionOutcome;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -37,12 +39,17 @@ class FepGatewayOrderContractTest {
   private static final String CANCEL_TIMEOUT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174018";
   private static final String CANCEL_REJECT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174019";
   private static final String CANCEL_PARTIAL_OPEN_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174020";
+  private static final String LEGACY_PENDING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174021";
+  private static final String LEGACY_INVALID_STATUS_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174022";
 
   @Autowired
   private MockMvc mockMvc;
 
   @Autowired
   private GatewayOrderRepository gatewayOrderRepository;
+
+  @Autowired
+  private JdbcTemplate jdbcTemplate;
 
   @Test
   void shouldRejectSubmitWhenRequiredContractFieldsAreMissing() throws Exception {
@@ -138,6 +145,34 @@ class FepGatewayOrderContractTest {
         .andExpect(jsonPath("$.data.ordStatus").value("UNKNOWN"))
         .andExpect(jsonPath("$.data.message").isNotEmpty())
         .andExpect(jsonPath("$.data.queryTime").isNotEmpty());
+  }
+
+  @Test
+  void shouldFallbackExecTypeForLegacyRowsWithoutExecTypeBackfill() throws Exception {
+    insertLegacyOrder(LEGACY_PENDING_CL_ORD_ID, "PENDING", null, 72000L);
+
+    mockMvc.perform(get("/fep/v1/orders/{clOrdId}/status", LEGACY_PENDING_CL_ORD_ID)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-legacy-pending"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(LEGACY_PENDING_CL_ORD_ID))
+        .andExpect(jsonPath("$.data.execType").value("PENDING_NEW"))
+        .andExpect(jsonPath("$.data.ordStatus").value("PENDING"))
+        .andExpect(jsonPath("$.data.leavesQty").value(10));
+  }
+
+  @Test
+  void shouldReturnUnknownStatusForLegacyRowsWithInvalidStatusValue() throws Exception {
+    insertLegacyOrder(LEGACY_INVALID_STATUS_CL_ORD_ID, "LEGACY_PENDING", null, null);
+
+    mockMvc.perform(get("/fep/v1/orders/{clOrdId}/status", LEGACY_INVALID_STATUS_CL_ORD_ID)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-legacy-invalid"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(LEGACY_INVALID_STATUS_CL_ORD_ID))
+        .andExpect(jsonPath("$.data.execType").value("PENDING_NEW"))
+        .andExpect(jsonPath("$.data.ordStatus").value("UNKNOWN"))
+        .andExpect(jsonPath("$.data.leavesQty").value(10));
   }
 
   @Test
@@ -439,5 +474,58 @@ class FepGatewayOrderContractTest {
           "referenceId": "ref-contract-002"
         }
         """.formatted(clOrdId);
+  }
+
+  private void insertLegacyOrder(String clOrdId, String status, String execType, Long requestedPrice) {
+    Timestamp now = Timestamp.from(Instant.parse("2026-03-01T10:00:00Z"));
+    jdbcTemplate.update("""
+            INSERT INTO gateway_orders (
+              cl_ord_id,
+              symbol,
+              side,
+              qty,
+              order_type,
+              requested_price,
+              status,
+              fep_order_id,
+              exec_type,
+              executed_qty,
+              executed_price,
+              leaves_qty,
+              transact_time,
+              transport,
+              recovery_status,
+              cancel_failure_mode,
+              requery_ord_status,
+              requery_executed_qty,
+              requery_executed_price,
+              created_at,
+              updated_at,
+              version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+        clOrdId,
+        "005930",
+        "BUY",
+        BigDecimal.TEN,
+        "LIMIT",
+        requestedPrice,
+        status,
+        null,
+        execType,
+        0L,
+        null,
+        10L,
+        null,
+        "FIX",
+        "ACTIVE",
+        "NONE",
+        null,
+        null,
+        null,
+        now,
+        now,
+        0L
+    );
   }
 }
