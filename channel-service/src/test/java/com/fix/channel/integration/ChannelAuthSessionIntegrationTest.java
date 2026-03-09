@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.repository.SecurityEventRepository;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   private AuditLogRepository auditLogRepository;
 
   @Autowired
+  private SecurityEventRepository securityEventRepository;
+
+  @Autowired
   private PasswordEncoder passwordEncoder;
 
   @Autowired
@@ -60,6 +64,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   void setUp() {
     memberRepository.deleteAll();
     auditLogRepository.deleteAll();
+    securityEventRepository.deleteAll();
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
       return null;
@@ -235,6 +240,52 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("RATE_001"))
         .andExpect(jsonPath("$.message").value("rate limit exceeded"));
+  }
+
+  @Test
+  void shouldLockAccountAndDenyLoginUntilUnlock() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-LOGIN-003", "lock.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Lock User")
+    );
+
+    for (int attempt = 0; attempt < 4; attempt++) {
+      mockMvc.perform(post("/api/v1/auth/login")
+              .with(csrf())
+              .param("email", "lock.user@fixyz.com")
+              .param("password", "Wrong1234!"))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("AUTH_001"))
+          .andExpect(jsonPath("$.message").value("invalid credentials"));
+    }
+
+    mockMvc.perform(post("/api/v1/auth/login")
+            .with(csrf())
+            .param("email", "lock.user@fixyz.com")
+            .param("password", "Wrong1234!"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_002"))
+        .andExpect(jsonPath("$.message").value("account locked"));
+
+    mockMvc.perform(post("/api/v1/auth/login")
+            .with(csrf())
+            .param("email", "lock.user@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_002"))
+        .andExpect(jsonPath("$.message").value("account locked"));
+
+    Member locked = memberRepository.findById(saved.getId()).orElseThrow();
+    assertThat(locked.getStatus()).isEqualTo("LOCKED");
+    assertThat(locked.getFailedLoginAttempts()).isEqualTo(5);
+    assertThat(locked.getLockedAt()).isNotNull();
+
+    assertThat(securityEventRepository.findAll())
+        .anySatisfy(event -> {
+          assertThat(event.getMemberId()).isEqualTo(saved.getId());
+          assertThat(event.getEventType()).isEqualTo("ACCOUNT_LOCKED");
+          assertThat(event.getSeverity()).isEqualTo("HIGH");
+          assertThat(event.getIpAddress()).isNotBlank();
+        });
   }
 
   @Test
