@@ -2,7 +2,6 @@ package com.fix.corebank.integration;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -98,7 +97,7 @@ class CorebankExternalErrorFlowIntegrationTest {
 
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
-        .withHeader(CommonHeaders.X_CORRELATION_ID, matching("corebank-submit-" + CL_ORD_ID_TIMEOUT + "-.+")));
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-timeout")));
   }
 
   @Test
