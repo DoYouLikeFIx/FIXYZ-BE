@@ -36,6 +36,7 @@ class FepGatewayReplayScenarioTest {
   private static final String REQUERY_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174039";
   private static final String REQUERY_REJECTED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174040";
   private static final String REQUERY_CANCELED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174041";
+  private static final String LIMIT_REFERENCE_MISSING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174042";
   private static final String OPERATOR_ID = "123e4567-e89b-42d3-a456-426614174101";
   private static final String APPROVER_ID = "123e4567-e89b-42d3-a456-426614174102";
   private static final String LONG_REASON =
@@ -392,6 +393,46 @@ class FepGatewayReplayScenarioTest {
                 """.formatted(OPERATOR_ID, APPROVER_ID, LONG_REASON)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.code").value("VALIDATION-002"));
+  }
+
+  @Test
+  void shouldRejectVirtualFillReplayWhenLimitReferencePriceIsMissing() throws Exception {
+    GatewayOrder order = GatewayOrder.received(
+        LIMIT_REFERENCE_MISSING_CL_ORD_ID,
+        "005930",
+        "BUY",
+        BigDecimal.TEN,
+        "LIMIT",
+        null,
+        "FIX"
+    );
+    order.applyExecution(new GatewayExecutionOutcome(
+        null,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.UNKNOWN,
+        0L,
+        null,
+        10L,
+        Instant.parse("2026-03-01T10:05:30Z")
+    ));
+    order.updateRecoveryStatus("ESCALATED");
+    gatewayOrderRepository.save(order);
+
+    mockMvc.perform(post("/fep/v1/orders/{clOrdId}/replay", LIMIT_REFERENCE_MISSING_CL_ORD_ID)
+            .contentType("application/json")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-replay-limit-no-reference")
+            .content("""
+                {
+                  "manualDecision": "APPROVE",
+                  "operatorId": "%s",
+                  "approvedBy": "%s",
+                  "evidenceRef": "OPS-INC-013",
+                  "reason": "%s"
+                }
+                """.formatted(OPERATOR_ID, APPROVER_ID, LONG_REASON)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
   }
 
   @Test
