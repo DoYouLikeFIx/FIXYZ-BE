@@ -5,6 +5,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
@@ -38,6 +41,7 @@ class CorebankInternalApiSkeletonTest {
 
   private static final String CORE_CL_ORD_ID_1 = "123e4567-e89b-42d3-a456-426614174210";
   private static final String CORE_CL_ORD_ID_2 = "123e4567-e89b-42d3-a456-426614174211";
+  private static final String CORE_CL_ORD_ID_3 = "123e4567-e89b-42d3-a456-426614174212";
 
   @Autowired
   private MockMvc mockMvc;
@@ -116,6 +120,28 @@ class CorebankInternalApiSkeletonTest {
             .param("price", "70100.1000"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+  }
+
+  @Test
+  void shouldExposeUserMessageKeyAndOperatorCodeForMappedExternalErrors() throws Exception {
+    fepClient.setSubmitFailure(new BusinessException(
+        ErrorCode.FEP_GATEWAY_TIMEOUT,
+        ErrorCode.FEP_GATEWAY_TIMEOUT.defaultMessage(),
+        new ErrorMetadata("error.fep.timeout", "TIMEOUT")
+    ));
+
+    mockMvc.perform(post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("accountId", "1")
+            .param("clOrdId", CORE_CL_ORD_ID_3)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isGatewayTimeout())
+        .andExpect(jsonPath("$.code").value("FEP-002"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.fep.timeout"))
+        .andExpect(jsonPath("$.operatorCode").value("TIMEOUT"));
   }
 
   @TestConfiguration

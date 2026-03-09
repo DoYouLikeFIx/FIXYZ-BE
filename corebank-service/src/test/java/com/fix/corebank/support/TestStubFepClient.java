@@ -12,6 +12,8 @@ public class TestStubFepClient extends FepClient {
   private final AtomicInteger queryCalls = new AtomicInteger();
   private volatile FepOrderResult submitResult;
   private volatile FepOrderResult queryResult;
+  private volatile RuntimeException submitFailure;
+  private volatile RuntimeException queryFailure;
 
   public TestStubFepClient() {
     super(RestClient.builder(), "http://localhost:65535", "test-internal-secret");
@@ -20,12 +22,18 @@ public class TestStubFepClient extends FepClient {
   @Override
   public FepOrderResult submitOrder(FepOutboundOrderPayload payload, String correlationId) {
     submitCalls.incrementAndGet();
+    if (submitFailure != null) {
+      throw submitFailure;
+    }
     return submitResult;
   }
 
   @Override
   public FepOrderResult queryOrderStatus(String clOrdId, String correlationId) {
     queryCalls.incrementAndGet();
+    if (queryFailure != null) {
+      throw queryFailure;
+    }
     return queryResult;
   }
 
@@ -35,6 +43,14 @@ public class TestStubFepClient extends FepClient {
 
   public void setQueryResult(FepOrderResult queryResult) {
     this.queryResult = queryResult;
+  }
+
+  public void setSubmitFailure(RuntimeException submitFailure) {
+    this.submitFailure = submitFailure;
+  }
+
+  public void setQueryFailure(RuntimeException queryFailure) {
+    this.queryFailure = queryFailure;
   }
 
   public int submitCalls() {
@@ -50,5 +66,7 @@ public class TestStubFepClient extends FepClient {
     queryCalls.set(0);
     submitResult = null;
     queryResult = null;
+    submitFailure = null;
+    queryFailure = null;
   }
 }
