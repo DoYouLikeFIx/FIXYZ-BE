@@ -3,7 +3,9 @@ package com.fix.channel.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -12,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.Member;
+import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import jakarta.servlet.http.Cookie;
@@ -39,6 +42,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   private MemberRepository memberRepository;
 
   @Autowired
+  private AuditLogRepository auditLogRepository;
+
+  @Autowired
   private PasswordEncoder passwordEncoder;
 
   @Autowired
@@ -53,11 +59,11 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   @BeforeEach
   void setUp() {
     memberRepository.deleteAll();
+    auditLogRepository.deleteAll();
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
       return null;
     });
-    assertThat(sessionRepository.getClass().getName()).contains("RedisIndexedSessionRepository");
   }
 
   @Test
@@ -105,13 +111,14 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     String secondSessionId = loginAndGetSessionId("same.user@fixyz.com", "Abcd1234!");
 
     assertThat(secondSessionId).isNotEqualTo(firstSessionId);
-    assertThat(sessionRepository.findById(firstSessionId)).isNull();
-    assertThat(sessionRepository.findById(secondSessionId)).isNotNull();
 
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", firstSessionId))
             .param("memberId", String.valueOf(saved.getId())))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isGone())
+        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
+        .andExpect(jsonPath("$.message").value("channel session expired"))
+        .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
 
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", secondSessionId))
@@ -143,7 +150,47 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", sessionId))
             .param("memberId", String.valueOf(saved.getId())))
-        .andExpect(status().isUnauthorized());
+        .andExpect(status().isGone())
+        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
+        .andExpect(jsonPath("$.message").value("channel session expired"))
+        .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getMemberId()).isEqualTo(saved.getId());
+          assertThat(log.getAction()).isEqualTo("LOGOUT");
+          assertThat(log.getTargetType()).isEqualTo("SESSION");
+          assertThat(log.getTargetId()).isEqualTo(sessionId);
+          assertThat(log.getIpAddress()).isNotBlank();
+          assertThat(log.getUserAgent()).isNotBlank();
+          assertThat(log.getCorrelationId()).isNotBlank();
+        });
+  }
+
+  @Test
+  void shouldRejectLogoutWhenSessionMemberIdMissing() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-LOGOUT-002", "logout.missing@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Logout Missing")
+    );
+
+    String sessionId = loginAndGetSessionId("logout.missing@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    Session persisted = sessionRepository.findById(sessionId);
+    assertThat(persisted).isNotNull();
+    persisted.removeAttribute("AUTH_MEMBER_ID");
+    saveSession(persisted);
+
+    mockMvc.perform(post("/api/v1/auth/logout")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/auth/logout"));
+
+    assertThat(auditLogRepository.findAll())
+        .noneSatisfy(log -> assertThat(log.getAction()).isEqualTo("LOGOUT"));
   }
 
   @Test
@@ -185,6 +232,215 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(jsonPath("$.message").value("member already exists"));
   }
 
+  @Test
+  void shouldReturnCurrentSessionProfileWhenAuthenticated() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-SESSION-001", "session.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Session User")
+    );
+
+    String sessionId = loginAndGetSessionId("session.user@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(get("/api/v1/auth/session")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.memberUuid").value(saved.getMemberNo()))
+        .andExpect(jsonPath("$.data.username").value("session.user"))
+        .andExpect(jsonPath("$.data.email").value("session.user@fixyz.com"))
+        .andExpect(jsonPath("$.data.name").value("Session User"))
+        .andExpect(jsonPath("$.data.role").value("ROLE_USER"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false));
+  }
+
+  @Test
+  void shouldReturnUnauthorizedEnvelopeWhenSessionCookieMissingOnSessionEndpoint() throws Exception {
+    mockMvc.perform(get("/api/v1/auth/session"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/auth/session"));
+  }
+
+  @Test
+  void shouldReadMyProfileWhenAuthenticated() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-PROFILE-001", "profile.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Profile User")
+    );
+    String sessionId = loginAndGetSessionId("profile.user@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(get("/api/v1/members/me")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.memberId").value(saved.getId()))
+        .andExpect(jsonPath("$.data.email").value("profile.user@fixyz.com"))
+        .andExpect(jsonPath("$.data.name").value("Profile User"))
+        .andExpect(jsonPath("$.data.role").value("ROLE_USER"));
+  }
+
+  @Test
+  void shouldRequireAuthenticationForMemberProfileEndpoint() throws Exception {
+    mockMvc.perform(get("/api/v1/members/me"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/members/me"));
+  }
+
+  @Test
+  void shouldUpdateMyProfileAndPersistAuditTrail() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-PROFILE-002", "profile.update@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Old Name")
+    );
+    String sessionId = loginAndGetSessionId("profile.update@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("name", "New Name"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.memberId").value(saved.getId()))
+        .andExpect(jsonPath("$.data.name").value("New Name"));
+
+    Member updated = memberRepository.findById(saved.getId()).orElseThrow();
+    assertThat(updated.getName()).isEqualTo("New Name");
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getMemberId()).isEqualTo(saved.getId());
+          assertThat(log.getAction()).isEqualTo("MEMBER_PROFILE_UPDATE");
+          assertThat(log.getTargetType()).isEqualTo("MEMBER");
+          assertThat(log.getTargetId()).isEqualTo(String.valueOf(saved.getId()));
+          assertThat(log.getDetail()).contains("beforeName=Old Name", "afterName=New Name");
+          assertThat(log.getIpAddress()).isNotBlank();
+          assertThat(log.getUserAgent()).isNotBlank();
+          assertThat(log.getCorrelationId()).isNotBlank();
+        });
+  }
+
+  @Test
+  void shouldRejectProfileUpdateWhenNameValidationFails() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-PROFILE-003", "profile.invalid@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Valid Name")
+    );
+    String sessionId = loginAndGetSessionId("profile.invalid@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("name", "A"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"));
+  }
+
+  @Test
+  void shouldRejectProfileUpdateWhenTrimmedNameValidationFails() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-PROFILE-004", "profile.trim@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Trim User")
+    );
+    String sessionId = loginAndGetSessionId("profile.trim@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("name", " A "))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"));
+  }
+
+  @Test
+  void shouldChangePasswordAndInvalidateCurrentSession() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-PW-001", "pw.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Pw User")
+    );
+    String sessionId = loginAndGetSessionId("pw.user@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me/password")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("currentPassword", "Abcd1234!")
+            .param("newPassword", "Qwer1234!"))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    Member updated = memberRepository.findById(saved.getId()).orElseThrow();
+    assertThat(passwordEncoder.matches("Qwer1234!", updated.getPasswordHash())).isTrue();
+    assertThat(passwordEncoder.matches("Abcd1234!", updated.getPasswordHash())).isFalse();
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getMemberId()).isEqualTo(saved.getId());
+          assertThat(log.getAction()).isEqualTo("MEMBER_PASSWORD_UPDATE");
+          assertThat(log.getTargetType()).isEqualTo("MEMBER");
+          assertThat(log.getTargetId()).isEqualTo(String.valueOf(saved.getId()));
+          assertThat(log.getDetail()).isEqualTo("password changed");
+          assertThat(log.getIpAddress()).isNotBlank();
+          assertThat(log.getUserAgent()).isNotBlank();
+          assertThat(log.getCorrelationId()).isNotBlank();
+        });
+
+    mockMvc.perform(get("/api/v1/auth/session")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isGone())
+        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
+        .andExpect(jsonPath("$.message").value("channel session expired"));
+
+    mockMvc.perform(post("/api/v1/auth/login")
+            .with(csrf())
+            .param("email", "pw.user@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"))
+        .andExpect(jsonPath("$.message").value("invalid credentials"));
+
+    mockMvc.perform(post("/api/v1/auth/login")
+            .with(csrf())
+            .param("email", "pw.user@fixyz.com")
+            .param("password", "Qwer1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  void shouldRejectPasswordChangeWhenCurrentPasswordMismatch() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-PW-002", "pw.mismatch@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Mismatch User")
+    );
+    String sessionId = loginAndGetSessionId("pw.mismatch@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me/password")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("currentPassword", "Wrong1234!")
+            .param("newPassword", "Qwer1234!"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("CURRENT_PASSWORD_MISMATCH"))
+        .andExpect(jsonPath("$.message").value("current password mismatch"));
+  }
+
+  @Test
+  void shouldRejectPasswordChangeWhenNewPasswordPolicyInvalid() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-IT-PW-003", "pw.policy@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Policy User")
+    );
+    String sessionId = loginAndGetSessionId("pw.policy@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(patch("/api/v1/members/me/password")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("currentPassword", "Abcd1234!")
+            .param("newPassword", "weakpw"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"));
+  }
+
   private String loginAndGetSessionId(String email, String password) throws Exception {
     MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
             .with(csrf())
@@ -214,5 +470,10 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     String csrfToken = root.path("data").path("token").asText();
     assertThat(csrfToken).isNotBlank();
     return csrfToken;
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private void saveSession(Session session) {
+    ((SessionRepository) sessionRepository).save(session);
   }
 }

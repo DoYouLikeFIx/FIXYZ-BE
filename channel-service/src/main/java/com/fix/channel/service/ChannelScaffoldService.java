@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import com.fix.channel.entity.AuditLog;
+import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.Notification;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OtpVerification;
@@ -91,7 +92,7 @@ public class ChannelScaffoldService {
 
     auditLogRepository.save(AuditLog.of(
         command.getMemberId(),
-        "ORDER_SESSION_CREATE",
+        AuditAction.ORDER_SESSION_CREATE,
         "ORDER_SESSION",
         String.valueOf(session.getId()),
         "clOrdId=" + session.getClOrdId()

@@ -179,6 +179,77 @@
         }
       }
     },
+    "/api/v1/members/me": {
+      "get": {
+        "tags": [
+          "member-controller"
+        ],
+        "operationId": "readMyProfile",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMemberProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "member-controller"
+        ],
+        "operationId": "updateMyProfile",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MemberProfileUpdateRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMemberProfileResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/me/password": {
+      "patch": {
+        "tags": [
+          "member-controller"
+        ],
+        "operationId": "updateMyPassword",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MemberPasswordUpdateRequest"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/api/v1/ping": {
       "get": {
         "tags": [
@@ -241,6 +312,26 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "currentSession",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAuthSessionResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -566,6 +657,77 @@
           }
         }
       },
+      "MemberProfileUpdateRequest": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "maxLength": 100,
+            "minLength": 2,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseMemberProfileResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MemberProfileResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MemberProfileResponse": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MemberPasswordUpdateRequest": {
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "newPassword": {
+            "minLength": 1,
+            "pattern": "^(?\u003d.*[A-Z])(?\u003d.*\\d)(?\u003d.*[@$!%*?\u0026])[A-Za-z\\d@$!%*?\u0026]{8,}$",
+            "type": "string"
+          }
+        }
+      },
       "OrderSessionQueryRequest": {
         "type": "object",
         "properties": {
@@ -644,6 +806,50 @@
             "items": {
               "$ref": "#/components/schemas/NotificationItemResponse"
             }
+          }
+        }
+      },
+      "ApiResponseAuthSessionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuthSessionResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuthSessionResponse": {
+        "type": "object",
+        "properties": {
+          "memberUuid": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "totpEnrolled": {
+            "type": "boolean"
+          },
+          "accountId": {
+            "type": "string"
           }
         }
       },

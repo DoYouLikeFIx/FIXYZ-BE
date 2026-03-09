@@ -38,6 +38,7 @@ public abstract class ChannelContainersIntegrationTestBase {
     registry.add("spring.datasource.password", MYSQL_CONTAINER::getPassword);
     registry.add("spring.datasource.driver-class-name", MYSQL_CONTAINER::getDriverClassName);
     registry.add("spring.session.store-type", () -> "redis");
+    registry.add("spring.session.redis.repository-type", () -> "indexed");
     registry.add("spring.data.redis.host", REDIS_CONTAINER::getHost);
     registry.add("spring.data.redis.port", () -> REDIS_CONTAINER.getMappedPort(6379));
   }

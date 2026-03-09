@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import com.fix.channel.entity.AuditLog;
+import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
@@ -8,23 +9,30 @@ import com.fix.channel.vo.AuthLoginCommand;
 import com.fix.channel.vo.AuthLoginResult;
 import com.fix.channel.vo.AuthRegisterCommand;
 import com.fix.channel.vo.AuthRegisterResult;
+import com.fix.channel.vo.AuthSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
-import java.time.Duration;
+import java.sql.SQLException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
 import org.springframework.stereotype.Service;
@@ -41,13 +49,18 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   @SuppressWarnings("rawtypes")
   private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
+  @Value("${server.servlet.session.cookie.name:SESSION}")
+  private String sessionCookieName;
+  @Value("${server.servlet.session.cookie.http-only:true}")
+  private boolean sessionCookieHttpOnly;
+  @Value("${server.servlet.session.cookie.same-site:strict}")
+  private String sessionCookieSameSite;
+  @Value("${server.servlet.session.cookie.secure:false}")
+  private boolean sessionCookieSecure;
 
   @Transactional
   public AuthRegisterResult register(AuthRegisterCommand command) {
     String email = normalizeEmail(command.getEmail());
-    if (memberRepository.existsByEmail(email)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "member already exists");
-    }
 
     Member member = Member.registerUser(
         nextMemberNo(),
@@ -55,11 +68,19 @@ public class AuthService {
         passwordEncoder.encode(command.getPassword()),
         command.getName().trim()
     );
-    Member saved = memberRepository.save(member);
+    Member saved;
+    try {
+      saved = memberRepository.saveAndFlush(member);
+    } catch (DataIntegrityViolationException ex) {
+      if (isDuplicateMemberEmail(ex)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "member already exists");
+      }
+      throw ex;
+    }
 
     auditLogRepository.save(AuditLog.of(
         saved.getId(),
-        "AUTH_REGISTER",
+        AuditAction.AUTH_REGISTER,
         "MEMBER",
         String.valueOf(saved.getId()),
         "email=" + saved.getEmail()
@@ -82,7 +103,7 @@ public class AuthService {
     if (member == null) {
       auditLogRepository.save(AuditLog.of(
           null,
-          "AUTH_LOGIN_FAILURE",
+          AuditAction.AUTH_LOGIN_FAILURE,
           "MEMBER",
           null,
           "email=" + email
@@ -95,7 +116,7 @@ public class AuthService {
     if (!matched || !active) {
       auditLogRepository.save(AuditLog.of(
           member.getId(),
-          "AUTH_LOGIN_FAILURE",
+          AuditAction.AUTH_LOGIN_FAILURE,
           "MEMBER",
           String.valueOf(member.getId()),
           "email=" + email
@@ -105,7 +126,7 @@ public class AuthService {
 
     auditLogRepository.save(AuditLog.of(
         member.getId(),
-        "AUTH_LOGIN_SUCCESS",
+        AuditAction.AUTH_LOGIN_SUCCESS,
         "MEMBER",
         String.valueOf(member.getId()),
         "email=" + email
@@ -117,7 +138,6 @@ public class AuthService {
     }
 
     HttpSession session = request.getSession(true);
-    session.setMaxInactiveInterval((int) Duration.ofMinutes(30).toSeconds());
     session.setAttribute("AUTH_MEMBER_ID", member.getId());
     session.setAttribute("AUTH_MEMBER_NAME", member.getName());
     session.setAttribute(
@@ -139,18 +159,130 @@ public class AuthService {
     return AuthLoginResult.of(member.getId(), member.getEmail(), member.getName());
   }
 
-  public void logout(HttpServletRequest request) {
+  @Transactional(readOnly = true)
+  public AuthSessionResult currentSession(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     if (session == null) {
-      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "authentication required");
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
+
+    Object memberIdAttr = session.getAttribute("AUTH_MEMBER_ID");
+    if (!(memberIdAttr instanceof Number memberIdNumber)) {
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
+    }
+
+    Long memberId = memberIdNumber.longValue();
+    Member member = memberRepository.findById(memberId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
+
+    return AuthSessionResult.of(
+        member.getMemberNo(),
+        resolveUsername(member.getEmail()),
+        member.getEmail(),
+        member.getName(),
+        member.getRole(),
+        false,
+        null
+    );
+  }
+
+  public ResponseCookie logout(HttpServletRequest request) {
+    HttpSession session = request.getSession(false);
+    if (session == null) {
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
+    }
+
+    Long memberId = extractMemberId(session);
+    if (memberId == null) {
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
+    }
+
+    auditLogRepository.save(AuditLog.of(
+        memberId,
+        AuditAction.LOGOUT,
+        "SESSION",
+        session.getId(),
+        "logout completed",
+        resolveClientIp(request),
+        resolveUserAgent(request),
+        resolveCorrelationId(request)
+    ));
 
     session.invalidate();
     SecurityContextHolder.clearContext();
+
+    return expiredSessionCookie();
   }
 
   private String normalizeEmail(String email) {
     return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private boolean isDuplicateMemberEmail(DataIntegrityViolationException ex) {
+    Throwable current = ex;
+    while (current != null) {
+      if (current instanceof ConstraintViolationException constraintViolation) {
+        if (containsIgnoreCase(constraintViolation.getConstraintName(), "uk_members_email")) {
+          return true;
+        }
+        SQLException sqlException = constraintViolation.getSQLException();
+        if (isDuplicateSqlException(sqlException)) {
+          return true;
+        }
+      }
+
+      if (current instanceof SQLIntegrityConstraintViolationException sqlIntegrity) {
+        if (isDuplicateSqlException(sqlIntegrity)) {
+          return true;
+        }
+      }
+
+      if (current instanceof SQLException sqlException) {
+        if (isDuplicateSqlException(sqlException)) {
+          return true;
+        }
+      }
+
+      current = current.getCause();
+    }
+
+    return containsIgnoreCase(ex.getMessage(), "uk_members_email")
+        || containsIgnoreCase(ex.getMessage(), "duplicate")
+        || containsIgnoreCase(ex.getMessage(), "members.email");
+  }
+
+  private boolean containsIgnoreCase(String text, String token) {
+    if (text == null || token == null) {
+      return false;
+    }
+    return text.toLowerCase(Locale.ROOT).contains(token.toLowerCase(Locale.ROOT));
+  }
+
+  private boolean isDuplicateSqlException(SQLException ex) {
+    if (ex == null) {
+      return false;
+    }
+
+    if ("23505".equals(ex.getSQLState())) {
+      return true;
+    }
+
+    if (ex.getErrorCode() == 1062) {
+      return true;
+    }
+
+    return "23000".equals(ex.getSQLState())
+        && containsIgnoreCase(ex.getMessage(), "duplicate");
+  }
+
+  private ResponseCookie expiredSessionCookie() {
+    return ResponseCookie.from(sessionCookieName, "")
+        .path("/")
+        .httpOnly(sessionCookieHttpOnly)
+        .secure(sessionCookieSecure)
+        .sameSite(sessionCookieSameSite)
+        .maxAge(0)
+        .build();
   }
 
   private String nextMemberNo() {
@@ -176,5 +308,45 @@ public class AuthService {
     sessions.keySet().stream()
         .filter(sessionId -> !sessionId.equals(currentSessionId))
         .forEach(sessionRepository::deleteById);
+  }
+
+  private Long extractMemberId(HttpSession session) {
+    Object memberIdAttr = session.getAttribute("AUTH_MEMBER_ID");
+    if (memberIdAttr instanceof Number memberIdNumber) {
+      return memberIdNumber.longValue();
+    }
+    return null;
+  }
+
+  private String resolveUsername(String email) {
+    int atIndex = email.indexOf('@');
+    if (atIndex > 0) {
+      return email.substring(0, atIndex);
+    }
+    return email;
+  }
+
+  private String resolveClientIp(HttpServletRequest request) {
+    String forwardedFor = request.getHeader("X-Forwarded-For");
+    if (forwardedFor != null && !forwardedFor.isBlank()) {
+      return forwardedFor.split(",")[0].trim();
+    }
+    return request.getRemoteAddr();
+  }
+
+  private String resolveUserAgent(HttpServletRequest request) {
+    String userAgent = request.getHeader("User-Agent");
+    if (userAgent == null || userAgent.isBlank()) {
+      return "unknown";
+    }
+    return userAgent;
+  }
+
+  private String resolveCorrelationId(HttpServletRequest request) {
+    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
+    if (correlationId == null || correlationId.isBlank()) {
+      return UUID.randomUUID().toString();
+    }
+    return correlationId;
   }
 }
