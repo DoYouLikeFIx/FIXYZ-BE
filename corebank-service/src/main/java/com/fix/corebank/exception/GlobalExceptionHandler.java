@@ -1,4 +1,4 @@
-package com.fix.corebank.config;
+package com.fix.corebank.exception;
 
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.BusinessException;
@@ -6,6 +6,7 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.error.FixException;
 import com.fix.common.error.SystemException;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
@@ -17,8 +18,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-import java.util.UUID;
-
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -69,7 +68,7 @@ public class GlobalExceptionHandler {
       com.fix.common.error.ErrorMetadata metadata,
       HttpServletRequest request
   ) {
-    String correlationId = resolveCorrelationId(request);
+    String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
     ApiErrorResponse response = ApiErrorResponse.from(errorCode, message, request.getRequestURI(), correlationId, metadata);
 
     return ResponseEntity
@@ -89,11 +88,4 @@ public class GlobalExceptionHandler {
     return ErrorCode.BAD_REQUEST.defaultMessage();
   }
 
-  private String resolveCorrelationId(HttpServletRequest request) {
-    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-    if (correlationId == null || correlationId.isBlank()) {
-      return UUID.randomUUID().toString();
-    }
-    return correlationId;
-  }
 }
