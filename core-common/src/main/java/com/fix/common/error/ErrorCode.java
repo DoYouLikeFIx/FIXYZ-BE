@@ -15,6 +15,7 @@ public enum ErrorCode {
   CANCEL_TIMEOUT("9004", "Cancel request timed out", 504),
   INVALID_SESSION_STATUS("9009", "Replay target is not escalated", 409),
   AUTH_UNAUTHORIZED("AUTH_001", "Unauthorized", 401),
+  AUTH_ACCOUNT_LOCKED("AUTH_002", "Account locked", 401),
   AUTH_REQUIRED("AUTH-003", "Authentication required", 401),
   CHANNEL_SESSION_NOT_FOUND("CHANNEL_001", "Channel session not found", 404),
   CHANNEL_SESSION_EXPIRED("CHANNEL-001", "Channel session expired", 410),
