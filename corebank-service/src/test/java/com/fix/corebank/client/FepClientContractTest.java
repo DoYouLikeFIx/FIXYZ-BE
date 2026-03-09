@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.fep.FepOrderType;
@@ -259,5 +260,125 @@ class FepClientContractTest {
     assertThatThrownBy(() -> fepClient.submitOrder(payload, "trace-client-005"))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("clOrdId");
+  }
+
+  @Test
+  void shouldMapGatewayTimeoutToNormalizedExternalTaxonomy() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(504)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "9004",
+                  "message": "cancel acknowledgement timed out",
+                  "path": "/fep/v1/orders",
+                  "correlationId": "trace-fep-002"
+                }
+                """)));
+
+    FepOutboundOrderPayload payload = new FepOutboundOrderPayload(
+        CL_ORD_ID_1,
+        "ACC-001",
+        "005930",
+        FepSecurityExchange.KRX,
+        FepSide.BUY,
+        FepOrderType.LIMIT,
+        10L,
+        72000L,
+        null,
+        null,
+        null,
+        null,
+        "KRW",
+        "ref-timeout-001"
+    );
+
+    assertThatThrownBy(() -> fepClient.submitOrder(payload, "trace-timeout-001"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FEP_GATEWAY_TIMEOUT);
+          assertThat(ex.getMetadata().userMessageKey()).isEqualTo("error.fep.timeout");
+          assertThat(ex.getMetadata().operatorCode()).isEqualTo("TIMEOUT");
+        });
+  }
+
+  @Test
+  void shouldMapGatewayRejectionToNormalizedExternalTaxonomy() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(400)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "9097",
+                  "message": "exchange rejected cancel request",
+                  "path": "/fep/v1/orders",
+                  "correlationId": "trace-fep-003"
+                }
+                """)));
+
+    FepOutboundOrderPayload payload = new FepOutboundOrderPayload(
+        CL_ORD_ID_2,
+        "ACC-001",
+        "005930",
+        FepSecurityExchange.KRX,
+        FepSide.BUY,
+        FepOrderType.LIMIT,
+        10L,
+        72000L,
+        null,
+        null,
+        null,
+        null,
+        "KRW",
+        "ref-reject-001"
+    );
+
+    assertThatThrownBy(() -> fepClient.submitOrder(payload, "trace-reject-001"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FEP_ORDER_REJECTED);
+          assertThat(ex.getMetadata().userMessageKey()).isEqualTo("error.fep.rejected");
+          assertThat(ex.getMetadata().operatorCode()).isEqualTo("ORDER_REJECTED");
+        });
+  }
+
+  @Test
+  void shouldFallbackUnknownExternalGatewayCodes() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(409)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "9099",
+                  "message": "concurrency failure",
+                  "path": "/fep/v1/orders",
+                  "correlationId": "trace-fep-999"
+                }
+                """)));
+
+    FepOutboundOrderPayload payload = new FepOutboundOrderPayload(
+        CL_ORD_ID_3,
+        "ACC-001",
+        "005930",
+        FepSecurityExchange.KRX,
+        FepSide.BUY,
+        FepOrderType.LIMIT,
+        10L,
+        72000L,
+        null,
+        null,
+        null,
+        null,
+        "KRW",
+        "ref-unknown-001"
+    );
+
+    assertThatThrownBy(() -> fepClient.submitOrder(payload, "trace-unknown-001"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FEP_UNKNOWN_EXTERNAL);
+          assertThat(ex.getMetadata().userMessageKey()).isEqualTo("error.fep.unknown_external");
+          assertThat(ex.getMetadata().operatorCode()).isEqualTo("UNKNOWN_EXTERNAL_9099");
+        });
   }
 }
