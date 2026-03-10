@@ -458,9 +458,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))
-        .andExpect(status().isGone())
-        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
-        .andExpect(jsonPath("$.message").value("channel session expired"));
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-016"))
+        .andExpect(jsonPath("$.message").value("stale session after password change"));
 
     mockMvc.perform(post("/api/v1/auth/login")
             .with(csrf())
