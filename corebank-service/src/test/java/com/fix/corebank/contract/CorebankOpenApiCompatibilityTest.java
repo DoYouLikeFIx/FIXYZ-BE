@@ -22,9 +22,18 @@ class CorebankOpenApiCompatibilityTest {
     JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode orderResponse = contract.path("components").path("schemas").path("ApiResponseInternalOrderResponse");
     JsonNode portfolioResponse = contract.path("components").path("schemas").path("ApiResponseInternalPortfolioResponse");
+    JsonNode accountPositionResponse = contract.path("components").path("schemas")
+        .path("ApiResponseInternalAccountPositionResponse");
+    JsonNode accountPositionSchema = contract.path("components").path("schemas")
+        .path("InternalAccountPositionResponse");
 
     assertThat(fieldNames(paths))
-        .contains("/internal/v1/orders", "/internal/v1/orders/{clOrdId}/requery", "/internal/v1/portfolio");
+        .contains(
+            "/internal/v1/orders",
+            "/internal/v1/orders/{clOrdId}/requery",
+            "/internal/v1/portfolio",
+            "/internal/v1/accounts/{accountId}/positions"
+        );
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
         .contains(
@@ -41,6 +50,10 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(portfolioResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(fieldNames(accountPositionSchema.path("properties")))
+        .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
   }
 
   private Path openApiContract() {
