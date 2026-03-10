@@ -4,6 +4,9 @@ public class GatewayInternalOrderStatusCommand {
 
   private final String clOrdId;
   private final String status;
+  private final String message;
+  private final String rejectReason;
+  private final String parseError;
   private final Long executedQty;
   private final Long executedPrice;
   private final String recoveryStatus;
@@ -16,6 +19,9 @@ public class GatewayInternalOrderStatusCommand {
   private GatewayInternalOrderStatusCommand(
       String clOrdId,
       String status,
+      String message,
+      String rejectReason,
+      String parseError,
       Long executedQty,
       Long executedPrice,
       String recoveryStatus,
@@ -27,6 +33,9 @@ public class GatewayInternalOrderStatusCommand {
   ) {
     this.clOrdId = clOrdId;
     this.status = status;
+    this.message = message;
+    this.rejectReason = rejectReason;
+    this.parseError = parseError;
     this.executedQty = executedQty;
     this.executedPrice = executedPrice;
     this.recoveryStatus = recoveryStatus;
@@ -40,6 +49,9 @@ public class GatewayInternalOrderStatusCommand {
   public static GatewayInternalOrderStatusCommand of(
       String clOrdId,
       String status,
+      String message,
+      String rejectReason,
+      String parseError,
       Long executedQty,
       Long executedPrice,
       String recoveryStatus,
@@ -52,6 +64,9 @@ public class GatewayInternalOrderStatusCommand {
     return new GatewayInternalOrderStatusCommand(
         clOrdId,
         status,
+        message,
+        rejectReason,
+        parseError,
         executedQty,
         executedPrice,
         recoveryStatus,
@@ -73,6 +88,18 @@ public class GatewayInternalOrderStatusCommand {
 
   public Long getExecutedQty() {
     return executedQty;
+  }
+
+  public String getMessage() {
+    return message;
+  }
+
+  public String getRejectReason() {
+    return rejectReason;
+  }
+
+  public String getParseError() {
+    return parseError;
   }
 
   public Long getExecutedPrice() {
