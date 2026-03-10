@@ -14,6 +14,7 @@ import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -70,7 +71,7 @@ public class InternalCorebankController {
   public ApiResponse<InternalOrderResponse> requeryOrder(
       @Pattern(regexp = ContractPatterns.UUID_V4)
       @PathVariable String clOrdId,
-      @ModelAttribute InternalOrderRequeryRequest request
+      @ParameterObject @Valid @ModelAttribute InternalOrderRequeryRequest request
   ) {
     return ApiResponse.success(InternalOrderResponse.from(corebankOrderService.requeryOrder(request.toVo(clOrdId))));
   }
