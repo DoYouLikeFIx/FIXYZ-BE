@@ -4,11 +4,13 @@ import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.FixException;
+import com.fix.common.error.RetryAfterBusinessException;
 import com.fix.common.error.SystemException;
 import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.util.UUID;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -27,7 +29,11 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(BusinessException.class)
   public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), request);
+    Long retryAfterSeconds = null;
+    if (ex instanceof RetryAfterBusinessException retryAfterBusinessException) {
+      retryAfterSeconds = retryAfterBusinessException.getRetryAfterSeconds();
+    }
+    return build(ex.getErrorCode(), ex.getMessage(), request, retryAfterSeconds);
   }
 
   @ExceptionHandler(SystemException.class)
@@ -56,13 +62,26 @@ public class GlobalExceptionHandler {
   }
 
   private ResponseEntity<ApiErrorResponse> build(ErrorCode errorCode, String message, HttpServletRequest request) {
+    return build(errorCode, message, request, null);
+  }
+
+  private ResponseEntity<ApiErrorResponse> build(
+      ErrorCode errorCode,
+      String message,
+      HttpServletRequest request,
+      Long retryAfterSeconds
+  ) {
     String correlationId = resolveCorrelationId(request);
     ApiErrorResponse response = ApiErrorResponse.from(errorCode, message, request.getRequestURI(), correlationId);
 
-    return ResponseEntity
+    ResponseEntity.BodyBuilder builder = ResponseEntity
         .status(errorCode.httpStatus())
-        .header(CommonHeaders.X_CORRELATION_ID, correlationId)
-        .body(response);
+        .header(CommonHeaders.X_CORRELATION_ID, correlationId);
+    if (retryAfterSeconds != null && retryAfterSeconds > 0) {
+      builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds));
+    }
+
+    return builder.body(response);
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {

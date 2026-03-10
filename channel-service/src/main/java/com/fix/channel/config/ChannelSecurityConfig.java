@@ -1,6 +1,7 @@
 package com.fix.channel.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.service.ChannelSessionInvalidationService;
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
@@ -40,7 +41,8 @@ public class ChannelSecurityConfig {
       HttpSecurity http,
       HttpSessionCsrfTokenRepository tokenRepository,
       ObjectMapper objectMapper,
-      @Value("${server.servlet.session.cookie.name:SESSION}") String sessionCookieName
+      @Value("${server.servlet.session.cookie.name:SESSION}") String sessionCookieName,
+      ChannelSessionInvalidationService channelSessionInvalidationService
   )
       throws Exception {
     http
@@ -54,7 +56,11 @@ public class ChannelSecurityConfig {
                 correlationId = UUID.randomUUID().toString();
               }
 
-              ErrorCode errorCode = resolveAuthErrorCode(request.getCookies(), sessionCookieName);
+              ErrorCode errorCode = resolveAuthErrorCode(
+                  request.getCookies(),
+                  sessionCookieName,
+                  channelSessionInvalidationService
+              );
               response.setStatus(errorCode.httpStatus());
               response.setContentType(MediaType.APPLICATION_JSON_VALUE);
               response.setCharacterEncoding("UTF-8");
@@ -79,6 +85,9 @@ public class ChannelSecurityConfig {
                 "/api/v1/auth/csrf",
                 "/api/v1/auth/register",
                 "/api/v1/auth/login",
+                "/api/v1/auth/password/forgot",
+                "/api/v1/auth/password/forgot/challenge",
+                "/api/v1/auth/password/reset",
                 "/swagger-ui/**",
                 "/v3/api-docs/**",
                 "/actuator/health",
@@ -88,20 +97,34 @@ public class ChannelSecurityConfig {
     return http.build();
   }
 
-  private ErrorCode resolveAuthErrorCode(Cookie[] cookies, String sessionCookieName) {
+  private ErrorCode resolveAuthErrorCode(
+      Cookie[] cookies,
+      String sessionCookieName,
+      ChannelSessionInvalidationService channelSessionInvalidationService
+  ) {
     if (cookies == null || cookies.length == 0) {
       return ErrorCode.AUTH_REQUIRED;
     }
 
-    boolean hasSessionCookie = Arrays.stream(cookies)
-        .anyMatch(cookie -> sessionCookieName.equals(cookie.getName())
+    String sessionId = Arrays.stream(cookies)
+        .filter(cookie -> sessionCookieName.equals(cookie.getName())
             && cookie.getValue() != null
-            && !cookie.getValue().isBlank());
+            && !cookie.getValue().isBlank())
+        .map(Cookie::getValue)
+        .findFirst()
+        .orElse(null);
 
-    return hasSessionCookie ? ErrorCode.CHANNEL_SESSION_EXPIRED : ErrorCode.AUTH_REQUIRED;
+    if (channelSessionInvalidationService.consumePasswordChangedMarker(sessionId)) {
+      return ErrorCode.AUTH_STALE_SESSION;
+    }
+
+    return sessionId != null ? ErrorCode.CHANNEL_SESSION_EXPIRED : ErrorCode.AUTH_REQUIRED;
   }
 
   private String resolveAuthErrorMessage(ErrorCode errorCode) {
+    if (errorCode == ErrorCode.AUTH_STALE_SESSION) {
+      return "stale session after password change";
+    }
     if (errorCode == ErrorCode.CHANNEL_SESSION_EXPIRED) {
       return "channel session expired";
     }
