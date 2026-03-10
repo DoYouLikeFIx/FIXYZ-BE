@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface GatewayOrderRepository extends JpaRepository<GatewayOrder, Long> {
   Optional<GatewayOrder> findByClOrdId(String clOrdId);
+  Optional<GatewayOrder> findByReferenceId(String referenceId);
 }

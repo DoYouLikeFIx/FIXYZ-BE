@@ -33,6 +33,8 @@ public enum ErrorCode {
   CHANNEL_ROUTE_NOT_FOUND("CHANNEL-009", "Routing configuration error", 400),
   CURRENT_PASSWORD_MISMATCH("CURRENT_PASSWORD_MISMATCH", "Current password mismatch", 400),
   CORE_RESOURCE_NOT_FOUND("CORE_001", "Resource not found", 404),
+  CORE_PROVISIONING_UNAVAILABLE("CORE-001", "Corebank provisioning unavailable", 503),
+  CORE_PROVISIONING_FAILED("CORE-004", "Provisioning transaction failed", 500),
   CORE_CONCURRENCY_CONFLICT("CORE-003", "Concurrent modification conflict", 409),
   FEP_ORDER_NOT_FOUND("9008", "FEP order not found", 404),
   ORD_INVALID_REQUEST("ORD_001", "Invalid order request", 400),

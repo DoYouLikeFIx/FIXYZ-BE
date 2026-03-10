@@ -9,12 +9,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 class CorebankModelAttributeConventionTest {
 
   @Test
-  void requestDtoParametersInControllersMustUseModelAttribute() {
+  void requestDtoParametersInControllersMustUseModelAttributeOrRequestBody() {
     ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
     scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
 
@@ -31,10 +32,13 @@ class CorebankModelAttributeConventionTest {
     for (Class<?> controllerClass : controllerClasses) {
       for (Method method : controllerClass.getDeclaredMethods()) {
         for (Parameter parameter : method.getParameters()) {
-          String parameterTypeName = parameter.getType().getName();
-          if (parameterTypeName.contains(".dto.request.")) {
-            assertThat(parameter.isAnnotationPresent(ModelAttribute.class))
-                .as("%s#%s parameter %s must use @ModelAttribute",
+            String parameterTypeName = parameter.getType().getName();
+            if (parameterTypeName.contains(".dto.request.")) {
+              assertThat(
+                  parameter.isAnnotationPresent(ModelAttribute.class)
+                      || parameter.isAnnotationPresent(RequestBody.class)
+              )
+                  .as("%s#%s parameter %s must use @ModelAttribute or @RequestBody",
                     controllerClass.getSimpleName(),
                     method.getName(),
                     parameter.getName())

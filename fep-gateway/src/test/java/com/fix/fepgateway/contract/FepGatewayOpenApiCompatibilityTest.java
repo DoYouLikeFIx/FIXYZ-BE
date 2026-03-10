@@ -78,6 +78,8 @@ class FepGatewayOpenApiCompatibilityTest {
         .doesNotContain("request");
 
     assertThat(schemaRef(submitOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
+    assertThat(schemaRef(submitOperation, "401")).isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(submitOperation, "422")).isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(schemaRef(cancelOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderCancelResponse");
     assertThat(schemaRef(replayOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderReplayResponse");
     assertThat(schemaRef(internalStatusOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
@@ -90,7 +92,13 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(internalStatusOperation.path("requestBody").path("required").asBoolean()).isTrue();
 
     assertThat(fieldNames(submitSchema.path("properties"))).containsAll(BASELINE_SUBMIT_FIELDS);
+    assertThat(requiredFields(submitSchema))
+        .contains("accountId", "clOrdId", "referenceId", "currency", "symbol");
     assertThat(submitSchema.path("properties").path("clOrdId").path("pattern").asText()).isEqualTo(UUID_V4_PATTERN);
+    assertThat(submitSchema.path("properties").path("accountId").path("maxLength").asInt()).isEqualTo(64);
+    assertThat(submitSchema.path("properties").path("accountId").path("minLength").asInt()).isEqualTo(1);
+    assertThat(submitSchema.path("properties").path("referenceId").path("maxLength").asInt()).isEqualTo(128);
+    assertThat(submitSchema.path("properties").path("referenceId").path("minLength").asInt()).isEqualTo(1);
     assertThat(cancelSchema.path("properties").path("origClOrdId").path("pattern").asText()).isEqualTo(UUID_V4_PATTERN);
     assertThat(replaySchema.path("properties").path("operatorId").path("pattern").asText()).isEqualTo(UUID_V4_PATTERN);
     assertThat(replaySchema.path("properties").path("approvedBy").path("pattern").asText()).isEqualTo(UUID_V4_PATTERN);

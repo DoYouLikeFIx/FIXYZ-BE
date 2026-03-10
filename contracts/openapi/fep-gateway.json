@@ -16,6 +16,7 @@
         "tags": [
           "fep-gateway-order-controller"
         ],
+        "summary": "Submit an order",
         "operationId": "submit",
         "parameters": [
           {
@@ -56,11 +57,31 @@
         },
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Submit accepted",
             "content": {
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_001 referenceId ownership violation",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION-001 request contract or idempotency policy violation",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             }
@@ -409,6 +430,7 @@
             "type": "string"
           },
           "accountId": {
+            "maxLength": 64,
             "minLength": 1,
             "type": "string"
           },
@@ -470,6 +492,7 @@
             "type": "string"
           },
           "referenceId": {
+            "maxLength": 128,
             "minLength": 1,
             "type": "string"
           }

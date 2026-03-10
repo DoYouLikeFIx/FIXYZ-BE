@@ -11,36 +11,6 @@
     }
   ],
   "paths": {
-    "/internal/v1/orders": {
-      "post": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "createOrder",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalOrderCreateRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalOrderResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/internal/v1/portfolio": {
       "get": {
         "tags": [
@@ -64,6 +34,74 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseInternalPortfolioResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "provisionPortfolio",
+        "parameters": [
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalPortfolioProvisioningRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalPortfolioProvisioningResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/orders": {
+      "post": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "createOrder",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalOrderCreateRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalOrderResponse"
                 }
               }
             }
@@ -111,11 +149,16 @@
             }
           },
           {
-            "name": "request",
+            "name": "attemptCount",
             "in": "query",
-            "required": true,
+            "description": "1-based requery attempt count from the scheduler. Unresolved results escalate when this reaches recovery.max-retry-count.",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/InternalOrderRequeryRequest"
+              "minimum": 1,
+              "type": "integer",
+              "description": "1-based requery attempt count from the scheduler. Unresolved results escalate when this reaches recovery.max-retry-count.",
+              "format": "int32",
+              "default": 1
             }
           }
         ],
@@ -172,6 +215,92 @@
   },
   "components": {
     "schemas": {
+      "InternalPortfolioProvisioningRequest": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "memberNo": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "userMessageKey": {
+            "type": "string"
+          },
+          "operatorCode": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseInternalPortfolioProvisioningResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalPortfolioProvisioningResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalPortfolioProvisioningResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "InternalOrderCreateRequest": {
         "required": [
           "accountId",
@@ -212,33 +341,6 @@
           }
         }
       },
-      "ApiErrorResponse": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "correlationId": {
-            "type": "string"
-          },
-          "userMessageKey": {
-            "type": "string"
-          },
-          "operatorCode": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
       "ApiResponseInternalOrderResponse": {
         "type": "object",
         "properties": {
@@ -270,11 +372,31 @@
           "status": {
             "type": "string"
           },
+          "externalSyncStatus": {
+            "type": "string"
+          },
           "idempotent": {
             "type": "boolean"
           },
           "orderQuantity": {
             "type": "number"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retriable": {
+            "type": "boolean"
+          },
+          "escalationRequired": {
+            "type": "boolean"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxRetryCount": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -336,9 +458,6 @@
             "type": "number"
           }
         }
-      },
-      "InternalOrderRequeryRequest": {
-        "type": "object"
       }
     }
   }

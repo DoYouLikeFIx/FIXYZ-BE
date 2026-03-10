@@ -1,19 +1,28 @@
 package com.fix.channel.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fix.channel.client.CorebankProvisioningClient;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -44,6 +53,9 @@ class ChannelAuthFlowTest {
   @Autowired
   private PasswordEncoder passwordEncoder;
 
+  @MockBean
+  private CorebankProvisioningClient corebankProvisioningClient;
+
   @BeforeEach
   void cleanUp() {
     memberRepository.deleteAll();
@@ -66,6 +78,12 @@ class ChannelAuthFlowTest {
     assertThat(passwordEncoder.matches("Abcd1234!", saved.getPasswordHash())).isTrue();
     assertThat(saved.getRole()).isEqualTo("ROLE_USER");
     assertThat(saved.getStatus()).isEqualTo("ACTIVE");
+    verify(corebankProvisioningClient).provisionDefaultAccount(
+        eq(saved.getId()),
+        eq(saved.getMemberNo()),
+        eq(saved.getEmail()),
+        anyString()
+    );
   }
 
   @Test
@@ -125,6 +143,24 @@ class ChannelAuthFlowTest {
             .param("name", "Policy Fail"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_001"));
+  }
+
+  @Test
+  void shouldRollbackRegistrationWhenCorebankProvisioningFails() throws Exception {
+    doThrow(new BusinessException(ErrorCode.CORE_PROVISIONING_UNAVAILABLE, "corebank provisioning failed"))
+        .when(corebankProvisioningClient)
+        .provisionDefaultAccount(any(), any(), any(), any());
+
+    mockMvc.perform(post("/api/v1/auth/register")
+            .with(csrf())
+            .param("email", "provision.fail@fixyz.com")
+            .param("password", "Abcd1234!")
+            .param("name", "Provision Fail"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.code").value("CORE-001"))
+        .andExpect(jsonPath("$.message").value("corebank provisioning failed"));
+
+    assertThat(memberRepository.findByEmail("provision.fail@fixyz.com")).isEmpty();
   }
 
   private Member saveMember(String memberNo, String email, String rawPassword, String name) {

@@ -8,17 +8,22 @@ import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
 import com.fix.common.validation.ContractPatterns;
 import com.fix.fepgateway.vo.GatewayOrderSubmitCommand;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 
 public record FepOrderSubmitRequest(
     @NotBlank
     @Pattern(regexp = ContractPatterns.UUID_V4)
     String clOrdId,
-    @NotBlank String accountId,
+    @Schema(minLength = 1, maxLength = 64)
+    @NotBlank
+    @Size(min = 1, max = 64)
+    String accountId,
     @NotBlank
     @Pattern(regexp = ContractPatterns.SIX_DIGIT_SYMBOL)
     String symbol,
@@ -32,7 +37,10 @@ public record FepOrderSubmitRequest(
     FepQuoteSourceMode quoteSourceMode,
     @Positive Long preTradePrice,
     @NotBlank String currency,
-    @NotBlank String referenceId
+    @Schema(minLength = 1, maxLength = 128)
+    @NotBlank
+    @Size(min = 1, max = 128)
+    String referenceId
 ) {
 
   public GatewayOrderSubmitCommand toVo() {
