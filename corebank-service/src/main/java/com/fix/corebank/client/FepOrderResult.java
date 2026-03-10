@@ -23,6 +23,7 @@ public record FepOrderResult(
   public static FepOrderResult fromSubmitResponse(FepGatewayOrderResponse response, String expectedClOrdId) {
     require(!isBlank(response.clOrdId()), "clOrdId is required in submit response");
     require(ContractPatterns.isUuidV4(response.clOrdId()), "submit response clOrdId must be a UUID v4");
+    require(expectedClOrdId.equals(response.clOrdId()), "submit response clOrdId must match request");
     require(!isBlank(response.fepOrderId()), "fepOrderId is required in submit response");
     require(response.execType() != null, "execType is required in submit response");
     require(response.ordStatus() != null, "ordStatus is required in submit response");
