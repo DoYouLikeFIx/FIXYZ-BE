@@ -8,6 +8,12 @@ import jakarta.validation.constraints.PositiveOrZero;
 
 public record FepInternalOrderStatusRequest(
     @NotBlank String status,
+    @Schema(description = "Optional unresolved-status detail shown for UNKNOWN/PENDING/MALFORMED responses.")
+    String message,
+    @Schema(description = "Optional exchange rejection reason surfaced on REJECTED responses.")
+    String rejectReason,
+    @Schema(description = "Optional FIX parser diagnostic surfaced on MALFORMED responses.")
+    String parseError,
     @Schema(description = "Optional executed quantity for status correction paths such as PARTIALLY_FILLED.")
     @Positive Long executedQty,
     @Schema(description = "Optional executed price for MARKET FILLED or partial execution correction paths.")
@@ -32,6 +38,9 @@ public record FepInternalOrderStatusRequest(
     return GatewayInternalOrderStatusCommand.of(
         clOrdId,
         status,
+        message,
+        rejectReason,
+        parseError,
         executedQty,
         executedPrice,
         recoveryStatus,
