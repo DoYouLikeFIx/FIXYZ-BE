@@ -139,6 +139,9 @@ class CorebankOrderServiceTest {
         0L,
         Instant.parse("2026-03-01T10:05:30Z"),
         null,
+        null,
+        null,
+        null,
         null
     ));
 
@@ -202,6 +205,9 @@ class CorebankOrderServiceTest {
         null,
         3L,
         Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
         null,
         null
     ));
@@ -267,6 +273,9 @@ class CorebankOrderServiceTest {
         null,
         3L,
         Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
         null,
         null
     ));
@@ -363,7 +372,10 @@ class CorebankOrderServiceTest {
         null,
         null,
         Instant.parse("2026-03-01T10:10:00Z"),
-        "order not found in exchange"
+        "order not found in exchange",
+        null,
+        null,
+        null
     ));
 
     InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID));
@@ -376,6 +388,90 @@ class CorebankOrderServiceTest {
     assertThat(result.getAttemptCount()).isEqualTo(1);
     assertThat(result.getMaxRetryCount()).isEqualTo(5);
     assertThat(fepClient.queryCalls()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldSurfaceRejectReasonOnRejectedRequery() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9007L
+    );
+    existingOrder.updateStatus("PENDING");
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+    fepClient.setQueryResult(new FepOrderResult(
+        REQUERY_CL_ORD_ID,
+        null,
+        FepExecType.REJECTED,
+        FepOrdStatus.REJECTED,
+        null,
+        null,
+        null,
+        Instant.parse("2026-03-01T10:10:00Z"),
+        Instant.parse("2026-03-01T10:11:00Z"),
+        null,
+        "INSUFFICIENT_FUNDS",
+        null,
+        null
+    ));
+
+    InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
+
+    assertThat(result.getStatus()).isEqualTo("REJECTED");
+    assertThat(result.getMessage()).isEqualTo("INSUFFICIENT_FUNDS");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(result.getRetriable()).isFalse();
+    assertThat(result.getEscalationRequired()).isTrue();
+    assertThat(existingOrder.getFailureReason()).isEqualTo("INSUFFICIENT_FUNDS");
+  }
+
+  @Test
+  void shouldSurfaceParseErrorOnMalformedRequery() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9008L
+    );
+    existingOrder.updateStatus("PENDING");
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+    fepClient.setQueryResult(new FepOrderResult(
+        REQUERY_CL_ORD_ID,
+        null,
+        null,
+        FepOrdStatus.MALFORMED,
+        null,
+        null,
+        null,
+        null,
+        Instant.parse("2026-03-01T10:11:00Z"),
+        "FIX ExecutionReport parse failed; manual review required",
+        null,
+        null,
+        "PARSE_ERROR:Tag 39 missing or invalid"
+    ));
+
+    InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
+
+    assertThat(result.getStatus()).isEqualTo("MALFORMED");
+    assertThat(result.getMessage()).isEqualTo("PARSE_ERROR:Tag 39 missing or invalid");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(result.getRetriable()).isTrue();
+    assertThat(result.getEscalationRequired()).isFalse();
+    assertThat(existingOrder.getFailureReason()).isEqualTo("PARSE_ERROR:Tag 39 missing or invalid");
   }
 
   @Test
@@ -404,7 +500,10 @@ class CorebankOrderServiceTest {
         null,
         null,
         Instant.parse("2026-03-01T10:11:00Z"),
-        "still unresolved"
+        "still unresolved",
+        null,
+        null,
+        null
     ));
 
     InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 5));
