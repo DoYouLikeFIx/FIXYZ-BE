@@ -137,7 +137,7 @@ class FepClientContractTest {
   }
 
   @Test
-  void shouldAcceptSubmitReplayResponsesThatReturnOriginalCanonicalClOrdId() {
+  void shouldRejectSubmitResponsesThatChangeCanonicalClOrdId() {
     wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(aResponse()
             .withHeader("Content-Type", "application/json")
@@ -158,11 +158,9 @@ class FepClientContractTest {
                 }
                 """.formatted(CL_ORD_ID_2, CL_ORD_ID_2))));
 
-    FepOrderResult result = fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_10, "ref-client-002"), "trace-client-002b");
-
-    assertThat(result.clOrdId()).isEqualTo(CL_ORD_ID_2);
-    assertThat(result.fepOrderId()).isEqualTo("FEP-KRX-" + CL_ORD_ID_2);
-    assertThat(result.ordStatus()).isEqualTo(FepOrdStatus.FILLED);
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_10, "ref-client-002"), "trace-client-002b"))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("submit response clOrdId must match request");
   }
 
   @Test
