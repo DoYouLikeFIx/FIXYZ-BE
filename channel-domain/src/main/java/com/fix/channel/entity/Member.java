@@ -41,6 +41,9 @@ public class Member extends BaseTimeEntity {
   @Column(name = "locked_at")
   private Instant lockedAt;
 
+  @Column(name = "password_changed_at", nullable = false)
+  private Instant passwordChangedAt;
+
   protected Member() {
   }
 
@@ -52,7 +55,8 @@ public class Member extends BaseTimeEntity {
       String role,
       String status,
       int failedLoginAttempts,
-      Instant lockedAt
+      Instant lockedAt,
+      Instant passwordChangedAt
   ) {
     this.memberNo = memberNo;
     this.email = email;
@@ -62,16 +66,18 @@ public class Member extends BaseTimeEntity {
     this.status = status;
     this.failedLoginAttempts = failedLoginAttempts;
     this.lockedAt = lockedAt;
+    this.passwordChangedAt = passwordChangedAt;
   }
 
   public static Member registerUser(String memberNo, String email, String passwordHash, String name) {
-    return new Member(memberNo, email, passwordHash, name, "ROLE_USER", "ACTIVE", 0, null);
+    Instant now = Instant.now();
+    return new Member(memberNo, email, passwordHash, name, "ROLE_USER", "ACTIVE", 0, null, now);
   }
 
   // 스캐폴딩 경로 호환을 위해 기존 팩토리를 유지한다.
   // Story 1.1 전환 완료 후 모든 호출은 registerUser(...)로 대체한다.
   public static Member of(String memberNo, String email, String status) {
-    return new Member(memberNo, email, "__LEGACY__", memberNo, "ROLE_USER", status, 0, null);
+    return new Member(memberNo, email, "__LEGACY__", memberNo, "ROLE_USER", status, 0, null, Instant.now());
   }
 
   public Long getId() {
@@ -110,6 +116,10 @@ public class Member extends BaseTimeEntity {
     return lockedAt;
   }
 
+  public Instant getPasswordChangedAt() {
+    return passwordChangedAt;
+  }
+
   public boolean isLocked() {
     return "LOCKED".equals(status);
   }
@@ -140,5 +150,6 @@ public class Member extends BaseTimeEntity {
 
   public void updatePasswordHash(String passwordHash) {
     this.passwordHash = passwordHash;
+    this.passwordChangedAt = Instant.now();
   }
 }
