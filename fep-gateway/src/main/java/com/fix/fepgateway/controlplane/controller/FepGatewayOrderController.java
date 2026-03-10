@@ -39,6 +39,20 @@ public class FepGatewayOrderController {
   }
 
   @PostMapping
+  @Operation(summary = "Submit an order")
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Submit accepted"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(
+          responseCode = "401",
+          description = "AUTH_001 referenceId ownership violation",
+          content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+      ),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(
+          responseCode = "422",
+          description = "VALIDATION-001 request contract or idempotency policy violation",
+          content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+      )
+  })
   public ApiResponse<FepOrderResponse> submit(
       @RequestHeader(CommonHeaders.X_INTERNAL_SECRET) String internalSecret,
       @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
