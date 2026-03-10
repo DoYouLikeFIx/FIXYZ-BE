@@ -17,11 +17,14 @@ public class Account extends BaseTimeEntity {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  @Column(name = "account_no", nullable = false, unique = true, length = 64)
+  @Column(name = "account_no", nullable = false, unique = true, length = 14)
   private String accountNo;
 
-  @Column(name = "member_no", nullable = false, length = 64)
-  private String memberNo;
+  @Column(name = "member_id", nullable = false)
+  private Long memberId;
+
+  @Column(name = "status", nullable = false, length = 16)
+  private String status;
 
   @Column(name = "currency", nullable = false, length = 16)
   private String currency;
@@ -37,13 +40,15 @@ public class Account extends BaseTimeEntity {
 
   private Account(
       String accountNo,
-      String memberNo,
+      Long memberId,
+      String status,
       String currency,
       BigDecimal cashBalance,
       BigDecimal dailySellLimit
   ) {
     this.accountNo = accountNo;
-    this.memberNo = memberNo;
+    this.memberId = memberId;
+    this.status = status;
     this.currency = currency;
     this.cashBalance = cashBalance;
     this.dailySellLimit = dailySellLimit;
@@ -51,12 +56,23 @@ public class Account extends BaseTimeEntity {
 
   public static Account of(
       String accountNo,
-      String memberNo,
+      Long memberId,
       String currency,
       BigDecimal cashBalance,
       BigDecimal dailySellLimit
   ) {
-    return new Account(accountNo, memberNo, currency, cashBalance, dailySellLimit);
+    return new Account(accountNo, memberId, "ACTIVE", currency, cashBalance, dailySellLimit);
+  }
+
+  public static Account of(
+      String accountNo,
+      Long memberId,
+      String status,
+      String currency,
+      BigDecimal cashBalance,
+      BigDecimal dailySellLimit
+  ) {
+    return new Account(accountNo, memberId, status, currency, cashBalance, dailySellLimit);
   }
 
   public Long getId() {
@@ -67,8 +83,12 @@ public class Account extends BaseTimeEntity {
     return accountNo;
   }
 
-  public String getMemberNo() {
-    return memberNo;
+  public Long getMemberId() {
+    return memberId;
+  }
+
+  public String getStatus() {
+    return status;
   }
 
   public String getCurrency() {
