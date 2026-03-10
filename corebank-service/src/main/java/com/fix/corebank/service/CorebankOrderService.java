@@ -2,25 +2,19 @@ package com.fix.corebank.service;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.fep.FepOrderType;
 import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.corebank.entity.Account;
-import com.fix.corebank.entity.JournalEntry;
-import com.fix.corebank.entity.LedgerEntry;
-import com.fix.corebank.entity.LedgerEntryRef;
-import com.fix.corebank.entity.Order;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
+import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.ExecutionRepository;
-import com.fix.corebank.repository.JournalEntryRepository;
-import com.fix.corebank.repository.LedgerEntryRefRepository;
-import com.fix.corebank.repository.LedgerEntryRepository;
-import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
@@ -31,8 +25,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,13 +36,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class CorebankOrderService {
 
   private final AccountRepository accountRepository;
-  private final OrderRepository orderRepository;
   private final PositionRepository positionRepository;
   private final ExecutionRepository executionRepository;
-  private final JournalEntryRepository journalEntryRepository;
-  private final LedgerEntryRepository ledgerEntryRepository;
-  private final LedgerEntryRefRepository ledgerEntryRefRepository;
+  private final CorebankOrderPersistenceService orderPersistenceService;
   private final FepClient fepClient;
+
+  @Value("${recovery.max-retry-count:5}")
+  private int maxRetryCount = 5;
 
   @Transactional(readOnly = true)
   public PortfolioResult getPortfolio(PortfolioQueryCommand command) {
@@ -75,131 +69,209 @@ public class CorebankOrderService {
     );
   }
 
-  @Transactional
   public InternalOrderResult createOrder(InternalOrderCreateCommand command) {
-    return orderRepository.findByClOrdId(command.getClOrdId())
+    return orderPersistenceService.findOrder(command.getClOrdId())
         .map(existing -> mapToOrderResult(existing, true))
         .orElseGet(() -> createFreshOrder(command));
   }
 
-  @Transactional
   public InternalOrderResult requeryOrder(InternalOrderRequeryCommand command) {
-    Order order = orderRepository.findByClOrdId(command.getClOrdId())
-        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "order not found"));
-    FepOrderResult gatewayStatus = fepClient.queryOrderStatus(
-        order.getClOrdId(),
-        correlationId("requery", order.getClOrdId())
-    );
-    order.updateStatus(gatewayStatus.ordStatus().name());
-    return mapToOrderResult(order, true);
+    CorebankOrderPersistenceService.OrderSnapshot order = orderPersistenceService.getRequiredOrder(command.getClOrdId());
+    try {
+      FepOrderResult gatewayStatus = fepClient.queryOrderStatus(
+          order.clOrdId(),
+          correlationId("requery", order.clOrdId())
+      );
+      CorebankOrderPersistenceService.OrderSnapshot updatedOrder =
+          orderPersistenceService.updateOrderState(
+              order.clOrdId(),
+              gatewayStatus.ordStatus().name(),
+              externalSyncStatusForRequery(gatewayStatus.ordStatus(), command.getAttemptCount()),
+              resolveFepReferenceId(order, gatewayStatus.fepOrderId()),
+              failureReasonForRequery(gatewayStatus.ordStatus(), gatewayStatus.message())
+          );
+      return mapToRequeryResult(
+          updatedOrder,
+          gatewayStatus.message(),
+          classifyRequeryOutcome(gatewayStatus.ordStatus(), command.getAttemptCount())
+      );
+    } catch (BusinessException ex) {
+      if (isRetriableRequeryFailure(ex)) {
+        CorebankOrderPersistenceService.OrderSnapshot currentOrder = order;
+        if (!isTerminalOrderStatus(order.status())) {
+          currentOrder = orderPersistenceService.updateOrderState(
+              order.clOrdId(),
+              order.status(),
+              externalSyncStatusForRetriableFailure(command.getAttemptCount()),
+              order.fepReferenceId(),
+              failureReason(ex)
+          );
+        }
+        return mapToRequeryResult(
+            currentOrder,
+            ex.getMessage(),
+            classifyRetriableFailure(order.status(), command.getAttemptCount())
+        );
+      }
+      throw ex;
+    }
   }
 
   private InternalOrderResult createFreshOrder(InternalOrderCreateCommand command) {
-    Account account = accountRepository.findById(command.getAccountId())
-        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
-
-    String side = normalizeSide(command.getSide());
-    Position lockedPosition = positionRepository.findByAccountIdAndSymbolForUpdate(command.getAccountId(), command.getSymbol())
-        .orElseGet(() -> positionRepository.saveAndFlush(
-            Position.of(command.getAccountId(), command.getSymbol(), BigDecimal.ZERO, BigDecimal.ZERO)
-        ));
-
-    BigDecimal todaySellQty = executionRepository.sumSellQuantityByAccountAndSymbolBetween(
-        command.getAccountId(),
-        command.getSymbol(),
-        startOfUtcDay(),
-        startOfNextUtcDay()
-    );
-
-    if ("SELL".equals(side)) {
-      BigDecimal afterSell = todaySellQty.add(command.getQuantity());
-      if (afterSell.compareTo(account.getDailySellLimit()) > 0) {
-        throw new BusinessException(
-            ErrorCode.ORD_INVALID_REQUEST,
-            "daily sell limit exceeded for account " + account.getAccountNo()
-        );
-      }
-    }
-
-    Order order = Order.accepted(
-        command.getAccountId(),
-        command.getClOrdId(),
-        command.getSymbol(),
-        side,
-        command.getQuantity(),
-        command.getPrice()
-    );
-
     try {
-      Order saved = orderRepository.saveAndFlush(order);
-      appendLedgerSkeleton(saved);
-      FepOrderResult gatewayOrder = fepClient.submitOrder(
-          toFepPayload(account, command, side),
-          correlationId("submit", command.getClOrdId())
-      );
-      saved.updateStatus(gatewayOrder.ordStatus().name());
-      return mapToOrderResult(saved, false);
+      CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder =
+          orderPersistenceService.prepareOrderSubmission(command);
+      try {
+        FepOrderResult gatewayOrder = fepClient.submitOrder(
+            toFepPayload(pendingOrder),
+            correlationId("submit", command.getClOrdId())
+        );
+        CorebankOrderPersistenceService.OrderSnapshot updatedOrder =
+            orderPersistenceService.updateOrderState(
+                pendingOrder.clOrdId(),
+                gatewayOrder.ordStatus().name(),
+                Order.EXTERNAL_SYNC_CONFIRMED,
+                gatewayOrder.fepOrderId(),
+                null
+            );
+        return mapToOrderResult(updatedOrder, false);
+      } catch (BusinessException ex) {
+        orderPersistenceService.updateOrderState(
+            pendingOrder.clOrdId(),
+            pendingOrder.status(),
+            Order.EXTERNAL_SYNC_FAILED,
+            null,
+            failureReason(ex)
+        );
+        throw ex;
+      }
     } catch (DataIntegrityViolationException e) {
-      return orderRepository.findByClOrdId(command.getClOrdId())
+      return orderPersistenceService.findOrder(command.getClOrdId())
           .map(existing -> mapToOrderResult(existing, true))
           .orElseThrow(() -> e);
     }
   }
 
-  private void appendLedgerSkeleton(Order order) {
-    BigDecimal grossAmount = order.getOrderPrice().multiply(order.getOrderQty());
-
-    JournalEntry journalEntry = journalEntryRepository.save(
-        JournalEntry.of(order.getId(), "ORDER_ACCEPTED", grossAmount, "corebank scaffold journal")
-    );
-    LedgerEntry ledgerEntry = ledgerEntryRepository.save(
-        LedgerEntry.of(journalEntry.getId(), order.getAccountId(), "ORDER", "DR", grossAmount)
-    );
-    ledgerEntryRefRepository.save(LedgerEntryRef.of(ledgerEntry.getId(), "CL_ORD_ID", order.getClOrdId()));
-  }
-
-  private InternalOrderResult mapToOrderResult(Order order, boolean idempotent) {
+  private InternalOrderResult mapToOrderResult(CorebankOrderPersistenceService.OrderSnapshot order, boolean idempotent) {
     return InternalOrderResult.of(
-        order.getId(),
-        order.getClOrdId(),
-        order.getStatus(),
+        order.orderId(),
+        order.clOrdId(),
+        order.status(),
+        order.externalSyncStatus(),
         idempotent,
-        order.getOrderQty()
+        order.orderQty()
     );
   }
 
-  private String normalizeSide(String side) {
-    if (side == null) {
-      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "side is required");
-    }
-    String normalized = side.trim().toUpperCase(Locale.ROOT);
-    if (!"BUY".equals(normalized) && !"SELL".equals(normalized)) {
-      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "side must be BUY or SELL");
-    }
-    return normalized;
+  private InternalOrderResult mapToRequeryResult(
+      CorebankOrderPersistenceService.OrderSnapshot order,
+      String message,
+      RequerySignal signal
+  ) {
+    return InternalOrderResult.requery(
+        order.orderId(),
+        order.clOrdId(),
+        order.status(),
+        order.externalSyncStatus(),
+        true,
+        order.orderQty(),
+        message,
+        signal.retriable(),
+        signal.escalationRequired(),
+        signal.attemptCount(),
+        signal.maxRetryCount()
+    );
   }
 
-  private FepOutboundOrderPayload toFepPayload(Account account, InternalOrderCreateCommand command, String side) {
+  private RequerySignal classifyRequeryOutcome(FepOrdStatus ordStatus, int attemptCount) {
+    boolean escalationRequired = isEscalationThresholdReached(attemptCount);
+    return switch (ordStatus) {
+      case UNKNOWN, PENDING, MALFORMED -> new RequerySignal(!escalationRequired, escalationRequired, attemptCount, maxRetryCount);
+      case REJECTED -> new RequerySignal(false, true, attemptCount, maxRetryCount);
+      case FILLED, PARTIALLY_FILLED, CANCELED -> new RequerySignal(false, false, attemptCount, maxRetryCount);
+    };
+  }
+
+  private RequerySignal classifyRetriableFailure(String currentOrderStatus, int attemptCount) {
+    if (isTerminalOrderStatus(currentOrderStatus)) {
+      return new RequerySignal(false, false, attemptCount, maxRetryCount);
+    }
+    boolean escalationRequired = isEscalationThresholdReached(attemptCount);
+    return new RequerySignal(!escalationRequired, escalationRequired, attemptCount, maxRetryCount);
+  }
+
+  private boolean isRetriableRequeryFailure(BusinessException ex) {
+    return ex.getErrorCode() == ErrorCode.FEP_GATEWAY_TIMEOUT
+        || ex.getErrorCode() == ErrorCode.FEP_GATEWAY_UNAVAILABLE;
+  }
+
+  private String externalSyncStatusForRequery(FepOrdStatus ordStatus, int attemptCount) {
+    return switch (ordStatus) {
+      case FILLED, PARTIALLY_FILLED, CANCELED -> Order.EXTERNAL_SYNC_CONFIRMED;
+      case REJECTED -> Order.EXTERNAL_SYNC_ESCALATED;
+      case UNKNOWN, PENDING, MALFORMED -> externalSyncStatusForRetriableFailure(attemptCount);
+    };
+  }
+
+  private String externalSyncStatusForRetriableFailure(int attemptCount) {
+    return isEscalationThresholdReached(attemptCount)
+        ? Order.EXTERNAL_SYNC_ESCALATED
+        : Order.EXTERNAL_SYNC_FAILED;
+  }
+
+  private boolean isEscalationThresholdReached(int attemptCount) {
+    return attemptCount >= maxRetryCount;
+  }
+
+  private boolean isTerminalOrderStatus(String status) {
+    return switch (status) {
+      case "FILLED", "PARTIALLY_FILLED", "CANCELED", "REJECTED" -> true;
+      default -> false;
+    };
+  }
+
+  private FepOutboundOrderPayload toFepPayload(CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder) {
     return new FepOutboundOrderPayload(
-        command.getClOrdId(),
-        account.getAccountNo(),
-        command.getSymbol(),
+        pendingOrder.clOrdId(),
+        pendingOrder.accountNo(),
+        pendingOrder.symbol(),
         FepSecurityExchange.KRX,
-        FepSide.valueOf(side),
+        FepSide.valueOf(pendingOrder.side()),
         FepOrderType.LIMIT,
-        command.getQuantity().longValueExact(),
-        command.getPrice().longValueExact(),
+        pendingOrder.orderQty().longValueExact(),
+        pendingOrder.orderPrice().longValueExact(),
         null,
         null,
         null,
         null,
-        account.getCurrency(),
-        command.getClOrdId()
+        pendingOrder.currency(),
+        pendingOrder.clOrdId()
     );
   }
 
   private String correlationId(String operation, String clOrdId) {
     return CorrelationIdSupport.currentOrGenerate();
+  }
+
+  private String resolveFepReferenceId(CorebankOrderPersistenceService.OrderSnapshot order, String gatewayFepOrderId) {
+    return gatewayFepOrderId != null && !gatewayFepOrderId.isBlank()
+        ? gatewayFepOrderId
+        : order.fepReferenceId();
+  }
+
+  private String failureReasonForRequery(FepOrdStatus ordStatus, String message) {
+    return switch (ordStatus) {
+      case FILLED, PARTIALLY_FILLED, CANCELED -> null;
+      case REJECTED -> message != null && !message.isBlank() ? message : "REJECTED";
+      case UNKNOWN, PENDING, MALFORMED -> message;
+    };
+  }
+
+  private String failureReason(BusinessException ex) {
+    if (ex.getMetadata() != null && ex.getMetadata().operatorCode() != null && !ex.getMetadata().operatorCode().isBlank()) {
+      return ex.getMetadata().operatorCode();
+    }
+    return ex.getErrorCode().code();
   }
 
   private Instant startOfUtcDay() {
@@ -208,5 +280,13 @@ public class CorebankOrderService {
 
   private Instant startOfNextUtcDay() {
     return LocalDate.now(ZoneOffset.UTC).plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+  }
+
+  private record RequerySignal(
+      boolean retriable,
+      boolean escalationRequired,
+      int attemptCount,
+      int maxRetryCount
+  ) {
   }
 }

@@ -64,20 +64,8 @@ public class FepGatewayControlService {
 
   @Transactional(readOnly = true)
   public GatewayOrderResult status(GatewayOrderStatusCommand command) {
-    return gatewayOrderRepository.findByClOrdId(command.getClOrdId())
-        .map(order -> order.toResult(Instant.now()))
-        .orElseGet(() -> new GatewayOrderResult(
-            command.getClOrdId(),
-            null,
-            null,
-            FepOrdStatus.UNKNOWN,
-            null,
-            null,
-            null,
-            null,
-            Instant.now(),
-            "external system does not have a matching order"
-        ));
+    GatewayOrder order = gatewayOrderRepository.findByClOrdId(command.getClOrdId()).orElse(null);
+    return fixDataPlaneService.sendOrderStatusRequest(command.getClOrdId(), order);
   }
 
   @Transactional

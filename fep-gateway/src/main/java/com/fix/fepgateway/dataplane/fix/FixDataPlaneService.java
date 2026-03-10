@@ -10,6 +10,7 @@ import com.fix.common.fep.FepReplayFinalStatus;
 import com.fix.fepgateway.entity.GatewayOrder;
 import com.fix.fepgateway.vo.GatewayOrderCancelCommand;
 import com.fix.fepgateway.vo.GatewayExecutionOutcome;
+import com.fix.fepgateway.vo.GatewayOrderResult;
 import com.fix.fepgateway.vo.GatewayReplayExecution;
 import com.fix.fepgateway.vo.GatewayOrderReplayCommand;
 import com.fix.fepgateway.vo.GatewayOrderSubmitCommand;
@@ -19,6 +20,24 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class FixDataPlaneService {
+
+  public GatewayOrderResult sendOrderStatusRequest(String clOrdId, GatewayOrder order) {
+    if (order == null) {
+      return new GatewayOrderResult(
+          clOrdId,
+          null,
+          null,
+          FepOrdStatus.UNKNOWN,
+          null,
+          null,
+          null,
+          null,
+          Instant.now(),
+          "external system does not have a matching order"
+      );
+    }
+    return order.toResult(Instant.now());
+  }
 
   public GatewayExecutionOutcome sendNewOrder(GatewayOrderSubmitCommand command) {
     long executedPrice = command.orderType().name().equals("LIMIT") ? command.price() : command.preTradePrice();
