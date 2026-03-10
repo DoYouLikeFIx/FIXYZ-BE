@@ -13,8 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class GatewaySecurityEventService {
 
-  private static final int MAX_CORRELATION_ID_LENGTH = 64;
-
   private final GatewaySecurityEventRepository gatewaySecurityEventRepository;
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -33,18 +31,8 @@ public class GatewaySecurityEventService {
         attemptedAccountId,
         ownerOrder != null ? ownerOrder.getClOrdId() : null,
         attemptedClOrdId,
-        normalizeCorrelationId(CorrelationIdSupport.currentOrGenerate()),
+        CorrelationIdSupport.currentOrGenerate(),
         detail
     ));
-  }
-
-  private String normalizeCorrelationId(String correlationId) {
-    if (correlationId == null || correlationId.isBlank()) {
-      return CorrelationIdSupport.currentOrGenerate();
-    }
-    if (correlationId.length() <= MAX_CORRELATION_ID_LENGTH) {
-      return correlationId;
-    }
-    return correlationId.substring(0, MAX_CORRELATION_ID_LENGTH);
   }
 }
