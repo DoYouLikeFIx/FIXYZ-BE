@@ -58,6 +58,9 @@ class FepGatewayClOrdIdContractTest {
         0L,
         Instant.parse("2026-03-01T10:00:00Z"),
         null,
+        null,
+        null,
+        null,
         null
     ));
 
