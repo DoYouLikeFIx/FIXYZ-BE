@@ -19,7 +19,7 @@
         "operationId": "submit",
         "parameters": [
           {
-            "name": "X-ClOrdID",
+            "name": "X-Internal-Secret",
             "in": "header",
             "required": true,
             "schema": {
@@ -27,14 +27,33 @@
             }
           },
           {
-            "name": "request",
-            "in": "query",
+            "name": "X-Correlation-Id",
+            "in": "header",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/FepOrderSubmitRequest"
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-ClOrdID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FepOrderSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -54,10 +73,19 @@
         "tags": [
           "fep-gateway-order-controller"
         ],
+        "summary": "Replay an escalated order",
         "operationId": "replay",
         "parameters": [
           {
-            "name": "X-ClOrdID",
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
             "in": "header",
             "required": true,
             "schema": {
@@ -69,25 +97,38 @@
             "in": "path",
             "required": true,
             "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
               "type": "string"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/FepOrderReplayRequest"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FepOrderReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Replay processed",
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                  "$ref": "#/components/schemas/ApiResponseFepOrderReplayResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "9009 INVALID_SESSION_STATUS - replay target must be ESCALATED",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             }
@@ -100,10 +141,19 @@
         "tags": [
           "fep-gateway-order-controller"
         ],
+        "summary": "Cancel an order",
         "operationId": "cancel",
         "parameters": [
           {
-            "name": "X-ClOrdID",
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
             "in": "header",
             "required": true,
             "schema": {
@@ -115,25 +165,48 @@
             "in": "path",
             "required": true,
             "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
               "type": "string"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/FepOrderCancelRequest"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FepOrderCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Cancel accepted",
             "content": {
               "*/*": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                  "$ref": "#/components/schemas/ApiResponseFepOrderCancelResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "9006 CANCEL_REJECTED",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "9004 TIMEOUT",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             }
@@ -149,10 +222,27 @@
         "operationId": "updateStatus",
         "parameters": [
           {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "X-ClOrdID",
             "in": "header",
             "required": true,
             "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
               "type": "string"
             }
           },
@@ -161,18 +251,21 @@
             "in": "path",
             "required": true,
             "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
               "type": "string"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/FepInternalOrderStatusRequest"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FepInternalOrderStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -195,7 +288,15 @@
         "operationId": "status",
         "parameters": [
           {
-            "name": "X-ClOrdID",
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
             "in": "header",
             "required": true,
             "schema": {
@@ -207,15 +308,8 @@
             "in": "path",
             "required": true,
             "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
               "type": "string"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/FepOrderStatusRequest"
             }
           }
         ],
@@ -297,8 +391,13 @@
     "schemas": {
       "FepOrderSubmitRequest": {
         "required": [
+          "accountId",
           "clOrdId",
+          "currency",
+          "orderType",
           "qty",
+          "referenceId",
+          "securityExchange",
           "side",
           "symbol"
         ],
@@ -306,20 +405,73 @@
         "properties": {
           "clOrdId": {
             "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "accountId": {
+            "minLength": 1,
             "type": "string"
           },
           "symbol": {
             "minLength": 1,
+            "pattern": "^\\d{6}$",
             "type": "string"
           },
+          "securityExchange": {
+            "type": "string",
+            "enum": [
+              "KRX",
+              "KOSDAQ"
+            ]
+          },
           "side": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ]
+          },
+          "orderType": {
+            "type": "string",
+            "enum": [
+              "LIMIT",
+              "MARKET"
+            ]
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quoteSnapshotId": {
+            "type": "string"
+          },
+          "quoteAsOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quoteSourceMode": {
+            "type": "string",
+            "enum": [
+              "LIVE",
+              "DELAYED",
+              "REPLAY"
+            ]
+          },
+          "preTradePrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
             "minLength": 1,
             "type": "string"
           },
-          "qty": {
-            "minimum": 0.0001,
-            "exclusiveMinimum": false,
-            "type": "number"
+          "referenceId": {
+            "minLength": 1,
+            "type": "string"
           }
         }
       },
@@ -368,45 +520,252 @@
           "clOrdId": {
             "type": "string"
           },
-          "status": {
+          "fepOrderId": {
             "type": "string"
           },
-          "plane": {
+          "execType": {
+            "type": "string",
+            "enum": [
+              "FILL",
+              "PARTIAL_FILL",
+              "PENDING_NEW",
+              "REJECTED",
+              "CANCELED"
+            ]
+          },
+          "ordStatus": {
+            "type": "string",
+            "enum": [
+              "FILLED",
+              "PARTIALLY_FILLED",
+              "PENDING",
+              "UNKNOWN",
+              "MALFORMED",
+              "REJECTED",
+              "CANCELED"
+            ]
+          },
+          "executedQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executedPrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "leavesQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "transactTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "queryTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
             "type": "string"
           }
         }
       },
       "FepOrderReplayRequest": {
         "required": [
-          "clOrdId",
+          "approvedBy",
+          "evidenceRef",
+          "manualDecision",
+          "operatorId",
           "reason"
         ],
         "type": "object",
         "properties": {
-          "clOrdId": {
+          "manualDecision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ]
+          },
+          "operatorId": {
             "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "approvedBy": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "evidenceRef": {
             "type": "string"
           },
           "reason": {
-            "minLength": 1,
+            "minLength": 30,
             "type": "string"
+          },
+          "executionPrice": {
+            "type": "integer",
+            "description": "Required for unresolved MARKET replay approval. Values outside maxVirtualFillDeviationBps fail with VALIDATION-002.",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseFepOrderReplayResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FepOrderReplayResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FepOrderReplayResponse": {
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "type": "string"
+          },
+          "finalStatus": {
+            "type": "string",
+            "enum": [
+              "COMPLETED",
+              "FAILED",
+              "CANCELED"
+            ]
+          },
+          "executionResult": {
+            "type": "string",
+            "enum": [
+              "PARTIAL_FILL_CANCEL"
+            ]
+          },
+          "executionSource": {
+            "type": "string",
+            "enum": [
+              "FILLED",
+              "VIRTUAL_FILL"
+            ]
+          },
+          "executedQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executedPrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "processedBy": {
+            "type": "string"
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
       "FepOrderCancelRequest": {
         "required": [
-          "clOrdId",
-          "reason"
+          "cancelQty",
+          "origClOrdId",
+          "reason",
+          "side",
+          "symbol"
         ],
         "type": "object",
         "properties": {
-          "clOrdId": {
+          "origClOrdId": {
             "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
-          "reason": {
+          "symbol": {
             "minLength": 1,
+            "pattern": "^\\d{6}$",
             "type": "string"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ]
+          },
+          "cancelQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "RECOVERY",
+              "EXPIRED",
+              "ADMIN"
+            ]
+          }
+        }
+      },
+      "ApiResponseFepOrderCancelResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FepOrderCancelResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FepOrderCancelResponse": {
+        "type": "object",
+        "properties": {
+          "origClOrdId": {
+            "type": "string"
+          },
+          "cancelClOrdId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CANCELED",
+              "PARTIAL_FILL_CANCEL"
+            ]
+          },
+          "executedQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "canceledQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executedPrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canceledAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -419,11 +778,59 @@
           "status": {
             "minLength": 1,
             "type": "string"
+          },
+          "executedQty": {
+            "type": "integer",
+            "description": "Optional executed quantity for status correction paths such as PARTIALLY_FILLED.",
+            "format": "int64"
+          },
+          "executedPrice": {
+            "type": "integer",
+            "description": "Optional executed price for MARKET FILLED or partial execution correction paths.",
+            "format": "int64"
+          },
+          "recoveryStatus": {
+            "type": "string",
+            "description": "Optional recovery state override. Use ESCALATED before manual replay."
+          },
+          "requeryStatus": {
+            "type": "string",
+            "description": "Optional simulated requery outcome for replay paths.",
+            "enum": [
+              "FILLED",
+              "PARTIALLY_FILLED",
+              "CANCELED",
+              "UNKNOWN",
+              "PENDING",
+              "MALFORMED",
+              "REJECTED"
+            ]
+          },
+          "requeryExecutedQty": {
+            "type": "integer",
+            "description": "Optional executed quantity to pair with a simulated requery outcome.",
+            "format": "int64"
+          },
+          "requeryExecutedPrice": {
+            "type": "integer",
+            "description": "Optional executed price to pair with a simulated requery outcome.",
+            "format": "int64"
+          },
+          "cancelFailureMode": {
+            "type": "string",
+            "description": "Optional cancel transport simulation mode.",
+            "enum": [
+              "NONE",
+              "TIMEOUT",
+              "REJECT"
+            ]
+          },
+          "referencePrice": {
+            "type": "integer",
+            "description": "Optional reference price override for legacy MARKET recovery rows.",
+            "format": "int64"
           }
         }
-      },
-      "FepOrderStatusRequest": {
-        "type": "object"
       }
     }
   }

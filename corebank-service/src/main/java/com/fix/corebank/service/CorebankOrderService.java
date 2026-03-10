@@ -2,11 +2,17 @@ package com.fix.corebank.service;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.fep.FepOrderType;
+import com.fix.common.fep.FepSecurityExchange;
+import com.fix.common.fep.FepSide;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.JournalEntry;
 import com.fix.corebank.entity.LedgerEntry;
 import com.fix.corebank.entity.LedgerEntryRef;
 import com.fix.corebank.entity.Order;
+import com.fix.corebank.client.FepClient;
+import com.fix.corebank.client.FepOrderResult;
+import com.fix.corebank.client.FepOutboundOrderPayload;
 import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.ExecutionRepository;
@@ -25,6 +31,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Locale;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -41,6 +48,7 @@ public class CorebankOrderService {
   private final JournalEntryRepository journalEntryRepository;
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
+  private final FepClient fepClient;
 
   @Transactional(readOnly = true)
   public PortfolioResult getPortfolio(PortfolioQueryCommand command) {
@@ -74,10 +82,15 @@ public class CorebankOrderService {
         .orElseGet(() -> createFreshOrder(command));
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public InternalOrderResult requeryOrder(InternalOrderRequeryCommand command) {
     Order order = orderRepository.findByClOrdId(command.getClOrdId())
         .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "order not found"));
+    FepOrderResult gatewayStatus = fepClient.queryOrderStatus(
+        order.getClOrdId(),
+        correlationId("requery", order.getClOrdId())
+    );
+    order.updateStatus(gatewayStatus.ordStatus().name());
     return mapToOrderResult(order, true);
   }
 
@@ -120,6 +133,11 @@ public class CorebankOrderService {
     try {
       Order saved = orderRepository.saveAndFlush(order);
       appendLedgerSkeleton(saved);
+      FepOrderResult gatewayOrder = fepClient.submitOrder(
+          toFepPayload(account, command, side),
+          correlationId("submit", command.getClOrdId())
+      );
+      saved.updateStatus(gatewayOrder.ordStatus().name());
       return mapToOrderResult(saved, false);
     } catch (DataIntegrityViolationException e) {
       return orderRepository.findByClOrdId(command.getClOrdId())
@@ -159,6 +177,29 @@ public class CorebankOrderService {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "side must be BUY or SELL");
     }
     return normalized;
+  }
+
+  private FepOutboundOrderPayload toFepPayload(Account account, InternalOrderCreateCommand command, String side) {
+    return new FepOutboundOrderPayload(
+        command.getClOrdId(),
+        account.getAccountNo(),
+        command.getSymbol(),
+        FepSecurityExchange.KRX,
+        FepSide.valueOf(side),
+        FepOrderType.LIMIT,
+        command.getQuantity().longValueExact(),
+        command.getPrice().longValueExact(),
+        null,
+        null,
+        null,
+        null,
+        account.getCurrency(),
+        command.getClOrdId()
+    );
+  }
+
+  private String correlationId(String operation, String clOrdId) {
+    return "corebank-" + operation + "-" + clOrdId + "-" + UUID.randomUUID();
   }
 
   private Instant startOfUtcDay() {

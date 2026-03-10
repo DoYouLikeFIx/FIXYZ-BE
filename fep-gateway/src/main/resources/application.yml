@@ -4,6 +4,10 @@ server:
 internal:
   secret: ${INTERNAL_SECRET:local-internal-secret}
 
+fep:
+  replay:
+    max-virtual-fill-deviation-bps: ${FEP_REPLAY_MAX_VIRTUAL_FILL_DEVIATION_BPS:500}
+
 spring:
   application:
     name: fep-gateway

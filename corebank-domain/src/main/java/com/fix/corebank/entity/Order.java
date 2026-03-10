@@ -111,4 +111,8 @@ public class Order extends BaseTimeEntity {
   public Instant getRequestedAt() {
     return requestedAt;
   }
+
+  public void updateStatus(String status) {
+    this.status = status;
+  }
 }

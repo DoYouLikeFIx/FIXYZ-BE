@@ -4,14 +4,16 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import org.springframework.web.bind.annotation.RestController;
 
-@AnalyzeClasses(packages = "com.fix.fepgateway")
+@AnalyzeClasses(packages = "com.fix.fepgateway", importOptions = ImportOption.DoNotIncludeTests.class)
 class FepGatewayDtoVoBoundaryArchTest {
 
   @ArchTest
@@ -39,17 +41,23 @@ class FepGatewayDtoVoBoundaryArchTest {
           .should().dependOnClassesThat().resideInAnyPackage("..dto..", "..controller..", "..controlplane.controller..");
 
   @ArchTest
-  static final ArchRule dtoShouldNotUseRecord =
+  static final ArchRule dtoShouldUseRecord =
       classes()
           .that().resideInAnyPackage("..dto.request..", "..dto.response..")
-          .should(notBeRecord());
+          .should(beRecord());
 
-  private static ArchCondition<JavaClass> notBeRecord() {
-    return new ArchCondition<>("not be a record") {
+  @ArchTest
+  static final ArchRule controllerPackagesShouldContainOnlyRestControllers =
+      classes()
+          .that().resideInAnyPackage("..controller..", "..controlplane.controller..")
+          .should().beAnnotatedWith(RestController.class);
+
+  private static ArchCondition<JavaClass> beRecord() {
+    return new ArchCondition<>("be a record") {
       @Override
       public void check(JavaClass item, ConditionEvents events) {
-        if (item.isRecord()) {
-          events.add(SimpleConditionEvent.violated(item, item.getName() + " must be class, not record"));
+        if (!item.isRecord()) {
+          events.add(SimpleConditionEvent.violated(item, item.getName() + " must be record, not class"));
         }
       }
     };

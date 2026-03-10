@@ -1,23 +1,34 @@
 package com.fix.fepgateway.controlplane.controller;
 
 import com.fix.common.error.ApiResponse;
+import com.fix.common.error.ApiErrorResponse;
+import com.fix.common.validation.ContractPatterns;
 import com.fix.common.web.CommonHeaders;
+import com.fix.fepgateway.contract.validation.ClOrdIdContractValidator;
 import com.fix.fepgateway.controlplane.service.FepGatewayControlService;
 import com.fix.fepgateway.dto.request.FepOrderCancelRequest;
 import com.fix.fepgateway.dto.request.FepOrderReplayRequest;
-import com.fix.fepgateway.dto.request.FepOrderStatusRequest;
 import com.fix.fepgateway.dto.request.FepOrderSubmitRequest;
+import com.fix.fepgateway.dto.response.FepOrderCancelResponse;
 import com.fix.fepgateway.dto.response.FepOrderResponse;
+import com.fix.fepgateway.dto.response.FepOrderReplayResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@Validated
 @RequestMapping("/fep/v1/orders")
 public class FepGatewayOrderController {
 
@@ -29,40 +40,70 @@ public class FepGatewayOrderController {
 
   @PostMapping
   public ApiResponse<FepOrderResponse> submit(
+      @RequestHeader(CommonHeaders.X_INTERNAL_SECRET) String internalSecret,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Pattern(regexp = ContractPatterns.UUID_V4)
       @RequestHeader(CommonHeaders.X_CL_ORD_ID) String clOrdIdHeader,
-      @Valid @ModelAttribute FepOrderSubmitRequest request
+      @Valid @RequestBody FepOrderSubmitRequest request
   ) {
-    ClOrdIdHeaderValidator.requireExactMatch(clOrdIdHeader, request.getClOrdId());
+    ClOrdIdContractValidator.requireExactMatch(clOrdIdHeader, request.clOrdId());
     return ApiResponse.success(FepOrderResponse.from(fepGatewayControlService.submitOrder(request.toVo())));
   }
 
   @GetMapping("/{clOrdId}/status")
   public ApiResponse<FepOrderResponse> status(
-      @RequestHeader(CommonHeaders.X_CL_ORD_ID) String clOrdIdHeader,
-      @PathVariable String clOrdId,
-      @ModelAttribute FepOrderStatusRequest request
+      @RequestHeader(CommonHeaders.X_INTERNAL_SECRET) String internalSecret,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Pattern(regexp = ContractPatterns.UUID_V4)
+      @PathVariable String clOrdId
   ) {
-    ClOrdIdHeaderValidator.requireExactMatch(clOrdIdHeader, clOrdId);
-    return ApiResponse.success(FepOrderResponse.from(fepGatewayControlService.status(request.toVo(clOrdId))));
+    return ApiResponse.success(FepOrderResponse.from(fepGatewayControlService.status(
+        com.fix.fepgateway.vo.GatewayOrderStatusCommand.of(clOrdId)
+    )));
   }
 
   @PostMapping("/{clOrdId}/cancel")
-  public ApiResponse<FepOrderResponse> cancel(
-      @RequestHeader(CommonHeaders.X_CL_ORD_ID) String clOrdIdHeader,
+  @Operation(summary = "Cancel an order")
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Cancel accepted"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(
+          responseCode = "409",
+          description = "9006 CANCEL_REJECTED",
+          content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+      ),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(
+          responseCode = "504",
+          description = "9004 TIMEOUT",
+          content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+      )
+  })
+  public ApiResponse<FepOrderCancelResponse> cancel(
+      @RequestHeader(CommonHeaders.X_INTERNAL_SECRET) String internalSecret,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Pattern(regexp = ContractPatterns.UUID_V4)
       @PathVariable String clOrdId,
-      @Valid @ModelAttribute FepOrderCancelRequest request
+      @Valid @RequestBody FepOrderCancelRequest request
   ) {
-    ClOrdIdHeaderValidator.requireExactMatch(clOrdIdHeader, clOrdId, request.getClOrdId());
-    return ApiResponse.success(FepOrderResponse.from(fepGatewayControlService.cancel(request.toVo(clOrdId))));
+    return ApiResponse.success(FepOrderCancelResponse.from(fepGatewayControlService.cancel(request.toVo(clOrdId))));
   }
 
   @PostMapping("/{clOrdId}/replay")
-  public ApiResponse<FepOrderResponse> replay(
-      @RequestHeader(CommonHeaders.X_CL_ORD_ID) String clOrdIdHeader,
+  @Operation(summary = "Replay an escalated order")
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Replay processed"),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(
+          responseCode = "409",
+          description = "9009 INVALID_SESSION_STATUS - replay target must be ESCALATED",
+          content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+      )
+  })
+  public ApiResponse<FepOrderReplayResponse> replay(
+      @RequestHeader(CommonHeaders.X_INTERNAL_SECRET) String internalSecret,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Pattern(regexp = ContractPatterns.UUID_V4)
       @PathVariable String clOrdId,
-      @Valid @ModelAttribute FepOrderReplayRequest request
+      @Valid @RequestBody FepOrderReplayRequest request
   ) {
-    ClOrdIdHeaderValidator.requireExactMatch(clOrdIdHeader, clOrdId, request.getClOrdId());
-    return ApiResponse.success(FepOrderResponse.from(fepGatewayControlService.replay(request.toVo(clOrdId))));
+    return ApiResponse.success(FepOrderReplayResponse.from(fepGatewayControlService.replay(request.toVo(clOrdId))));
   }
 }

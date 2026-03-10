@@ -1,30 +1,19 @@
 package com.fix.fepgateway.vo;
 
-public class GatewayOrderResult {
+import com.fix.common.fep.FepExecType;
+import com.fix.common.fep.FepOrdStatus;
+import java.time.Instant;
 
-  private final String clOrdId;
-  private final String status;
-  private final String plane;
-
-  private GatewayOrderResult(String clOrdId, String status, String plane) {
-    this.clOrdId = clOrdId;
-    this.status = status;
-    this.plane = plane;
-  }
-
-  public static GatewayOrderResult of(String clOrdId, String status, String plane) {
-    return new GatewayOrderResult(clOrdId, status, plane);
-  }
-
-  public String getClOrdId() {
-    return clOrdId;
-  }
-
-  public String getStatus() {
-    return status;
-  }
-
-  public String getPlane() {
-    return plane;
-  }
+public record GatewayOrderResult(
+    String clOrdId,
+    String fepOrderId,
+    FepExecType execType,
+    FepOrdStatus ordStatus,
+    Long executedQty,
+    Long executedPrice,
+    Long leavesQty,
+    Instant transactTime,
+    Instant queryTime,
+    String message
+) {
 }
