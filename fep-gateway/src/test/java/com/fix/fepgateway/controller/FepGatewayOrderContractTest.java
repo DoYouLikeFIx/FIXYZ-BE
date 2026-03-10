@@ -1,5 +1,6 @@
 package com.fix.fepgateway.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -41,6 +42,15 @@ class FepGatewayOrderContractTest {
   private static final String CANCEL_PARTIAL_OPEN_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174020";
   private static final String LEGACY_PENDING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174021";
   private static final String LEGACY_INVALID_STATUS_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174022";
+  private static final String REPLAY_REFERENCE_ORIGINAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174023";
+  private static final String REPLAY_REFERENCE_DUPLICATE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174024";
+  private static final String CROSS_OWNER_ORIGINAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174025";
+  private static final String CROSS_OWNER_DUPLICATE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174026";
+  private static final String CL_ORD_ID_MISMATCH_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174027";
+  private static final String EXPIRED_REFERENCE_ORIGINAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174028";
+  private static final String EXPIRED_REFERENCE_DUPLICATE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174029";
+  private static final String LONG_CORRELATION_OWNER_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174032";
+  private static final String LONG_CORRELATION_REPLAY_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174033";
 
   @Autowired
   private MockMvc mockMvc;
@@ -82,7 +92,7 @@ class FepGatewayOrderContractTest {
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
             .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-002-submit")
             .header(CommonHeaders.X_CL_ORD_ID, SUBMIT_CL_ORD_ID)
-            .content(validSubmitBody(SUBMIT_CL_ORD_ID)))
+            .content(validSubmitBody(SUBMIT_CL_ORD_ID, "ACC-001", "ref-contract-002")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.clOrdId").value(SUBMIT_CL_ORD_ID))
@@ -130,6 +140,198 @@ class FepGatewayOrderContractTest {
                   "referenceId": "ref-contract-003"
                 }
                 """.formatted(MARKET_CL_ORD_ID)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
+  }
+
+  @Test
+  void shouldReturnExistingProcessingContextForSameOwnerReferenceReplay() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003a")
+            .header(CommonHeaders.X_CL_ORD_ID, REPLAY_REFERENCE_ORIGINAL_CL_ORD_ID)
+            .content(validSubmitBody(
+                REPLAY_REFERENCE_ORIGINAL_CL_ORD_ID,
+                "ACC-REF-001",
+                "ref-contract-replay-001"
+            )))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(REPLAY_REFERENCE_ORIGINAL_CL_ORD_ID));
+
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003b")
+            .header(CommonHeaders.X_CL_ORD_ID, REPLAY_REFERENCE_DUPLICATE_CL_ORD_ID)
+            .content(validSubmitBody(
+                REPLAY_REFERENCE_DUPLICATE_CL_ORD_ID,
+                "ACC-REF-001",
+                "ref-contract-replay-001"
+            )))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(REPLAY_REFERENCE_ORIGINAL_CL_ORD_ID))
+        .andExpect(jsonPath("$.data.fepOrderId").value("FEP-KRX-" + REPLAY_REFERENCE_ORIGINAL_CL_ORD_ID));
+
+    Integer orderCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM gateway_orders WHERE reference_id = ?",
+        Integer.class,
+        "ref-contract-replay-001"
+    );
+    assertThat(orderCount).isEqualTo(1);
+  }
+
+  @Test
+  void shouldRejectCrossOwnerReferenceReplayAsUnauthorizedAndAuditIt() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003c")
+            .header(CommonHeaders.X_CL_ORD_ID, CROSS_OWNER_ORIGINAL_CL_ORD_ID)
+            .content(validSubmitBody(
+                CROSS_OWNER_ORIGINAL_CL_ORD_ID,
+                "ACC-REF-OWNER",
+                "ref-contract-owner-001"
+            )))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003d")
+            .header(CommonHeaders.X_CL_ORD_ID, CROSS_OWNER_DUPLICATE_CL_ORD_ID)
+            .content(validSubmitBody(
+                CROSS_OWNER_DUPLICATE_CL_ORD_ID,
+                "ACC-REF-ATTEMPT",
+                "ref-contract-owner-001"
+            )))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"));
+
+    assertSecurityEventCount("REFERENCE_ID_OWNER_MISMATCH", "ref-contract-owner-001", 1);
+  }
+
+  @Test
+  void shouldKeepDeniedReplayDeterministicWithOversizedCorrelationId() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003c-long-owner")
+            .header(CommonHeaders.X_CL_ORD_ID, LONG_CORRELATION_OWNER_CL_ORD_ID)
+            .content(validSubmitBody(
+                LONG_CORRELATION_OWNER_CL_ORD_ID,
+                "ACC-REF-LONG",
+                "ref-contract-owner-002"
+            )))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "C".repeat(200))
+            .header(CommonHeaders.X_CL_ORD_ID, LONG_CORRELATION_REPLAY_CL_ORD_ID)
+            .content(validSubmitBody(
+                LONG_CORRELATION_REPLAY_CL_ORD_ID,
+                "ACC-REF-LONG-ATTEMPT",
+                "ref-contract-owner-002"
+            )))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH_001"));
+
+    assertSecurityEventCount("REFERENCE_ID_OWNER_MISMATCH", "ref-contract-owner-002", 1);
+  }
+
+  @Test
+  void shouldRejectClOrdIdReuseWithDifferentReferenceIdAndAuditIt() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003e")
+            .header(CommonHeaders.X_CL_ORD_ID, CL_ORD_ID_MISMATCH_CL_ORD_ID)
+            .content(validSubmitBody(
+                CL_ORD_ID_MISMATCH_CL_ORD_ID,
+                "ACC-REF-002",
+                "ref-contract-bind-001"
+            )))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003f")
+            .header(CommonHeaders.X_CL_ORD_ID, CL_ORD_ID_MISMATCH_CL_ORD_ID)
+            .content(validSubmitBody(
+                CL_ORD_ID_MISMATCH_CL_ORD_ID,
+                "ACC-REF-002",
+                "ref-contract-bind-002"
+            )))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
+
+    assertSecurityEventCount("CL_ORD_ID_REFERENCE_ID_MISMATCH", "ref-contract-bind-002", 1);
+  }
+
+  @Test
+  void shouldRejectExpiredReferenceReplayDeterministicallyAndAuditIt() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003g")
+            .header(CommonHeaders.X_CL_ORD_ID, EXPIRED_REFERENCE_ORIGINAL_CL_ORD_ID)
+            .content(validSubmitBody(
+                EXPIRED_REFERENCE_ORIGINAL_CL_ORD_ID,
+                "ACC-REF-003",
+                "ref-contract-expired-001"
+            )))
+        .andExpect(status().isOk());
+
+    jdbcTemplate.update(
+        "UPDATE gateway_orders SET reference_id_expires_at = ? WHERE reference_id = ?",
+        Timestamp.from(Instant.parse("2026-02-28T23:59:59Z")),
+        "ref-contract-expired-001"
+    );
+
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003h")
+            .header(CommonHeaders.X_CL_ORD_ID, EXPIRED_REFERENCE_DUPLICATE_CL_ORD_ID)
+            .content(validSubmitBody(
+                EXPIRED_REFERENCE_DUPLICATE_CL_ORD_ID,
+                "ACC-REF-003",
+                "ref-contract-expired-001"
+            )))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
+
+    assertSecurityEventCount("REFERENCE_ID_EXPIRED", "ref-contract-expired-001", 1);
+  }
+
+  @Test
+  void shouldValidateSubmitReferenceAndAccountLengthBounds() throws Exception {
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003i")
+            .header(CommonHeaders.X_CL_ORD_ID, "123e4567-e89b-42d3-a456-426614174030")
+            .content(validSubmitBody(
+                "123e4567-e89b-42d3-a456-426614174030",
+                "A".repeat(65),
+                "ref-contract-length-001"
+            )))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
+
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-003j")
+            .header(CommonHeaders.X_CL_ORD_ID, "123e4567-e89b-42d3-a456-426614174031")
+            .content(validSubmitBody(
+                "123e4567-e89b-42d3-a456-426614174031",
+                "ACC-REF-004",
+                "R".repeat(129)
+            )))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.code").value("VALIDATION-001"));
   }
@@ -459,11 +661,11 @@ class FepGatewayOrderContractTest {
         .andExpect(jsonPath("$.data.leavesQty").value(6));
   }
 
-  private String validSubmitBody(String clOrdId) {
+  private String validSubmitBody(String clOrdId, String accountId, String referenceId) {
     return """
         {
           "clOrdId": "%s",
-          "accountId": "ACC-001",
+          "accountId": "%s",
           "symbol": "005930",
           "securityExchange": "KRX",
           "side": "BUY",
@@ -471,9 +673,19 @@ class FepGatewayOrderContractTest {
           "qty": 10,
           "price": 72000,
           "currency": "KRW",
-          "referenceId": "ref-contract-002"
+          "referenceId": "%s"
         }
-        """.formatted(clOrdId);
+        """.formatted(clOrdId, accountId, referenceId);
+  }
+
+  private void assertSecurityEventCount(String eventType, String referenceId, int expectedCount) {
+    Integer count = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM gateway_security_events WHERE event_type = ? AND reference_id = ?",
+        Integer.class,
+        eventType,
+        referenceId
+    );
+    assertThat(count).isEqualTo(expectedCount);
   }
 
   private void insertLegacyOrder(String clOrdId, String status, String execType, Long requestedPrice) {
@@ -481,6 +693,9 @@ class FepGatewayOrderContractTest {
     jdbcTemplate.update("""
             INSERT INTO gateway_orders (
               cl_ord_id,
+              account_id,
+              reference_id,
+              reference_id_expires_at,
               symbol,
               side,
               qty,
@@ -502,9 +717,12 @@ class FepGatewayOrderContractTest {
               created_at,
               updated_at,
               version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
         clOrdId,
+        "LEGACY",
+        "LEGACY-" + clOrdId,
+        now,
         "005930",
         "BUY",
         BigDecimal.TEN,
