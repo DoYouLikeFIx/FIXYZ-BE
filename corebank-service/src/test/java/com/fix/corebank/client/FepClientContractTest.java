@@ -39,6 +39,7 @@ class FepClientContractTest {
   private static final String CL_ORD_ID_7 = "123e4567-e89b-42d3-a456-426614174207";
   private static final String CL_ORD_ID_8 = "123e4567-e89b-42d3-a456-426614174208";
   private static final String CL_ORD_ID_9 = "123e4567-e89b-42d3-a456-426614174209";
+  private static final String CL_ORD_ID_10 = "123e4567-e89b-42d3-a456-426614174210";
 
   private WireMockServer wireMockServer;
   private FepClient fepClient;
@@ -133,6 +134,33 @@ class FepClientContractTest {
               "referenceId": "ref-client-002"
             }
             """.formatted(CL_ORD_ID_2), true, true)));
+  }
+
+  @Test
+  void shouldRejectSubmitResponsesThatChangeCanonicalClOrdId() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(aResponse()
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "clOrdId": "%s",
+                    "fepOrderId": "FEP-KRX-%s",
+                    "execType": "FILL",
+                    "ordStatus": "FILLED",
+                    "executedQty": 10,
+                    "executedPrice": 72000,
+                    "leavesQty": 0,
+                    "transactTime": "2026-03-01T10:05:30Z"
+                  },
+                  "error": null
+                }
+                """.formatted(CL_ORD_ID_2, CL_ORD_ID_2))));
+
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_10, "ref-client-002"), "trace-client-002b"))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("submit response clOrdId must match request");
   }
 
   @Test

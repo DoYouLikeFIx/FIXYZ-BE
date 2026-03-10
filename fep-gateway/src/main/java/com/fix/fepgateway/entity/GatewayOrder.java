@@ -19,12 +19,23 @@ import java.util.Locale;
 @Table(name = "gateway_orders")
 public class GatewayOrder extends BaseTimeEntity {
 
+  private static final String LEGACY_ACCOUNT_ID = "LEGACY";
+
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
   @Column(name = "cl_ord_id", nullable = false, unique = true, length = 64)
   private String clOrdId;
+
+  @Column(name = "account_id", nullable = false, length = 64)
+  private String accountId;
+
+  @Column(name = "reference_id", nullable = false, unique = true, length = 128)
+  private String referenceId;
+
+  @Column(name = "reference_id_expires_at", nullable = false)
+  private Instant referenceIdExpiresAt;
 
   @Column(name = "symbol", nullable = false, length = 32)
   private String symbol;
@@ -85,6 +96,9 @@ public class GatewayOrder extends BaseTimeEntity {
 
   private GatewayOrder(
       String clOrdId,
+      String accountId,
+      String referenceId,
+      Instant referenceIdExpiresAt,
       String symbol,
       String side,
       BigDecimal qty,
@@ -105,6 +119,9 @@ public class GatewayOrder extends BaseTimeEntity {
       Long requeryExecutedPrice
   ) {
     this.clOrdId = clOrdId;
+    this.accountId = accountId;
+    this.referenceId = referenceId;
+    this.referenceIdExpiresAt = referenceIdExpiresAt;
     this.symbol = symbol;
     this.side = side;
     this.qty = qty;
@@ -134,8 +151,37 @@ public class GatewayOrder extends BaseTimeEntity {
       Long requestedPrice,
       String transport
   ) {
+    return received(
+        clOrdId,
+        LEGACY_ACCOUNT_ID,
+        legacyReferenceId(clOrdId),
+        Instant.EPOCH,
+        symbol,
+        side,
+        qty,
+        orderType,
+        requestedPrice,
+        transport
+    );
+  }
+
+  public static GatewayOrder received(
+      String clOrdId,
+      String accountId,
+      String referenceId,
+      Instant referenceIdExpiresAt,
+      String symbol,
+      String side,
+      BigDecimal qty,
+      String orderType,
+      Long requestedPrice,
+      String transport
+  ) {
     return new GatewayOrder(
         clOrdId,
+        accountId,
+        referenceId,
+        referenceIdExpiresAt,
         symbol,
         side,
         qty,
@@ -163,6 +209,18 @@ public class GatewayOrder extends BaseTimeEntity {
 
   public String getClOrdId() {
     return clOrdId;
+  }
+
+  public String getAccountId() {
+    return accountId;
+  }
+
+  public String getReferenceId() {
+    return referenceId;
+  }
+
+  public Instant getReferenceIdExpiresAt() {
+    return referenceIdExpiresAt;
   }
 
   public String getSymbol() {
@@ -267,6 +325,18 @@ public class GatewayOrder extends BaseTimeEntity {
     return "MARKET".equals(orderType);
   }
 
+  public boolean isOwnedBy(String accountId) {
+    return this.accountId != null && this.accountId.equals(accountId);
+  }
+
+  public boolean usesReferenceId(String referenceId) {
+    return this.referenceId != null && this.referenceId.equals(referenceId);
+  }
+
+  public boolean isReferenceIdExpired(Instant now) {
+    return referenceIdExpiresAt != null && referenceIdExpiresAt.isBefore(now);
+  }
+
   public long totalQty() {
     return qty.longValueExact();
   }
@@ -358,5 +428,9 @@ public class GatewayOrder extends BaseTimeEntity {
     } catch (IllegalArgumentException ignored) {
       return FepOrdStatus.UNKNOWN;
     }
+  }
+
+  private static String legacyReferenceId(String clOrdId) {
+    return "LEGACY-" + clOrdId;
   }
 }

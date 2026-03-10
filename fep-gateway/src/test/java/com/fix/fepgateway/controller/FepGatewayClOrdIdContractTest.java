@@ -13,6 +13,7 @@ import com.fix.fepgateway.dataplane.fix.FixDataPlaneService;
 import com.fix.fepgateway.repository.GatewayOrderCancelRepository;
 import com.fix.fepgateway.repository.GatewayOrderReplayRepository;
 import com.fix.fepgateway.repository.GatewayOrderRepository;
+import com.fix.fepgateway.service.GatewaySecurityEventService;
 import com.fix.fepgateway.support.FepGatewayStandaloneMvcSupport;
 import com.fix.fepgateway.vo.GatewayOrderResult;
 import com.fix.fepgateway.vo.GatewayOrderCancelCommand;
@@ -191,6 +192,7 @@ class FepGatewayClOrdIdContractTest {
           (GatewayOrderRepository) null,
           (GatewayOrderCancelRepository) null,
           (GatewayOrderReplayRepository) null,
+          (GatewaySecurityEventService) null,
           (FixDataPlaneService) null
       );
     }

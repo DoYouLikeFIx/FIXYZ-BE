@@ -24,19 +24,19 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("test")
 class FepGatewayReplayScenarioTest {
 
-  private static final String FILLED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174030";
-  private static final String GOVERNANCE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174031";
-  private static final String MARKET_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174032";
-  private static final String UNKNOWN_MARKET_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174033";
-  private static final String PARTIAL_FILL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174034";
-  private static final String CANCELED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174035";
-  private static final String CANCELED_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174036";
-  private static final String DEVIATION_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174037";
-  private static final String NOT_ESCALATED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174038";
-  private static final String REQUERY_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174039";
-  private static final String REQUERY_REJECTED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174040";
-  private static final String REQUERY_CANCELED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174041";
-  private static final String LIMIT_REFERENCE_MISSING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174042";
+  private static final String FILLED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174130";
+  private static final String GOVERNANCE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174131";
+  private static final String MARKET_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174132";
+  private static final String UNKNOWN_MARKET_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174133";
+  private static final String PARTIAL_FILL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174134";
+  private static final String CANCELED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174135";
+  private static final String CANCELED_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174136";
+  private static final String DEVIATION_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174137";
+  private static final String NOT_ESCALATED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174138";
+  private static final String REQUERY_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174139";
+  private static final String REQUERY_REJECTED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174140";
+  private static final String REQUERY_CANCELED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174141";
+  private static final String LIMIT_REFERENCE_MISSING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174142";
   private static final String OPERATOR_ID = "123e4567-e89b-42d3-a456-426614174101";
   private static final String APPROVER_ID = "123e4567-e89b-42d3-a456-426614174102";
   private static final String LONG_REASON =
@@ -50,18 +50,6 @@ class FepGatewayReplayScenarioTest {
 
   @Test
   void shouldReplayFilledOrderAsCompleted() throws Exception {
-    GatewayOrder order = GatewayOrder.received(
-        FILLED_CL_ORD_ID,
-        "005930",
-        "BUY",
-        BigDecimal.TEN,
-        "LIMIT",
-        72000L,
-        "FIX"
-    );
-    order.updateRecoveryStatus("ESCALATED");
-    gatewayOrderRepository.save(order);
-
     mockMvc.perform(post("/fep/v1/orders")
             .contentType("application/json")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -83,6 +71,11 @@ class FepGatewayReplayScenarioTest {
                 """.formatted(FILLED_CL_ORD_ID)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.ordStatus").value("FILLED"));
+
+    GatewayOrder order = gatewayOrderRepository.findByClOrdId(FILLED_CL_ORD_ID)
+        .orElseThrow();
+    order.updateRecoveryStatus("ESCALATED");
+    gatewayOrderRepository.save(order);
 
     mockMvc.perform(post("/fep/v1/orders/{clOrdId}/replay", FILLED_CL_ORD_ID)
             .contentType("application/json")

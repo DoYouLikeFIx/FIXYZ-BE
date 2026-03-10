@@ -45,6 +45,7 @@ class CorebankOrderServiceTest {
   private static final Long ACCOUNT_ID = 1001L;
   private static final String IDEMPOTENT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174220";
   private static final String REQUERY_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174221";
+  private static final String PAYLOAD_BOUND_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174222";
 
   @Mock
   private AccountRepository accountRepository;
@@ -145,6 +146,61 @@ class CorebankOrderServiceTest {
     assertThat(second.isIdempotent()).isTrue();
     assertThat(first.getStatus()).isEqualTo("FILLED");
     assertThat(fepClient.submitCalls()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldBindGatewayReferenceIdToLocalClOrdIdOnSubmit() {
+    Account account = persistedAccount();
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
+    Order savedOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            PAYLOAD_BOUND_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("3.0000"),
+            new BigDecimal("70200.0000")
+        ),
+        9003L
+    );
+
+    when(orderRepository.findByClOrdId(PAYLOAD_BOUND_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+    when(orderRepository.saveAndFlush(any(Order.class))).thenReturn(savedOrder);
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7003L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8003L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        PAYLOAD_BOUND_CL_ORD_ID,
+        "FEP-KRX-" + PAYLOAD_BOUND_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        3L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null
+    ));
+
+    corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        PAYLOAD_BOUND_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    ));
+
+    assertThat(fepClient.lastSubmitPayload()).isNotNull();
+    assertThat(fepClient.lastSubmitPayload().clOrdId()).isEqualTo(PAYLOAD_BOUND_CL_ORD_ID);
+    assertThat(fepClient.lastSubmitPayload().referenceId()).isEqualTo(PAYLOAD_BOUND_CL_ORD_ID);
   }
 
   @Test
@@ -266,6 +322,7 @@ class CorebankOrderServiceTest {
 
     private FepOrderResult submitResult;
     private FepOrderResult queryResult;
+    private FepOutboundOrderPayload lastSubmitPayload;
     private Runnable onSubmit = () -> {
     };
     private int submitCalls;
@@ -279,6 +336,7 @@ class CorebankOrderServiceTest {
     public FepOrderResult submitOrder(FepOutboundOrderPayload payload, String correlationId) {
       onSubmit.run();
       submitCalls++;
+      lastSubmitPayload = payload;
       return submitResult;
     }
 
@@ -298,6 +356,10 @@ class CorebankOrderServiceTest {
 
     private void onSubmit(Runnable onSubmit) {
       this.onSubmit = onSubmit;
+    }
+
+    private FepOutboundOrderPayload lastSubmitPayload() {
+      return lastSubmitPayload;
     }
 
     private int submitCalls() {

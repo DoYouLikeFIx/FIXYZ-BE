@@ -13,6 +13,7 @@ import com.fix.fepgateway.entity.GatewayOrderReplay;
 import com.fix.fepgateway.repository.GatewayOrderCancelRepository;
 import com.fix.fepgateway.repository.GatewayOrderReplayRepository;
 import com.fix.fepgateway.repository.GatewayOrderRepository;
+import com.fix.fepgateway.service.GatewaySecurityEventService;
 import com.fix.fepgateway.vo.GatewayCancelResult;
 import com.fix.fepgateway.vo.GatewayExecutionOutcome;
 import com.fix.fepgateway.vo.GatewayInternalOrderStatusCommand;
@@ -26,11 +27,14 @@ import com.fix.fepgateway.vo.GatewayReplayResult;
 import com.fix.fepgateway.vo.FepReplayDecision;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,29 +45,21 @@ public class FepGatewayControlService {
   private final GatewayOrderRepository gatewayOrderRepository;
   private final GatewayOrderCancelRepository gatewayOrderCancelRepository;
   private final GatewayOrderReplayRepository gatewayOrderReplayRepository;
+  private final GatewaySecurityEventService gatewaySecurityEventService;
   private final FixDataPlaneService fixDataPlaneService;
 
   @Value("${fep.replay.max-virtual-fill-deviation-bps:500}")
   private long maxVirtualFillDeviationBps;
 
+  @Value("${fep.idempotency.reference-retention:10m}")
+  private Duration referenceIdRetention;
+
   @Transactional
   public GatewayOrderResult submitOrder(GatewayOrderSubmitCommand command) {
-    GatewayOrder order = gatewayOrderRepository.findByClOrdId(command.clOrdId())
-        .orElseGet(() -> gatewayOrderRepository.save(
-            GatewayOrder.received(
-                command.clOrdId(),
-                command.symbol(),
-                command.side().name(),
-                BigDecimal.valueOf(command.qty()),
-                command.orderType().name(),
-                command.orderType().name().equals("MARKET") ? command.preTradePrice() : command.price(),
-                "FIX"
-            )
-        ));
-    if (order.getFepOrderId() == null) {
-      order.applyExecution(fixDataPlaneService.sendNewOrder(command));
-    }
-    return order.toResult(null);
+    Instant now = Instant.now();
+    return findExistingSubmit(command)
+        .map(existingSubmit -> resolveExistingSubmit(command, existingSubmit, now))
+        .orElseGet(() -> createNewSubmit(command, now));
   }
 
   @Transactional(readOnly = true)
@@ -498,5 +494,117 @@ public class FepGatewayControlService {
 
   private boolean isFinalRejected(GatewayOrder order) {
     return FepOrdStatus.REJECTED.name().equals(order.getStatus());
+  }
+
+  private Optional<ExistingSubmit> findExistingSubmit(GatewayOrderSubmitCommand command) {
+    return gatewayOrderRepository.findByReferenceId(command.referenceId())
+        .map(order -> new ExistingSubmit(order, SubmitMatchType.REFERENCE_ID))
+        .or(() -> gatewayOrderRepository.findByClOrdId(command.clOrdId())
+            .map(order -> new ExistingSubmit(order, SubmitMatchType.CL_ORD_ID)));
+  }
+
+  private GatewayOrderResult resolveExistingSubmit(
+      GatewayOrderSubmitCommand command,
+      ExistingSubmit existingSubmit,
+      Instant now
+  ) {
+    validateExistingSubmit(command, existingSubmit, now);
+    return existingSubmit.order().toResult(null);
+  }
+
+  private GatewayOrderResult createNewSubmit(GatewayOrderSubmitCommand command, Instant now) {
+    GatewayOrder order = GatewayOrder.received(
+        command.clOrdId(),
+        command.accountId(),
+        command.referenceId(),
+        now.plus(referenceIdRetention),
+        command.symbol(),
+        command.side().name(),
+        BigDecimal.valueOf(command.qty()),
+        command.orderType().name(),
+        command.orderType().name().equals("MARKET") ? command.preTradePrice() : command.price(),
+        "FIX"
+    );
+
+    try {
+      GatewayOrder persisted = gatewayOrderRepository.saveAndFlush(order);
+      persisted.applyExecution(fixDataPlaneService.sendNewOrder(command));
+      return persisted.toResult(null);
+    } catch (DataIntegrityViolationException ex) {
+      ExistingSubmit existingSubmit = findExistingSubmit(command).orElseThrow(() -> ex);
+      validateExistingSubmit(command, existingSubmit, now);
+      return existingSubmit.order().toResult(null);
+    }
+  }
+
+  private void validateExistingSubmit(
+      GatewayOrderSubmitCommand command,
+      ExistingSubmit existingSubmit,
+      Instant now
+  ) {
+    GatewayOrder order = existingSubmit.order();
+    if (!order.isOwnedBy(command.accountId())) {
+      recordDeniedReplay(
+          "REFERENCE_ID_OWNER_MISMATCH",
+          order,
+          command.referenceId(),
+          command,
+          "referenceId cannot be reused by a different account"
+      );
+      throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "referenceId belongs to a different account");
+    }
+
+    if (!order.usesReferenceId(command.referenceId())) {
+      recordDeniedReplay(
+          "CL_ORD_ID_REFERENCE_ID_MISMATCH",
+          order,
+          command.referenceId(),
+          command,
+          "clOrdId is already bound to a different referenceId"
+      );
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          "clOrdId cannot be reused with a different referenceId"
+      );
+    }
+
+    if (order.isReferenceIdExpired(now)) {
+      recordDeniedReplay(
+          "REFERENCE_ID_EXPIRED",
+          order,
+          command.referenceId(),
+          command,
+          "referenceId has expired and cannot be reused"
+      );
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          "referenceId has expired; submit a new external request identity"
+      );
+    }
+  }
+
+  private void recordDeniedReplay(
+      String eventType,
+      GatewayOrder order,
+      String referenceId,
+      GatewayOrderSubmitCommand command,
+      String detail
+  ) {
+    gatewaySecurityEventService.recordDeniedReplay(
+        eventType,
+        referenceId,
+        order,
+        command.accountId(),
+        command.clOrdId(),
+        detail
+    );
+  }
+
+  private record ExistingSubmit(GatewayOrder order, SubmitMatchType matchType) {
+  }
+
+  private enum SubmitMatchType {
+    REFERENCE_ID,
+    CL_ORD_ID
   }
 }
