@@ -13,9 +13,11 @@ import com.fix.channel.dto.response.OtpVerifyResponse;
 import com.fix.channel.service.AuthService;
 import com.fix.channel.service.ChannelScaffoldService;
 import com.fix.common.error.ApiResponse;
+import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -43,8 +45,13 @@ public class AuthController {
 
   @PostMapping("/register")
   @ResponseStatus(HttpStatus.CREATED)
-  public ApiResponse<AuthRegisterResponse> register(@Valid @ModelAttribute AuthRegisterRequest request) {
-    return ApiResponse.success(AuthRegisterResponse.from(authService.register(request.toVo())));
+  public ApiResponse<AuthRegisterResponse> register(
+      @Valid @ModelAttribute AuthRegisterRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    return ApiResponse.success(AuthRegisterResponse.from(
+        authService.register(request.toVo(), resolveCorrelationId(httpServletRequest))
+    ));
   }
 
   @GetMapping("/csrf")
@@ -90,5 +97,13 @@ public class AuthController {
   @PostMapping("/otp/verify")
   public ApiResponse<OtpVerifyResponse> verifyOtp(@Valid @ModelAttribute OtpVerifyRequest request) {
     return ApiResponse.success(OtpVerifyResponse.from(channelScaffoldService.verifyOtp(request.toVo())));
+  }
+
+  private String resolveCorrelationId(HttpServletRequest request) {
+    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
+    if (correlationId == null || correlationId.isBlank()) {
+      return UUID.randomUUID().toString();
+    }
+    return correlationId;
   }
 }

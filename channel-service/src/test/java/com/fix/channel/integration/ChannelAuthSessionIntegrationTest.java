@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.client.CorebankProvisioningClient;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -59,6 +61,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
 
   @Autowired
   private StringRedisTemplate stringRedisTemplate;
+
+  @MockBean
+  private CorebankProvisioningClient corebankProvisioningClient;
 
   @BeforeEach
   void setUp() {

@@ -2,7 +2,7 @@ server:
   port: 8080
   servlet:
     session:
-      timeout: 30m
+      timeout: ${CHANNEL_SESSION_TIMEOUT:30m}
       cookie:
         name: SESSION
         http-only: true
@@ -29,7 +29,7 @@ spring:
       port: ${REDIS_PORT:6379}
   session:
     store-type: redis
-    timeout: 30m
+    timeout: ${CHANNEL_SESSION_TIMEOUT:30m}
     redis:
       namespace: fixyz:channel:session
       repository-type: INDEXED
@@ -58,3 +58,8 @@ auth:
       window-seconds: ${AUTH_IP_RATE_LIMIT_WINDOW_SECONDS:60}
     account-lockout:
       max-failed-attempts: ${AUTH_ACCOUNT_LOCKOUT_MAX_FAILED_ATTEMPTS:5}
+
+corebank:
+  internal:
+    base-url: ${COREBANK_INTERNAL_BASE_URL:http://localhost:8081}
+    secret: ${COREBANK_INTERNAL_SECRET:${INTERNAL_SECRET:local-internal-secret}}
