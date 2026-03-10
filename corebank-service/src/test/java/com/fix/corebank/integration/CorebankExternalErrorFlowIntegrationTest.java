@@ -104,15 +104,15 @@ class CorebankExternalErrorFlowIntegrationTest {
         .andExpect(jsonPath("$.operatorCode").value("TIMEOUT"))
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
 
-      WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
-          .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
-          .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-timeout")));
+    WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-timeout")));
 
-      Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_TIMEOUT).orElseThrow();
-      assertThat(persistedOrder.getStatus()).isEqualTo("ACCEPTED");
-      assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
-      assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
-    }
+    Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_TIMEOUT).orElseThrow();
+    assertThat(persistedOrder.getStatus()).isEqualTo("ACCEPTED");
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+  }
 
   @Test
   void shouldFallbackUnknownExternalCodeThroughInternalApi() throws Exception {
@@ -196,20 +196,20 @@ class CorebankExternalErrorFlowIntegrationTest {
             .header(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-timeout")
             .param("attemptCount", "1"))
         .andExpect(status().isOk())
-          .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-timeout"))
-          .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT))
-          .andExpect(jsonPath("$.data.status").value("PENDING"))
-          .andExpect(jsonPath("$.data.externalSyncStatus").value("FAILED"))
-          .andExpect(jsonPath("$.data.message").value("Exchange connectivity timeout"))
-          .andExpect(jsonPath("$.data.retriable").value(true))
-          .andExpect(jsonPath("$.data.escalationRequired").value(false))
-          .andExpect(jsonPath("$.data.attemptCount").value(1))
-          .andExpect(jsonPath("$.data.maxRetryCount").value(5));
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-timeout"))
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT))
+        .andExpect(jsonPath("$.data.status").value("PENDING"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("FAILED"))
+        .andExpect(jsonPath("$.data.message").value("Exchange connectivity timeout"))
+        .andExpect(jsonPath("$.data.retriable").value(true))
+        .andExpect(jsonPath("$.data.escalationRequired").value(false))
+        .andExpect(jsonPath("$.data.attemptCount").value(1))
+        .andExpect(jsonPath("$.data.maxRetryCount").value(5));
 
-      Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
-      assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
-      assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
-    }
+    Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+  }
 
   @Test
   void shouldProduceEscalationSignalWhenTransientRequeryTimeoutHitsThreshold() throws Exception {
@@ -235,19 +235,19 @@ class CorebankExternalErrorFlowIntegrationTest {
             .header(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-threshold")
             .param("attemptCount", "5"))
         .andExpect(status().isOk())
-          .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-threshold"))
-          .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT))
-          .andExpect(jsonPath("$.data.status").value("UNKNOWN"))
-          .andExpect(jsonPath("$.data.externalSyncStatus").value("ESCALATED"))
-          .andExpect(jsonPath("$.data.retriable").value(false))
-          .andExpect(jsonPath("$.data.escalationRequired").value(true))
-          .andExpect(jsonPath("$.data.attemptCount").value(5))
-          .andExpect(jsonPath("$.data.maxRetryCount").value(5));
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-threshold"))
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT))
+        .andExpect(jsonPath("$.data.status").value("UNKNOWN"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("ESCALATED"))
+        .andExpect(jsonPath("$.data.retriable").value(false))
+        .andExpect(jsonPath("$.data.escalationRequired").value(true))
+        .andExpect(jsonPath("$.data.attemptCount").value(5))
+        .andExpect(jsonPath("$.data.maxRetryCount").value(5));
 
-      Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
-      assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
-      assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
-    }
+    Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+  }
 
   @Test
   void shouldKeepOrderSubmissionAvailableAfterStatusBreakerOpens() throws Exception {
