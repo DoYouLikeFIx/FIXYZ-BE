@@ -198,6 +198,36 @@ class CorebankInternalApiSkeletonTest {
   }
 
   @Test
+  void shouldMapOwnershipFailureForAccountPositionEndpoint() throws Exception {
+    corebankOrderService.setAccountPositionFailure(new BusinessException(
+        ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
+        "forbidden account ownership"
+    ));
+
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/positions", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301")
+            .param("symbol", "005930"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
+  }
+
+  @Test
+  void shouldMapNotFoundFailureForAccountPositionEndpoint() throws Exception {
+    corebankOrderService.setAccountPositionFailure(new BusinessException(
+        ErrorCode.CORE_RESOURCE_NOT_FOUND,
+        "account not found"
+    ));
+
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/positions", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301")
+            .param("symbol", "005930"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value(ErrorCode.CORE_RESOURCE_NOT_FOUND.code()));
+  }
+
+  @Test
   void shouldRejectFractionalOrderInputsBeforeCallingFepClient() throws Exception {
     mockMvc.perform(post("/internal/v1/orders")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -261,6 +291,7 @@ class CorebankInternalApiSkeletonTest {
 
     private PortfolioResult portfolioResult;
     private AccountPositionResult accountPositionResult;
+    private RuntimeException accountPositionFailure;
     private InternalOrderResult createOrderResult;
     private InternalOrderResult requeryOrderResult;
     private RuntimeException createOrderFailure;
@@ -286,6 +317,9 @@ class CorebankInternalApiSkeletonTest {
 
     @Override
     public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command) {
+      if (accountPositionFailure != null) {
+        throw accountPositionFailure;
+      }
       return accountPositionResult;
     }
 
@@ -309,6 +343,10 @@ class CorebankInternalApiSkeletonTest {
 
     private void setAccountPositionResult(AccountPositionResult accountPositionResult) {
       this.accountPositionResult = accountPositionResult;
+    }
+
+    private void setAccountPositionFailure(RuntimeException accountPositionFailure) {
+      this.accountPositionFailure = accountPositionFailure;
     }
 
     private void setCreateOrderResult(InternalOrderResult createOrderResult) {

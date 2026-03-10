@@ -1,12 +1,15 @@
 package com.fix.corebank.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.corebank.client.FepClient;
@@ -25,6 +28,8 @@ import com.fix.corebank.repository.LedgerEntryRefRepository;
 import com.fix.corebank.repository.LedgerEntryRepository;
 import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
+import com.fix.corebank.vo.AccountPositionQueryCommand;
+import com.fix.corebank.vo.AccountPositionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
@@ -43,6 +48,8 @@ import org.springframework.web.client.RestClient;
 class CorebankOrderServiceTest {
 
   private static final Long ACCOUNT_ID = 1001L;
+  private static final Long OWNER_MEMBER_ID = 1001L;
+  private static final Long OTHER_MEMBER_ID = 2002L;
   private static final String IDEMPOTENT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174220";
   private static final String REQUERY_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174221";
   private static final String PAYLOAD_BOUND_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174222";
@@ -84,6 +91,76 @@ class CorebankOrderServiceTest {
         ledgerEntryRefRepository,
         fepClient
     );
+  }
+
+  @Test
+  void shouldReturnAccountPositionWhenOwnershipMatches() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Instant positionUpdatedAt = Instant.parse("2026-03-01T10:01:00Z");
+
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    Position position = withUpdatedAt(
+        Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000")),
+        positionUpdatedAt
+    );
+
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbol(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+
+    AccountPositionResult result = corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
+    );
+
+    assertThat(result.getAccountId()).isEqualTo(ACCOUNT_ID);
+    assertThat(result.getMemberId()).isEqualTo(OWNER_MEMBER_ID);
+    assertThat(result.getSymbol()).isEqualTo("005930");
+    assertThat(result.getQuantity()).isEqualByComparingTo("120.0000");
+    assertThat(result.getAvailableQuantity()).isEqualByComparingTo("120.0000");
+    assertThat(result.getBalance()).isEqualByComparingTo("100000000.0000");
+    assertThat(result.getCurrency()).isEqualTo("KRW");
+    assertThat(result.getAsOf()).isEqualTo(positionUpdatedAt);
+  }
+
+  @Test
+  void shouldReturnZeroQuantityWhenPositionDoesNotExist() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbol(ACCOUNT_ID, "000660")).thenReturn(Optional.empty());
+
+    AccountPositionResult result = corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "000660")
+    );
+
+    assertThat(result.getQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+    assertThat(result.getAvailableQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+    assertThat(result.getBalance()).isEqualByComparingTo("100000000.0000");
+    assertThat(result.getAsOf()).isEqualTo(accountUpdatedAt);
+  }
+
+  @Test
+  void shouldRejectAccountPositionLookupWhenOwnershipMismatches() {
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));
+
+    assertThatThrownBy(() -> corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OTHER_MEMBER_ID, "005930")
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP));
+  }
+
+  @Test
+  void shouldReturnNotFoundWhenAccountPositionTargetAccountDoesNotExist() {
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.CORE_RESOURCE_NOT_FOUND));
   }
 
   @Test
@@ -301,7 +378,7 @@ class CorebankOrderServiceTest {
   private Account persistedAccount() {
     Account account = Account.of(
         "ACC-1001",
-        1001L,
+        OWNER_MEMBER_ID,
         "KRW",
         new BigDecimal("100000000.0000"),
         new BigDecimal("500.0000")
@@ -315,6 +392,11 @@ class CorebankOrderServiceTest {
 
   private <T> T withId(T target, Long id) {
     ReflectionTestUtils.setField(target, "id", id);
+    return target;
+  }
+
+  private <T> T withUpdatedAt(T target, Instant updatedAt) {
+    ReflectionTestUtils.setField(target, "updatedAt", updatedAt);
     return target;
   }
 
