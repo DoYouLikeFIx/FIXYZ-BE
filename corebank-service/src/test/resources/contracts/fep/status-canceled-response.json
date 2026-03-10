@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "data": {
+    "clOrdId": "{{clOrdId}}",
+    "ordStatus": "CANCELED",
+    "execType": "CANCELED",
+    "canceledQty": 10,
+    "transactTime": "{{transactTime}}",
+    "queryTime": "{{queryTime}}"
+  }
+}

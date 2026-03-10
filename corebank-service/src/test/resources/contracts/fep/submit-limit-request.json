@@ -1,0 +1,12 @@
+{
+  "clOrdId": "{{clOrdId}}",
+  "accountId": "ACC-001",
+  "symbol": "005930",
+  "securityExchange": "KRX",
+  "side": "BUY",
+  "orderType": "LIMIT",
+  "qty": 10,
+  "price": 72000,
+  "currency": "KRW",
+  "referenceId": "{{referenceId}}"
+}

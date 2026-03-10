@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "data": {
+    "clOrdId": "{{clOrdId}}",
+    "ordStatus": "PENDING",
+    "queryTime": "{{queryTime}}",
+    "message": "{{message}}"
+  }
+}
