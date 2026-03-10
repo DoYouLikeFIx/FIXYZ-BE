@@ -245,7 +245,7 @@ class CorebankOrderServiceTest {
   private Account persistedAccount() {
     Account account = Account.of(
         "ACC-1001",
-        "M-1001",
+        1001L,
         "KRW",
         new BigDecimal("100000000.0000"),
         new BigDecimal("500.0000")
