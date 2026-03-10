@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
 import com.fix.fepgateway.entity.GatewayOrder;
 import com.fix.fepgateway.repository.GatewayOrderRepository;
 import com.fix.fepgateway.vo.GatewayExecutionOutcome;
@@ -209,6 +211,15 @@ class FepGatewayOrderContractTest {
         .andExpect(jsonPath("$.code").value("AUTH_001"));
 
     assertSecurityEventCount("REFERENCE_ID_OWNER_MISMATCH", "ref-contract-owner-001", 1);
+    assertLatestSecurityEvent(
+        "REFERENCE_ID_OWNER_MISMATCH",
+        "ref-contract-owner-001",
+        "ACC-REF-OWNER",
+        "ACC-REF-ATTEMPT",
+        CROSS_OWNER_ORIGINAL_CL_ORD_ID,
+        CROSS_OWNER_DUPLICATE_CL_ORD_ID,
+        "trace-contract-003d"
+    );
   }
 
   @Test
@@ -225,10 +236,13 @@ class FepGatewayOrderContractTest {
             )))
         .andExpect(status().isOk());
 
+    String oversizedCorrelationId = "C".repeat(200);
+    String normalizedCorrelationId = CorrelationIdSupport.normalize(oversizedCorrelationId);
+
     mockMvc.perform(post("/fep/v1/orders")
             .contentType(APPLICATION_JSON)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
-            .header(CommonHeaders.X_CORRELATION_ID, "C".repeat(200))
+            .header(CommonHeaders.X_CORRELATION_ID, oversizedCorrelationId)
             .header(CommonHeaders.X_CL_ORD_ID, LONG_CORRELATION_REPLAY_CL_ORD_ID)
             .content(validSubmitBody(
                 LONG_CORRELATION_REPLAY_CL_ORD_ID,
@@ -236,9 +250,19 @@ class FepGatewayOrderContractTest {
                 "ref-contract-owner-002"
             )))
         .andExpect(status().isUnauthorized())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, normalizedCorrelationId))
         .andExpect(jsonPath("$.code").value("AUTH_001"));
 
     assertSecurityEventCount("REFERENCE_ID_OWNER_MISMATCH", "ref-contract-owner-002", 1);
+    assertLatestSecurityEvent(
+        "REFERENCE_ID_OWNER_MISMATCH",
+        "ref-contract-owner-002",
+        "ACC-REF-LONG",
+        "ACC-REF-LONG-ATTEMPT",
+        LONG_CORRELATION_OWNER_CL_ORD_ID,
+        LONG_CORRELATION_REPLAY_CL_ORD_ID,
+        normalizedCorrelationId
+    );
   }
 
   @Test
@@ -688,6 +712,47 @@ class FepGatewayOrderContractTest {
     assertThat(count).isEqualTo(expectedCount);
   }
 
+  private void assertLatestSecurityEvent(
+      String eventType,
+      String referenceId,
+      String ownerAccountId,
+      String attemptedAccountId,
+      String ownerClOrdId,
+      String attemptedClOrdId,
+      String correlationId
+  ) {
+    SecurityEventRow event = jdbcTemplate.queryForObject(
+        """
+            SELECT owner_account_id,
+                   attempted_account_id,
+                   owner_cl_ord_id,
+                   attempted_cl_ord_id,
+                   correlation_id
+            FROM gateway_security_events
+            WHERE event_type = ?
+              AND reference_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+        (rs, rowNum) -> new SecurityEventRow(
+            rs.getString("owner_account_id"),
+            rs.getString("attempted_account_id"),
+            rs.getString("owner_cl_ord_id"),
+            rs.getString("attempted_cl_ord_id"),
+            rs.getString("correlation_id")
+        ),
+        eventType,
+        referenceId
+    );
+
+    assertThat(event).isNotNull();
+    assertThat(event.ownerAccountId()).isEqualTo(ownerAccountId);
+    assertThat(event.attemptedAccountId()).isEqualTo(attemptedAccountId);
+    assertThat(event.ownerClOrdId()).isEqualTo(ownerClOrdId);
+    assertThat(event.attemptedClOrdId()).isEqualTo(attemptedClOrdId);
+    assertThat(event.correlationId()).isEqualTo(correlationId);
+  }
+
   private void insertLegacyOrder(String clOrdId, String status, String execType, Long requestedPrice) {
     Timestamp now = Timestamp.from(Instant.parse("2026-03-01T10:00:00Z"));
     jdbcTemplate.update("""
@@ -745,5 +810,14 @@ class FepGatewayOrderContractTest {
         now,
         0L
     );
+  }
+
+  private record SecurityEventRow(
+      String ownerAccountId,
+      String attemptedAccountId,
+      String ownerClOrdId,
+      String attemptedClOrdId,
+      String correlationId
+  ) {
   }
 }
