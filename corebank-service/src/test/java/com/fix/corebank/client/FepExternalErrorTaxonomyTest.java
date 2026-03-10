@@ -9,6 +9,11 @@ import org.junit.jupiter.api.Test;
 class FepExternalErrorTaxonomyTest {
 
   private static final Map<String, FepExternalErrorTaxonomy.TaxonomyEntry> EXPECTED = Map.of(
+      "9001", FepExternalErrorTaxonomy.TaxonomyEntry.of(
+          ErrorCode.CHANNEL_ROUTE_NOT_FOUND,
+          "error.channel.route_not_found",
+          "NO_ROUTE"
+      ),
       "9002", FepExternalErrorTaxonomy.TaxonomyEntry.of(
           ErrorCode.FEP_GATEWAY_UNAVAILABLE,
           "error.fep.unavailable",
@@ -38,6 +43,11 @@ class FepExternalErrorTaxonomyTest {
           ErrorCode.FEP_GATEWAY_UNAVAILABLE,
           "error.fep.unavailable",
           "CIRCUIT_OPEN"
+      ),
+      "9099", FepExternalErrorTaxonomy.TaxonomyEntry.of(
+          ErrorCode.CORE_CONCURRENCY_CONFLICT,
+          "error.core.concurrency_conflict",
+          "CONCURRENCY_FAILURE"
       )
   );
 
@@ -54,10 +64,10 @@ class FepExternalErrorTaxonomyTest {
 
   @Test
   void shouldFallbackUnknownExternalCodes() {
-    FepExternalErrorTaxonomy.TaxonomyEntry actual = FepExternalErrorTaxonomy.resolve("9099");
+    FepExternalErrorTaxonomy.TaxonomyEntry actual = FepExternalErrorTaxonomy.resolve("9555");
 
     assertThat(actual.errorCode()).isEqualTo(ErrorCode.FEP_UNKNOWN_EXTERNAL);
     assertThat(actual.metadata().userMessageKey()).isEqualTo("error.fep.unknown_external");
-    assertThat(actual.metadata().operatorCode()).isEqualTo("UNKNOWN_EXTERNAL_9099");
+    assertThat(actual.metadata().operatorCode()).isEqualTo("UNKNOWN_EXTERNAL_9555");
   }
 }
