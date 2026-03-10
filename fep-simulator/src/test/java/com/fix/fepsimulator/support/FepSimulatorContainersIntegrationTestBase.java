@@ -2,16 +2,20 @@ package com.fix.fepsimulator.support;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import java.time.Duration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers(disabledWithoutDocker = true)
 public abstract class FepSimulatorContainersIntegrationTestBase {
+
+  private static final Duration CONTAINER_STARTUP_TIMEOUT = Duration.ofMinutes(3);
 
   private static final boolean LOCAL_REUSE_ENABLED =
       Boolean.parseBoolean(System.getProperty("testcontainers.reuse", "false"))
@@ -23,12 +27,17 @@ public abstract class FepSimulatorContainersIntegrationTestBase {
           .withDatabaseName("fep_simulator_it")
           .withUsername("test")
           .withPassword("test")
+          .withStartupAttempts(3)
+          .withStartupTimeout(CONTAINER_STARTUP_TIMEOUT)
           .withReuse(LOCAL_REUSE_ENABLED);
 
   @Container
   protected static final GenericContainer<?> REDIS_CONTAINER =
       new GenericContainer<>(DockerImageName.parse("redis:7.2.7-alpine"))
           .withExposedPorts(6379)
+          .waitingFor(Wait.forListeningPort().withStartupTimeout(CONTAINER_STARTUP_TIMEOUT))
+          .withStartupAttempts(3)
+          .withStartupTimeout(CONTAINER_STARTUP_TIMEOUT)
           .withReuse(LOCAL_REUSE_ENABLED);
 
   @DynamicPropertySource
