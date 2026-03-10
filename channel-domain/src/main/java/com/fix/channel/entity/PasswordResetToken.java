@@ -156,6 +156,10 @@ public class PasswordResetToken extends BaseTimeEntity {
     this.activeSlot = null;
   }
 
+  public void expireAt(Instant expiresAt) {
+    this.expiresAt = expiresAt;
+  }
+
   public void consume(Instant consumedAt) {
     this.consumedAt = consumedAt;
     this.activeSlot = null;

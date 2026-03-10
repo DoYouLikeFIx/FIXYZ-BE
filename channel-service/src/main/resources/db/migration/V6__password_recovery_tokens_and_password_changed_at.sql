@@ -32,4 +32,3 @@ CREATE TABLE password_reset_tokens (
 
 CREATE INDEX idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at);
 CREATE INDEX idx_password_reset_tokens_consumed_at ON password_reset_tokens(consumed_at);
-CREATE INDEX idx_password_reset_tokens_member_active_slot ON password_reset_tokens(member_id, active_slot);

@@ -4,14 +4,17 @@ import com.fix.channel.config.PasswordRecoveryProperties;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.RetryAfterBusinessException;
 import java.time.Duration;
+import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 @Service
 public class PasswordRecoveryRateLimitService {
 
   private static final String PREFIX = "ch:password-recovery:";
+  private static final DefaultRedisScript<Long> INCREMENT_WITH_WINDOW_SCRIPT = createIncrementWithWindowScript();
 
   private final PasswordRecoveryProperties properties;
   private final PasswordRecoveryTokenService tokenService;
@@ -103,13 +106,13 @@ public class PasswordRecoveryRateLimitService {
       return 0L;
     }
 
-    Long current = redisTemplate.opsForValue().increment(key);
+    Long current = redisTemplate.execute(
+        INCREMENT_WITH_WINDOW_SCRIPT,
+        List.of(key),
+        String.valueOf(rateLimit.getWindow().toMillis())
+    );
     if (current == null) {
       return 0L;
-    }
-
-    if (current == 1L) {
-      redisTemplate.expire(key, rateLimit.getWindow());
     }
 
     if (current > rateLimit.getMaxAttempts()) {
@@ -139,6 +142,19 @@ public class PasswordRecoveryRateLimitService {
       return "unknown";
     }
     return input.trim();
+  }
+
+  private static DefaultRedisScript<Long> createIncrementWithWindowScript() {
+    DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+    script.setScriptText("""
+        local current = redis.call('INCR', KEYS[1])
+        if current == 1 then
+          redis.call('PEXPIRE', KEYS[1], ARGV[1])
+        end
+        return current
+        """);
+    script.setResultType(Long.class);
+    return script;
   }
 
   public record ForgotDecision(String emailHash, boolean challengeRequired) {

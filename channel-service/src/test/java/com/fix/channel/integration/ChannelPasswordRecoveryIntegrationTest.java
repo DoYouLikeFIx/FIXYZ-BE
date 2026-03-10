@@ -35,7 +35,6 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -66,9 +65,6 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
 
   @Autowired
   private StringRedisTemplate stringRedisTemplate;
-
-  @Autowired
-  private JdbcTemplate jdbcTemplate;
 
   @Autowired
   private RecordingPasswordRecoveryMailDispatcher recordingPasswordRecoveryMailDispatcher;
@@ -276,12 +272,8 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
     forgot("reject.user@fixyz.com");
     String rawToken = recordingPasswordRecoveryMailDispatcher.singleToken("reject.user@fixyz.com");
     PasswordResetToken issuedToken = passwordResetTokenRepository.findAll().getFirst();
-
-    jdbcTemplate.update(
-        "UPDATE password_reset_tokens SET expires_at = ? WHERE id = ?",
-        java.sql.Timestamp.from(Instant.EPOCH),
-        issuedToken.getId()
-    );
+    issuedToken.expireAt(Instant.now().minusSeconds(60));
+    passwordResetTokenRepository.saveAndFlush(issuedToken);
 
     mockMvc.perform(post("/api/v1/auth/password/reset")
             .with(csrf())
