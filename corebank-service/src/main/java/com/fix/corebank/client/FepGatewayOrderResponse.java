@@ -16,6 +16,9 @@ public record FepGatewayOrderResponse(
     Long leavesQty,
     Instant transactTime,
     Instant queryTime,
-    String message
+    String message,
+    String rejectReason,
+    Long canceledQty,
+    String parseError
 ) {
 }

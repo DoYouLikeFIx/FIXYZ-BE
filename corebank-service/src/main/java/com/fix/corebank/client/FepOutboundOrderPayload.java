@@ -1,5 +1,6 @@
 package com.fix.corebank.client;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -21,6 +22,7 @@ public record FepOutboundOrderPayload(
     Long qty,
     Long price,
     String quoteSnapshotId,
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     Instant quoteAsOf,
     FepQuoteSourceMode quoteSourceMode,
     Long preTradePrice,
