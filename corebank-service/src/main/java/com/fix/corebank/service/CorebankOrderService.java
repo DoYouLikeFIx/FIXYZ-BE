@@ -38,6 +38,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -78,7 +79,7 @@ public class CorebankOrderService {
     );
   }
 
-  @Transactional(readOnly = true)
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command) {
     Account account = accountRepository.findById(command.getAccountId())
         .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));

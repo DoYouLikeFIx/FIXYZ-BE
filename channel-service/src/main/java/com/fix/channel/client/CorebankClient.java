@@ -10,6 +10,7 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.web.CommonHeaders;
+import java.net.SocketTimeoutException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 
 @Component
 public class CorebankClient {
@@ -141,15 +143,50 @@ public class CorebankClient {
                 restClientResponseException,
                 errorResponse.metadata()
             ))
-            .orElseGet(() -> new BusinessException(
-                ErrorCode.INTERNAL_ERROR,
-                defaultIfBlank(errorResponse.message(), ErrorCode.INTERNAL_ERROR.defaultMessage()),
-                restClientResponseException,
-                errorResponse.metadata()
-            ));
+            .orElseGet(() -> {
+              ErrorCode errorCode = resolveDependencyErrorCode(restClientResponseException);
+              return new BusinessException(errorCode, errorCode.defaultMessage(), restClientResponseException);
+            });
       }
+      ErrorCode errorCode = resolveDependencyErrorCode(restClientResponseException);
+      return new BusinessException(errorCode, errorCode.defaultMessage(), restClientResponseException);
+    }
+    if (throwable instanceof ResourceAccessException resourceAccessException) {
+      ErrorCode errorCode = isTimeout(resourceAccessException)
+          ? ErrorCode.CORE_DEPENDENCY_TIMEOUT
+          : ErrorCode.CORE_DEPENDENCY_UNAVAILABLE;
+      return new BusinessException(errorCode, errorCode.defaultMessage(), resourceAccessException);
+    }
+    if (throwable instanceof RestClientException restClientException) {
+      return new BusinessException(
+          ErrorCode.CORE_DEPENDENCY_UNAVAILABLE,
+          ErrorCode.CORE_DEPENDENCY_UNAVAILABLE.defaultMessage(),
+          restClientException
+      );
     }
     return new BusinessException(ErrorCode.INTERNAL_ERROR, ErrorCode.INTERNAL_ERROR.defaultMessage(), throwable);
+  }
+
+  private ErrorCode resolveDependencyErrorCode(RestClientResponseException exception) {
+    int statusCode = exception.getStatusCode().value();
+    if (statusCode == 504) {
+      return ErrorCode.CORE_DEPENDENCY_TIMEOUT;
+    }
+    if (statusCode == 503) {
+      return ErrorCode.CORE_DEPENDENCY_UNAVAILABLE;
+    }
+    return ErrorCode.CORE_DEPENDENCY_UNAVAILABLE;
+  }
+
+  private boolean isTimeout(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof SocketTimeoutException) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
   }
 
   private CorebankApiErrorResponse parseError(String responseBody) {

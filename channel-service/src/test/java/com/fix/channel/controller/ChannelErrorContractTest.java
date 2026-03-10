@@ -226,4 +226,48 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.correlationId").value("trace-channel-ownership"))
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
   }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldNormalizeDependencyTimeoutToCore901AtAccountPositionBoundary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(504)
+            .withHeader("Content-Type", "text/plain")
+            .withBody("upstream timeout")));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-core-timeout")
+            .param("symbol", "005930"))
+        .andExpect(status().isGatewayTimeout())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-core-timeout"))
+        .andExpect(jsonPath("$.code").value("CORE-901"))
+        .andExpect(jsonPath("$.message").value("Core dependency timeout"))
+        .andExpect(jsonPath("$.path").value("/api/v1/accounts/1/positions"))
+        .andExpect(jsonPath("$.correlationId").value("trace-channel-core-timeout"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldNormalizeDependencyUnavailableToCore902AtAccountPositionBoundary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(503)
+            .withHeader("Content-Type", "text/plain")
+            .withBody("service unavailable")));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-core-unavailable")
+            .param("symbol", "005930"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-core-unavailable"))
+        .andExpect(jsonPath("$.code").value("CORE-902"))
+        .andExpect(jsonPath("$.message").value("Core dependency unavailable"))
+        .andExpect(jsonPath("$.path").value("/api/v1/accounts/1/positions"))
+        .andExpect(jsonPath("$.correlationId").value("trace-channel-core-unavailable"));
+  }
 }

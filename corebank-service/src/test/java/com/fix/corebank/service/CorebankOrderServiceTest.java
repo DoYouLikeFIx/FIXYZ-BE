@@ -34,6 +34,7 @@ import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
 import java.math.BigDecimal;
+import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +42,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
@@ -91,6 +94,16 @@ class CorebankOrderServiceTest {
         ledgerEntryRefRepository,
         fepClient
     );
+  }
+
+  @Test
+  void shouldUseRepeatableReadForAccountPositionConsistency() throws NoSuchMethodException {
+    Method method = CorebankOrderService.class.getDeclaredMethod("getAccountPosition", AccountPositionQueryCommand.class);
+    Transactional transactional = method.getAnnotation(Transactional.class);
+
+    assertThat(transactional).isNotNull();
+    assertThat(transactional.readOnly()).isTrue();
+    assertThat(transactional.isolation()).isEqualTo(Isolation.REPEATABLE_READ);
   }
 
   @Test
