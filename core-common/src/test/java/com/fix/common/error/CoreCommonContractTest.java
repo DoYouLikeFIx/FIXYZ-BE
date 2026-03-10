@@ -54,4 +54,20 @@ class CoreCommonContractTest {
     assertEquals("error.fep.timeout", error.getUserMessageKey());
     assertEquals("TIMEOUT", error.getOperatorCode());
   }
+
+  @Test
+  void shouldResolveStory22OwnershipAndDependencyErrorCodes() {
+    assertEquals(
+        ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
+        ErrorCode.fromCode("AUTH-005").orElseThrow()
+    );
+    assertEquals(
+        ErrorCode.CORE_DEPENDENCY_TIMEOUT,
+        ErrorCode.fromCode("CORE-901").orElseThrow()
+    );
+    assertEquals(
+        ErrorCode.CORE_DEPENDENCY_UNAVAILABLE,
+        ErrorCode.fromCode("CORE-902").orElseThrow()
+    );
+  }
 }
