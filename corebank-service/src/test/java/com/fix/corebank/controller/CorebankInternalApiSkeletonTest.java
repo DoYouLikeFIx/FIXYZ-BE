@@ -19,6 +19,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -52,6 +53,8 @@ class CorebankInternalApiSkeletonTest {
 
   @Test
   void shouldSupportInternalPortfolioAndOrderEndpoints() throws Exception {
+    String correlationId = "66cf95fd-3660-48a6-9e71-7ed42257b748";
+
     fepClient.setSubmitResult(new FepOrderResult(
         CORE_CL_ORD_ID_1,
         "FEP-KRX-" + CORE_CL_ORD_ID_1,
@@ -76,6 +79,36 @@ class CorebankInternalApiSkeletonTest {
         Instant.parse("2026-03-01T10:10:00Z"),
         null
     ));
+
+    mockMvc.perform(post("/internal/v1/portfolio")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "memberId": 301,
+                  "memberNo": "M-301",
+                  "email": "member301@fix.local"
+                }
+                """))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.memberId").value(301L))
+        .andExpect(jsonPath("$.data.idempotent").value(false));
+
+    mockMvc.perform(post("/internal/v1/portfolio")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "memberId": 301,
+                  "memberNo": "M-301",
+                  "email": "member301@fix.local"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.memberId").value(301L))
+        .andExpect(jsonPath("$.data.idempotent").value(true));
 
     mockMvc.perform(get("/internal/v1/portfolio")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -116,6 +149,22 @@ class CorebankInternalApiSkeletonTest {
             .param("price", "70100.1000"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+  }
+
+  @Test
+  void shouldReturn422WhenProvisioningPayloadMissesMemberId() throws Exception {
+    mockMvc.perform(post("/internal/v1/portfolio")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "a2d4c77d-7449-44ff-bec8-f2c1cf9f512c")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "memberNo": "M-INVALID",
+                  "email": "member-invalid@fix.local"
+                }
+                """))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-001"));
   }
 
   @TestConfiguration
