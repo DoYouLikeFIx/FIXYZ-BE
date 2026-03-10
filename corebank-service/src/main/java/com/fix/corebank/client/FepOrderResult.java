@@ -4,6 +4,7 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
+import com.fix.common.validation.ContractPatterns;
 import java.time.Instant;
 
 public record FepOrderResult(
@@ -21,7 +22,7 @@ public record FepOrderResult(
 
   public static FepOrderResult fromSubmitResponse(FepGatewayOrderResponse response, String expectedClOrdId) {
     require(!isBlank(response.clOrdId()), "clOrdId is required in submit response");
-    require(expectedClOrdId.equals(response.clOrdId()), "submit response clOrdId must match request");
+    require(ContractPatterns.isUuidV4(response.clOrdId()), "submit response clOrdId must be a UUID v4");
     require(!isBlank(response.fepOrderId()), "fepOrderId is required in submit response");
     require(response.execType() != null, "execType is required in submit response");
     require(response.ordStatus() != null, "ordStatus is required in submit response");
