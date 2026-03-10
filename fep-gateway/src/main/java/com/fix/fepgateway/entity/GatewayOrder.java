@@ -73,6 +73,15 @@ public class GatewayOrder extends BaseTimeEntity {
   @Column(name = "transact_time")
   private Instant transactTime;
 
+  @Column(name = "status_message", length = 255)
+  private String message;
+
+  @Column(name = "reject_reason", length = 64)
+  private String rejectReason;
+
+  @Column(name = "parse_error", length = 255)
+  private String parseError;
+
   @Column(name = "transport", nullable = false, length = 16)
   private String transport;
 
@@ -111,6 +120,9 @@ public class GatewayOrder extends BaseTimeEntity {
       Long executedPrice,
       Long leavesQty,
       Instant transactTime,
+      String message,
+      String rejectReason,
+      String parseError,
       String transport,
       String recoveryStatus,
       String cancelFailureMode,
@@ -134,6 +146,9 @@ public class GatewayOrder extends BaseTimeEntity {
     this.executedPrice = executedPrice;
     this.leavesQty = leavesQty;
     this.transactTime = transactTime;
+    this.message = message;
+    this.rejectReason = rejectReason;
+    this.parseError = parseError;
     this.transport = transport;
     this.recoveryStatus = recoveryStatus;
     this.cancelFailureMode = cancelFailureMode;
@@ -193,6 +208,9 @@ public class GatewayOrder extends BaseTimeEntity {
         0L,
         null,
         qty.longValueExact(),
+        null,
+        null,
+        null,
         null,
         transport,
         "ACTIVE",
@@ -295,30 +313,133 @@ public class GatewayOrder extends BaseTimeEntity {
     return transactTime;
   }
 
+  public String getMessage() {
+    return message;
+  }
+
+  public String getRejectReason() {
+    return rejectReason;
+  }
+
+  public String getParseError() {
+    return parseError;
+  }
+
   public void applyExecution(GatewayExecutionOutcome outcome) {
     this.status = outcome.ordStatus().name();
     this.fepOrderId = outcome.fepOrderId();
-    this.execType = outcome.execType().name();
+    this.execType = outcome.execType() != null ? outcome.execType().name() : null;
     this.executedQty = outcome.executedQty();
     this.executedPrice = outcome.executedPrice();
     this.leavesQty = outcome.leavesQty();
     this.transactTime = outcome.transactTime();
+    this.message = outcome.message();
+    this.rejectReason = outcome.rejectReason();
+    this.parseError = outcome.parseError();
   }
 
   public GatewayOrderResult toResult(Instant queryTime) {
     FepOrdStatus resolvedStatus = resolveOrdStatus();
-    return new GatewayOrderResult(
-        clOrdId,
-        fepOrderId,
-        resolveExecType(resolvedStatus),
-        resolvedStatus,
-        executedQty,
-        executedPrice,
-        leavesQty,
-        transactTime,
-        queryTime,
-        null
-    );
+    long normalizedExecutedQty = executedQty == null ? 0L : executedQty;
+    boolean hasExecutionData = normalizedExecutedQty > 0;
+    boolean hasPendingExecutionDetails = hasExecutionData
+        || executedPrice != null
+        || transactTime != null
+        || (fepOrderId != null && !fepOrderId.isBlank());
+    boolean hasPendingRemainingQty = leavesQty != null && leavesQty < totalQty();
+
+    return switch (resolvedStatus) {
+      case UNKNOWN -> new GatewayOrderResult(
+          clOrdId,
+          null,
+          null,
+          resolvedStatus,
+          null,
+          null,
+          null,
+          null,
+          queryTime,
+          defaultIfBlank(message, "execution state is unresolved in external system"),
+          null,
+          null,
+          null
+      );
+      case PENDING -> new GatewayOrderResult(
+          clOrdId,
+          hasPendingExecutionDetails ? fepOrderId : null,
+          hasExecutionData ? resolveExecType(resolvedStatus) : null,
+          resolvedStatus,
+          hasExecutionData ? executedQty : null,
+          hasExecutionData ? executedPrice : null,
+          hasPendingExecutionDetails || hasPendingRemainingQty ? leavesQty : null,
+          hasPendingExecutionDetails ? transactTime : null,
+          queryTime,
+          defaultIfBlank(message, "execution report is still pending"),
+          null,
+          null,
+          null
+      );
+      case MALFORMED -> new GatewayOrderResult(
+          clOrdId,
+          hasExecutionData ? fepOrderId : null,
+          hasExecutionData ? resolveExecType(resolvedStatus) : null,
+          resolvedStatus,
+          hasExecutionData ? executedQty : null,
+          hasExecutionData ? executedPrice : null,
+          hasExecutionData ? leavesQty : null,
+          hasExecutionData ? transactTime : null,
+          queryTime,
+          defaultIfBlank(message, "FIX ExecutionReport parse failed; manual review required"),
+          null,
+          null,
+          defaultIfBlank(parseError, "PARSE_ERROR:LEGACY_STATUS_ROW")
+      );
+      case REJECTED -> new GatewayOrderResult(
+          clOrdId,
+          null,
+          FepExecType.REJECTED,
+          resolvedStatus,
+          null,
+          null,
+          null,
+          transactTime,
+          queryTime,
+          null,
+          defaultIfBlank(rejectReason, "OTHER"),
+          null,
+          null
+      );
+      case CANCELED -> new GatewayOrderResult(
+          clOrdId,
+          hasExecutionData ? fepOrderId : null,
+          FepExecType.CANCELED,
+          resolvedStatus,
+          hasExecutionData ? executedQty : null,
+          hasExecutionData ? executedPrice : null,
+          null,
+          transactTime,
+          queryTime,
+          null,
+          null,
+          Math.max(totalQty() - normalizedExecutedQty, 0L),
+          null
+      );
+      case FILLED, PARTIALLY_FILLED -> new GatewayOrderResult(
+          clOrdId,
+          fepOrderId,
+          resolveExecType(resolvedStatus),
+          resolvedStatus,
+          executedQty,
+          executedPrice,
+          leavesQty,
+          transactTime,
+          queryTime,
+          null,
+          null,
+          null,
+          null
+      );
+    };
   }
 
   public boolean isMarketOrder() {
@@ -416,6 +537,10 @@ public class GatewayOrder extends BaseTimeEntity {
       case CANCELED -> FepExecType.CANCELED;
       case PENDING, UNKNOWN, MALFORMED -> FepExecType.PENDING_NEW;
     };
+  }
+
+  private String defaultIfBlank(String value, String fallback) {
+    return value == null || value.isBlank() ? fallback : value;
   }
 
   private FepOrdStatus resolveOrdStatus() {
