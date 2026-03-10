@@ -224,8 +224,12 @@ public class FepGatewayControlService {
     Long requestedPrice = order.getRequestedPrice();
     long existingExecutedQty = order.getExecutedQty() == null ? 0L : order.getExecutedQty();
     Long existingExecutedPrice = order.getExecutedPrice() != null ? order.getExecutedPrice() : requestedPrice;
+    Instant existingTransactTime = order.getTransactTime();
     Long requestedExecutedQty = command.getExecutedQty();
     Long requestedExecutedPrice = command.getExecutedPrice();
+    String requestedMessage = normalizeBlank(command.getMessage());
+    String requestedRejectReason = normalizeBlank(command.getRejectReason());
+    String requestedParseError = normalizeBlank(command.getParseError());
     Instant now = Instant.now();
 
     return switch (status) {
@@ -250,7 +254,10 @@ public class FepGatewayControlService {
             totalQty,
             filledPrice,
             0L,
-            now
+            now,
+            null,
+            null,
+            null
         );
       }
       case PARTIALLY_FILLED -> {
@@ -277,10 +284,44 @@ public class FepGatewayControlService {
             partialExecutedQty,
             partialExecutedPrice,
             totalQty - partialExecutedQty,
-            now
+            now,
+            null,
+            null,
+            null
         );
       }
-      case PENDING, UNKNOWN, MALFORMED -> {
+      case PENDING, UNKNOWN -> {
+        long preservedExecutedQty = requestedExecutedQty != null ? requestedExecutedQty : existingExecutedQty;
+        if (preservedExecutedQty < 0 || preservedExecutedQty > totalQty) {
+          throw new BusinessException(
+            ErrorCode.CONTRACT_VALIDATION_FAILED,
+            "executedQty must be between 0 and totalQty"
+          );
+        }
+        Long preservedExecutedPrice = requestedExecutedPrice != null ? requestedExecutedPrice : existingExecutedPrice;
+        if (preservedExecutedQty > 0 && preservedExecutedPrice == null) {
+          throw new BusinessException(
+              ErrorCode.CONTRACT_VALIDATION_FAILED,
+              "executedPrice is required when executedQty is provided"
+          );
+        }
+        Instant preservedTransactTime = preservedExecutedQty > 0
+            ? (existingTransactTime != null ? existingTransactTime : now)
+            : null;
+        yield new GatewayExecutionOutcome(
+            preservedExecutedQty > 0 ? order.getFepOrderId() : null,
+            preservedExecutedQty > 0 ? FepExecType.PARTIAL_FILL : null,
+            status,
+            preservedExecutedQty > 0 ? preservedExecutedQty : null,
+            preservedExecutedQty > 0 ? preservedExecutedPrice : null,
+            preservedExecutedQty > 0 ? totalQty - preservedExecutedQty : null,
+            preservedTransactTime,
+            firstNonBlank(requestedMessage, defaultStatusMessage(status)),
+            null,
+            null
+        );
+      }
+      case MALFORMED -> {
         long preservedExecutedQty = requestedExecutedQty != null ? requestedExecutedQty : existingExecutedQty;
         if (preservedExecutedQty < 0 || preservedExecutedQty > totalQty) {
           throw new BusinessException(
@@ -295,24 +336,36 @@ public class FepGatewayControlService {
               "executedPrice is required when executedQty is provided"
           );
         }
+        Instant preservedTransactTime = preservedExecutedQty > 0
+            ? (existingTransactTime != null ? existingTransactTime : now)
+            : null;
         yield new GatewayExecutionOutcome(
-            order.getFepOrderId(),
-            preservedExecutedQty > 0 ? FepExecType.PARTIAL_FILL : FepExecType.PENDING_NEW,
+            preservedExecutedQty > 0 ? order.getFepOrderId() : null,
+            preservedExecutedQty > 0 ? FepExecType.PARTIAL_FILL : null,
             status,
-            preservedExecutedQty,
+            preservedExecutedQty > 0 ? preservedExecutedQty : null,
             preservedExecutedQty > 0 ? preservedExecutedPrice : null,
-            totalQty - preservedExecutedQty,
-            now
+            preservedExecutedQty > 0 ? totalQty - preservedExecutedQty : null,
+            preservedTransactTime,
+            firstNonBlank(
+                requestedMessage,
+                "FIX ExecutionReport parse failed; manual review required"
+            ),
+            null,
+            firstNonBlank(requestedParseError, "PARSE_ERROR:UNKNOWN")
         );
       }
       case REJECTED -> new GatewayExecutionOutcome(
-          order.getFepOrderId(),
+          null,
           FepExecType.REJECTED,
           FepOrdStatus.REJECTED,
-          0L,
           null,
-          0L,
-          now
+          null,
+          null,
+          now,
+          null,
+          firstNonBlank(requestedRejectReason, "OTHER"),
+          null
       );
       case CANCELED -> {
         long canceledExecutedQty = requestedExecutedQty != null ? requestedExecutedQty : existingExecutedQty;
@@ -336,7 +389,10 @@ public class FepGatewayControlService {
             canceledExecutedQty,
             canceledExecutedQty > 0 ? canceledExecutedPrice : null,
             0L,
-            now
+            now,
+            null,
+            null,
+            null
         );
       }
     };
@@ -417,6 +473,27 @@ public class FepGatewayControlService {
     return switch (normalized) {
       case "NONE", "TIMEOUT", "REJECT" -> normalized;
       default -> throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "unsupported cancel failure mode");
+    };
+  }
+
+  private String firstNonBlank(String... values) {
+    for (String value : values) {
+      if (value != null && !value.isBlank()) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  private String normalizeBlank(String value) {
+    return value == null || value.isBlank() ? null : value;
+  }
+
+  private String defaultStatusMessage(FepOrdStatus status) {
+    return switch (status) {
+      case UNKNOWN -> "execution state is unresolved in external system";
+      case PENDING -> "execution report is still pending";
+      default -> null;
     };
   }
 
