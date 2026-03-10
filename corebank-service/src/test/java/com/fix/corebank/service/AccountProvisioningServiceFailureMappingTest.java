@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 @ExtendWith(MockitoExtension.class)
 class AccountProvisioningServiceFailureMappingTest {
@@ -25,11 +27,15 @@ class AccountProvisioningServiceFailureMappingTest {
   @Mock
   private AccountRepository accountRepository;
 
+  @Mock
+  private PlatformTransactionManager transactionManager;
+
   private AccountProvisioningService accountProvisioningService;
 
   @BeforeEach
   void setUp() {
-    accountProvisioningService = new AccountProvisioningService(memberRepository, accountRepository);
+    when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+    accountProvisioningService = new AccountProvisioningService(memberRepository, accountRepository, transactionManager);
   }
 
   @Test

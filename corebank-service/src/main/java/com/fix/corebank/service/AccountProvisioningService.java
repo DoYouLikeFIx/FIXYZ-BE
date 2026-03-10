@@ -9,13 +9,17 @@ import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.MemberRepository;
 import com.fix.corebank.vo.AccountProvisioningCommand;
 import com.fix.corebank.vo.AccountProvisioningResult;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -27,13 +31,33 @@ public class AccountProvisioningService {
 
   private final MemberRepository memberRepository;
   private final AccountRepository accountRepository;
+  private final PlatformTransactionManager transactionManager;
 
-  @Transactional
+  @PersistenceContext
+  private EntityManager entityManager;
+
   public AccountProvisioningResult provisionDefaultAccount(AccountProvisioningCommand command) {
     validateCommand(command);
+    TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+    txTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+
     try {
-      MemberEntity member = upsertMember(command);
-      return createOrReturnDefaultAccount(member);
+      AccountProvisioningResult result = txTemplate.execute(status -> {
+        MemberEntity member = upsertMember(command);
+        return createOrReturnDefaultAccount(member);
+      });
+      if (result == null) {
+        throw new SystemException(ErrorCode.CORE_PROVISIONING_FAILED, "default account provisioning failed");
+      }
+      return result;
+    } catch (AccountCreateConflictException ex) {
+      return accountRepository.findByMemberId(command.getMemberId())
+          .map(existing -> toResult(existing, true))
+          .orElseThrow(() -> new SystemException(
+              ErrorCode.CORE_PROVISIONING_FAILED,
+              "default account provisioning failed",
+              ex
+          ));
     } catch (BusinessException | SystemException ex) {
       throw ex;
     } catch (RuntimeException ex) {
@@ -56,7 +80,19 @@ public class AccountProvisioningService {
               normalizeEmail(command.getMemberId(), command.getEmail(), null)
           )));
     } catch (DataIntegrityViolationException ex) {
-      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "member upsert conflict", ex);
+      entityManager.clear();
+      return memberRepository.findById(command.getMemberId())
+          .map(existing -> {
+            try {
+              String memberNo = normalizeMemberNo(command.getMemberId(), command.getMemberNo(), existing.getMemberNo());
+              String email = normalizeEmail(command.getMemberId(), command.getEmail(), existing.getEmail());
+              existing.updateProfile(memberNo, email);
+              return memberRepository.saveAndFlush(existing);
+            } catch (DataIntegrityViolationException retryEx) {
+              throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "member upsert conflict", retryEx);
+            }
+          })
+          .orElseThrow(() -> new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "member upsert conflict", ex));
     }
   }
 
@@ -79,13 +115,7 @@ public class AccountProvisioningService {
       Account saved = accountRepository.saveAndFlush(account);
       return toResult(saved, false);
     } catch (DataIntegrityViolationException ex) {
-      return accountRepository.findByMemberId(member.getId())
-          .map(existing -> toResult(existing, true))
-          .orElseThrow(() -> new SystemException(
-              ErrorCode.CORE_PROVISIONING_FAILED,
-              "default account provisioning failed",
-              ex
-          ));
+      throw new AccountCreateConflictException(ex);
     }
   }
 
@@ -152,5 +182,12 @@ public class AccountProvisioningService {
 
   private String defaultEmail(Long memberId) {
     return "member-" + memberId + "@fix.local";
+  }
+
+  private static final class AccountCreateConflictException extends RuntimeException {
+
+    private AccountCreateConflictException(Throwable cause) {
+      super(cause);
+    }
   }
 }
