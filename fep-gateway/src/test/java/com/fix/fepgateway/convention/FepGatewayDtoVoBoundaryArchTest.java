@@ -52,6 +52,12 @@ class FepGatewayDtoVoBoundaryArchTest {
           .that().resideInAnyPackage("..controller..", "..controlplane.controller..")
           .should().beAnnotatedWith(RestController.class);
 
+  @ArchTest
+  static final ArchRule globalExceptionHandlerShouldLiveInExceptionPackage =
+      classes()
+          .that().haveSimpleName("GlobalExceptionHandler")
+          .should().resideInAPackage("..exception..");
+
   private static ArchCondition<JavaClass> beRecord() {
     return new ArchCondition<>("be a record") {
       @Override

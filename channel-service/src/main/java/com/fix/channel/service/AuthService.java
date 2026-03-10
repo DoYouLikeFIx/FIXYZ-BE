@@ -15,7 +15,7 @@ import com.fix.channel.vo.AuthRegisterResult;
 import com.fix.channel.vo.AuthSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
-import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.sql.SQLException;
@@ -399,11 +399,7 @@ public class AuthService {
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {
-    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-    if (correlationId == null || correlationId.isBlank()) {
-      return UUID.randomUUID().toString();
-    }
-    return correlationId;
+    return CorrelationIdSupport.ensureCorrelationId(request);
   }
 
   private int lockoutThreshold() {

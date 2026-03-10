@@ -35,6 +35,23 @@ class CoreCommonContractTest {
     assertEquals("Validation failed", response.getError().getMessage());
     assertEquals("/api/v1/test", response.getError().getPath());
     assertEquals("corr-1", response.getError().getCorrelationId());
+    assertNull(response.getError().getUserMessageKey());
+    assertNull(response.getError().getOperatorCode());
     assertNotNull(response.getTimestamp());
+  }
+
+  @Test
+  void shouldIncludeExternalErrorMetadataWhenPresent() {
+    ApiErrorResponse error = ApiErrorResponse.from(
+        ErrorCode.FEP_GATEWAY_TIMEOUT,
+        "",
+        "/internal/v1/orders",
+        "corr-2",
+        new ErrorMetadata("error.fep.timeout", "TIMEOUT")
+    );
+
+    assertEquals("FEP-002", error.getCode());
+    assertEquals("error.fep.timeout", error.getUserMessageKey());
+    assertEquals("TIMEOUT", error.getOperatorCode());
   }
 }
