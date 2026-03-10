@@ -3,10 +3,12 @@ package com.fix.corebank.controller;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.validation.ContractPatterns;
+import com.fix.corebank.dto.request.InternalAccountPositionRequest;
 import com.fix.corebank.dto.request.InternalOrderCreateRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
 import com.fix.corebank.dto.request.InternalPortfolioRequest;
 import com.fix.corebank.dto.request.InternalPortfolioProvisioningRequest;
+import com.fix.corebank.dto.response.InternalAccountPositionResponse;
 import com.fix.corebank.dto.response.InternalOrderResponse;
 import com.fix.corebank.dto.response.InternalPortfolioResponse;
 import com.fix.corebank.dto.response.InternalPortfolioProvisioningResponse;
@@ -46,6 +48,16 @@ public class InternalCorebankController {
   @GetMapping("/portfolio")
   public ApiResponse<InternalPortfolioResponse> portfolio(@Valid @ModelAttribute InternalPortfolioRequest request) {
     return ApiResponse.success(InternalPortfolioResponse.from(corebankOrderService.getPortfolio(request.toVo())));
+  }
+
+  @GetMapping("/accounts/{accountId}/positions")
+  public ApiResponse<InternalAccountPositionResponse> accountPosition(
+      @PathVariable Long accountId,
+      @Valid @ModelAttribute InternalAccountPositionRequest request
+  ) {
+    return ApiResponse.success(InternalAccountPositionResponse.from(
+        corebankOrderService.getAccountPosition(request.toVo(accountId))
+    ));
   }
 
   @PostMapping(value = "/portfolio", consumes = MediaType.APPLICATION_JSON_VALUE)

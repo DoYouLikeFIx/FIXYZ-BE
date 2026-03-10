@@ -22,6 +22,8 @@ import com.fix.corebank.repository.LedgerEntryRefRepository;
 import com.fix.corebank.repository.LedgerEntryRepository;
 import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
+import com.fix.corebank.vo.AccountPositionQueryCommand;
+import com.fix.corebank.vo.AccountPositionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
@@ -32,6 +34,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Locale;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -72,6 +75,34 @@ public class CorebankOrderService {
         position.getQty(),
         account.getDailySellLimit(),
         todaySellQty
+    );
+  }
+
+  @Transactional(readOnly = true)
+  public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command) {
+    Account account = accountRepository.findById(command.getAccountId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+
+    if (!account.getMemberId().equals(command.getMemberId())) {
+      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
+    }
+
+    Optional<Position> positionOptional = positionRepository.findByAccountIdAndSymbol(
+        command.getAccountId(),
+        command.getSymbol()
+    );
+    BigDecimal quantity = positionOptional.map(Position::getQty).orElse(BigDecimal.ZERO);
+    BigDecimal availableQuantity = quantity;
+
+    return AccountPositionResult.of(
+        account.getId(),
+        command.getMemberId(),
+        command.getSymbol(),
+        quantity,
+        availableQuantity,
+        account.getCashBalance(),
+        account.getCurrency(),
+        resolveAsOf(account, positionOptional)
     );
   }
 
@@ -208,5 +239,21 @@ public class CorebankOrderService {
 
   private Instant startOfNextUtcDay() {
     return LocalDate.now(ZoneOffset.UTC).plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+  }
+
+  private Instant resolveAsOf(Account account, Optional<Position> positionOptional) {
+    Instant accountUpdatedAt = account.getUpdatedAt();
+    Instant positionUpdatedAt = positionOptional.map(Position::getUpdatedAt).orElse(null);
+
+    if (accountUpdatedAt == null && positionUpdatedAt == null) {
+      return Instant.now();
+    }
+    if (accountUpdatedAt == null) {
+      return positionUpdatedAt;
+    }
+    if (positionUpdatedAt == null) {
+      return accountUpdatedAt;
+    }
+    return accountUpdatedAt.isAfter(positionUpdatedAt) ? accountUpdatedAt : positionUpdatedAt;
   }
 }
