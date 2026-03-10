@@ -36,6 +36,10 @@ public final class FepExternalErrorTaxonomy {
     return code != null && code.matches("\\d{4}");
   }
 
+  public static boolean isMappedExternalRc(String code) {
+    return isExternalRc(code) && MAPPINGS.containsKey(code);
+  }
+
   public static BusinessException toException(String externalCode, Throwable cause) {
     TaxonomyEntry entry = resolve(externalCode);
     return new BusinessException(
