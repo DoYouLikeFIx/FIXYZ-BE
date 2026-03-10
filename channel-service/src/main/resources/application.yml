@@ -2,7 +2,7 @@ server:
   port: 8080
   servlet:
     session:
-      timeout: 30m
+      timeout: ${CHANNEL_SESSION_TIMEOUT:30m}
       cookie:
         name: SESSION
         http-only: true
@@ -29,7 +29,7 @@ spring:
       port: ${REDIS_PORT:6379}
   session:
     store-type: redis
-    timeout: 30m
+    timeout: ${CHANNEL_SESSION_TIMEOUT:30m}
     redis:
       namespace: fixyz:channel:session
       repository-type: INDEXED
