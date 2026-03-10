@@ -1,6 +1,7 @@
 package com.fix.corebank.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -14,9 +15,9 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
-import org.springframework.web.client.RestClient;
 
 @Component
 public class FepClient {
@@ -118,8 +119,9 @@ public class FepClient {
     }
     if (throwable instanceof RestClientResponseException restClientResponseException) {
       GatewayApiErrorResponse errorResponse = parseError(restClientResponseException.getResponseBodyAsString());
-      if (errorResponse != null && errorResponse.code() != null && !errorResponse.code().isBlank()) {
-        return FepExternalErrorTaxonomy.toException(errorResponse.code(), restClientResponseException);
+      BusinessException translatedError = translateGatewayError(errorResponse, restClientResponseException);
+      if (translatedError != null) {
+        return translatedError;
       }
       if (restClientResponseException.getStatusCode().value() == 504) {
         return new BusinessException(
@@ -149,12 +151,59 @@ public class FepClient {
     );
   }
 
+  private BusinessException translateGatewayError(
+      GatewayApiErrorResponse errorResponse,
+      RestClientResponseException restClientResponseException
+  ) {
+    if (errorResponse == null) {
+      return null;
+    }
+    if (FepExternalErrorTaxonomy.isExternalRc(errorResponse.externalRc())) {
+      return FepExternalErrorTaxonomy.toException(errorResponse.externalRc(), restClientResponseException);
+    }
+    if (errorResponse.normalizedCode() == null || errorResponse.normalizedCode().isBlank()) {
+      return null;
+    }
+    return ErrorCode.fromCode(errorResponse.normalizedCode())
+        .map(errorCode -> new BusinessException(
+            errorCode,
+            defaultIfBlank(errorResponse.message(), errorCode.defaultMessage()),
+            restClientResponseException,
+            errorResponse.metadata()
+        ))
+        .orElse(null);
+  }
+
   private GatewayApiErrorResponse parseError(String responseBody) {
     if (responseBody == null || responseBody.isBlank()) {
       return null;
     }
     try {
-      return objectMapper.readValue(responseBody, GatewayApiErrorResponse.class);
+      JsonNode root = objectMapper.readTree(responseBody);
+      String topLevelCode = text(root, "code");
+      String normalizedCode = firstNonBlank(
+          text(root, "error", "code"),
+          FepExternalErrorTaxonomy.isExternalRc(topLevelCode) ? null : topLevelCode
+      );
+      String externalRc = firstExternalRc(text(root, "rc"), topLevelCode, text(root, "error", "rc"));
+      String message = firstNonBlank(text(root, "error", "message"), text(root, "message"));
+      String userMessageKey = firstNonBlank(text(root, "error", "userMessageKey"), text(root, "userMessageKey"));
+      String operatorCode = firstNonBlank(
+          text(root, "error", "operatorCode"),
+          text(root, "operatorCode"),
+          text(root, "error", "rcDescription"),
+          text(root, "rcDescription")
+      );
+
+      if (externalRc == null && normalizedCode == null && message == null) {
+        return null;
+      }
+      return new GatewayApiErrorResponse(
+          externalRc,
+          normalizedCode,
+          message,
+          toMetadata(userMessageKey, operatorCode)
+      );
     } catch (Exception ignored) {
       return null;
     }
@@ -162,8 +211,61 @@ public class FepClient {
 
   @JsonIgnoreProperties(ignoreUnknown = true)
   private record GatewayApiErrorResponse(
-      String code,
-      String message
+      String externalRc,
+      String normalizedCode,
+      String message,
+      ErrorMetadata metadata
   ) {
+  }
+
+  private ErrorMetadata toMetadata(String userMessageKey, String operatorCode) {
+    if ((userMessageKey == null || userMessageKey.isBlank())
+        && (operatorCode == null || operatorCode.isBlank())) {
+      return null;
+    }
+    return new ErrorMetadata(userMessageKey, operatorCode);
+  }
+
+  private String text(JsonNode root, String... path) {
+    JsonNode current = root;
+    for (String segment : path) {
+      if (current == null) {
+        return null;
+      }
+      current = current.path(segment);
+      if (current.isMissingNode() || current.isNull()) {
+        return null;
+      }
+    }
+    String value = current.asText(null);
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    return value;
+  }
+
+  private String firstExternalRc(String... candidates) {
+    for (String candidate : candidates) {
+      if (FepExternalErrorTaxonomy.isExternalRc(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  private String firstNonBlank(String... candidates) {
+    for (String candidate : candidates) {
+      if (candidate != null && !candidate.isBlank()) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  private String defaultIfBlank(String value, String defaultValue) {
+    if (value == null || value.isBlank()) {
+      return defaultValue;
+    }
+    return value;
   }
 }

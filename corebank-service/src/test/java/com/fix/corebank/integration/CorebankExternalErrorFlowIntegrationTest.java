@@ -2,6 +2,8 @@ package com.fix.corebank.integration;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -11,7 +13,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fix.common.web.CommonHeaders;
+import com.fix.corebank.entity.Order;
+import com.fix.corebank.repository.OrderRepository;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,6 +42,7 @@ class CorebankExternalErrorFlowIntegrationTest {
 
   private static final String CL_ORD_ID_TIMEOUT = "123e4567-e89b-42d3-a456-426614174220";
   private static final String CL_ORD_ID_UNKNOWN = "123e4567-e89b-42d3-a456-426614174221";
+  private static final String CL_ORD_ID_REQUERY = "123e4567-e89b-42d3-a456-426614174222";
   private static final WireMockServer WIRE_MOCK_SERVER = new WireMockServer(wireMockConfig().dynamicPort());
 
   static {
@@ -45,6 +51,9 @@ class CorebankExternalErrorFlowIntegrationTest {
 
   @Autowired
   private MockMvc mockMvc;
+
+  @Autowired
+  private OrderRepository orderRepository;
 
   @DynamicPropertySource
   static void registerProperties(DynamicPropertyRegistry registry) {
@@ -59,22 +68,13 @@ class CorebankExternalErrorFlowIntegrationTest {
   @BeforeEach
   void setUp() {
     WIRE_MOCK_SERVER.resetAll();
+    orderRepository.deleteAll();
   }
 
   @Test
   void shouldTranslateMappedExternalGatewayTimeoutThroughInternalApi() throws Exception {
     WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
-        .willReturn(aResponse()
-            .withStatus(504)
-            .withHeader("Content-Type", "application/json")
-            .withBody("""
-                {
-                  "code": "9004",
-                  "message": "cancel acknowledgement timed out",
-                  "path": "/fep/v1/orders",
-                  "correlationId": "trace-fep-002"
-                }
-                """)));
+        .willReturn(canonicalGatewayError(504, "9004", "cancel acknowledgement timed out")));
 
     mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -103,17 +103,7 @@ class CorebankExternalErrorFlowIntegrationTest {
   @Test
   void shouldFallbackUnknownExternalCodeThroughInternalApi() throws Exception {
     WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
-        .willReturn(aResponse()
-            .withStatus(409)
-            .withHeader("Content-Type", "application/json")
-            .withBody("""
-                {
-                  "code": "9099",
-                  "message": "concurrency failure",
-                  "path": "/fep/v1/orders",
-                  "correlationId": "trace-fep-999"
-                }
-                """)));
+        .willReturn(canonicalGatewayError(502, "9555", "unclassified upstream failure")));
 
     mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -128,8 +118,79 @@ class CorebankExternalErrorFlowIntegrationTest {
         .andExpect(jsonPath("$.message").value("Unknown external error"))
         .andExpect(jsonPath("$.path").value("/internal/v1/orders"))
         .andExpect(jsonPath("$.userMessageKey").value("error.fep.unknown_external"))
-        .andExpect(jsonPath("$.operatorCode").value("UNKNOWN_EXTERNAL_9099"))
+        .andExpect(jsonPath("$.operatorCode").value("UNKNOWN_EXTERNAL_9555"))
         .andExpect(jsonPath("$.correlationId").isNotEmpty())
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
+  }
+
+  @Test
+  void shouldTranslateMappedExternalConcurrencyFailureThroughRequeryApi() throws Exception {
+    orderRepository.saveAndFlush(Order.accepted(
+        1L,
+        CL_ORD_ID_REQUERY,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000")
+    ));
+
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY)))
+        .willReturn(canonicalGatewayError(409, "9099", "concurrency failure")));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+            "/internal/v1/orders/{clOrdId}/requery",
+            CL_ORD_ID_REQUERY
+        )
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-requery"))
+        .andExpect(status().isConflict())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-requery"))
+        .andExpect(jsonPath("$.code").value("CORE-003"))
+        .andExpect(jsonPath("$.message").value("Concurrent modification conflict"))
+        .andExpect(jsonPath("$.path").value("/internal/v1/orders/%s/requery".formatted(CL_ORD_ID_REQUERY)))
+        .andExpect(jsonPath("$.correlationId").value("trace-core-requery"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.core.concurrency_conflict"))
+        .andExpect(jsonPath("$.operatorCode").value("CONCURRENCY_FAILURE"))
+        .andExpect(jsonPath("$.timestamp").isNotEmpty());
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY)))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-requery")));
+  }
+
+  private com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder canonicalGatewayError(
+      int httpStatus,
+      String externalRc,
+      String message
+  ) {
+    FepExternalError error = FepExternalError.from(externalRc);
+    return aResponse()
+        .withStatus(httpStatus)
+        .withHeader("Content-Type", "application/json")
+        .withBody("""
+            {
+              "success": false,
+              "rc": "%s",
+              "data": null,
+              "error": {
+                "code": "%s",
+                "message": "%s",
+                "rcDescription": "%s",
+                "retryAfterSeconds": null
+              },
+              "traceId": "trace-%s"
+            }
+            """.formatted(externalRc, error.code, message, error.operatorCode, externalRc));
+  }
+
+  private record FepExternalError(String code, String operatorCode) {
+
+    private static FepExternalError from(String externalRc) {
+      return switch (externalRc) {
+        case "9004" -> new FepExternalError("FEP-002", "TIMEOUT");
+        case "9099" -> new FepExternalError("CORE-003", "CONCURRENCY_FAILURE");
+        default -> new FepExternalError("FEP-999", "UNKNOWN_EXTERNAL_" + externalRc);
+      };
+    }
   }
 }

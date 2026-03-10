@@ -1,5 +1,11 @@
 package com.fix.common.error;
 
+import java.util.Arrays;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 public enum ErrorCode {
   BAD_REQUEST("BAD_REQUEST", "Bad request", 400),
   NOT_FOUND("NOT_FOUND", "Resource not found", 404),
@@ -19,8 +25,10 @@ public enum ErrorCode {
   AUTH_REQUIRED("AUTH-003", "Authentication required", 401),
   CHANNEL_SESSION_NOT_FOUND("CHANNEL_001", "Channel session not found", 404),
   CHANNEL_SESSION_EXPIRED("CHANNEL-001", "Channel session expired", 410),
+  CHANNEL_ROUTE_NOT_FOUND("CHANNEL-009", "Routing configuration error", 400),
   CURRENT_PASSWORD_MISMATCH("CURRENT_PASSWORD_MISMATCH", "Current password mismatch", 400),
   CORE_RESOURCE_NOT_FOUND("CORE_001", "Resource not found", 404),
+  CORE_CONCURRENCY_CONFLICT("CORE-003", "Concurrent modification conflict", 409),
   FEP_ORDER_NOT_FOUND("9008", "FEP order not found", 404),
   ORD_INVALID_REQUEST("ORD_001", "Invalid order request", 400),
   RATE_LIMIT_EXCEEDED("RATE_001", "Rate limit exceeded", 429),
@@ -35,6 +43,8 @@ public enum ErrorCode {
   private final String code;
   private final String defaultMessage;
   private final int httpStatus;
+  private static final Map<String, ErrorCode> BY_CODE = Arrays.stream(values())
+      .collect(Collectors.toUnmodifiableMap(ErrorCode::code, Function.identity()));
 
   ErrorCode(String code, String defaultMessage, int httpStatus) {
     this.code = code;
@@ -52,5 +62,12 @@ public enum ErrorCode {
 
   public int httpStatus() {
     return httpStatus;
+  }
+
+  public static Optional<ErrorCode> fromCode(String code) {
+    if (code == null || code.isBlank()) {
+      return Optional.empty();
+    }
+    return Optional.ofNullable(BY_CODE.get(code));
   }
 }

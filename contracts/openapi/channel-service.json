@@ -11,6 +11,36 @@
     }
   ],
   "paths": {
+    "/api/v1/orders": {
+      "post": {
+        "tags": [
+          "order-controller"
+        ],
+        "operationId": "create",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/OrderCreateRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orders/sessions": {
       "get": {
         "tags": [
@@ -44,7 +74,7 @@
         "tags": [
           "order-session-controller"
         ],
-        "operationId": "create",
+        "operationId": "create_1",
         "parameters": [
           {
             "name": "request",
@@ -399,6 +429,112 @@
   },
   "components": {
     "schemas": {
+      "OrderCreateRequest": {
+        "required": [
+          "accountId",
+          "clOrdId",
+          "price",
+          "quantity",
+          "side",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "clOrdId": {
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "side": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "quantity": {
+            "minimum": 0.0001,
+            "exclusiveMinimum": false,
+            "type": "number"
+          },
+          "price": {
+            "minimum": 0.0001,
+            "exclusiveMinimum": false,
+            "type": "number"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "userMessageKey": {
+            "type": "string"
+          },
+          "operatorCode": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseOrderResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OrderResponse": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "clOrdId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "orderQuantity": {
+            "type": "number"
+          }
+        }
+      },
       "OrderSessionCreateRequest": {
         "required": [
           "clOrdId",
@@ -418,27 +554,6 @@
           "orderRef": {
             "minLength": 1,
             "type": "string"
-          }
-        }
-      },
-      "ApiErrorResponse": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "correlationId": {
-            "type": "string"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
           }
         }
       },
