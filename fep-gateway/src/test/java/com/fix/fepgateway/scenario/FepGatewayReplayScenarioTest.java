@@ -149,7 +149,10 @@ class FepGatewayReplayScenarioTest {
         0L,
         null,
         10L,
-        Instant.parse("2026-03-01T10:05:30Z")
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     gatewayOrderRepository.save(order);
@@ -189,7 +192,10 @@ class FepGatewayReplayScenarioTest {
         0L,
         null,
         10L,
-        Instant.parse("2026-03-01T10:05:30Z")
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     gatewayOrderRepository.save(order);
@@ -236,7 +242,10 @@ class FepGatewayReplayScenarioTest {
         5L,
         72000L,
         5L,
-        Instant.parse("2026-03-01T10:05:30Z")
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     gatewayOrderRepository.save(order);
@@ -279,7 +288,10 @@ class FepGatewayReplayScenarioTest {
         0L,
         null,
         0L,
-        Instant.parse("2026-03-01T10:06:00Z")
+        Instant.parse("2026-03-01T10:06:00Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     gatewayOrderRepository.save(order);
@@ -322,7 +334,10 @@ class FepGatewayReplayScenarioTest {
         5L,
         72000L,
         0L,
-        Instant.parse("2026-03-01T10:06:00Z")
+        Instant.parse("2026-03-01T10:06:00Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     gatewayOrderRepository.save(order);
@@ -365,7 +380,10 @@ class FepGatewayReplayScenarioTest {
         0L,
         null,
         10L,
-        Instant.parse("2026-03-01T10:05:30Z")
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     gatewayOrderRepository.save(order);
@@ -406,7 +424,10 @@ class FepGatewayReplayScenarioTest {
         0L,
         null,
         10L,
-        Instant.parse("2026-03-01T10:05:30Z")
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     gatewayOrderRepository.save(order);
@@ -475,7 +496,10 @@ class FepGatewayReplayScenarioTest {
         0L,
         null,
         10L,
-        Instant.parse("2026-03-01T10:05:30Z")
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     order.configureRequeryOutcome(FepOrdStatus.PARTIALLY_FILLED.name(), 4L, 72000L);
@@ -519,7 +543,10 @@ class FepGatewayReplayScenarioTest {
         0L,
         null,
         10L,
-        Instant.parse("2026-03-01T10:05:30Z")
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     order.configureRequeryOutcome(FepOrdStatus.REJECTED.name(), null, null);
@@ -563,7 +590,10 @@ class FepGatewayReplayScenarioTest {
         0L,
         null,
         10L,
-        Instant.parse("2026-03-01T10:05:30Z")
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null
     ));
     order.updateRecoveryStatus("ESCALATED");
     order.configureRequeryOutcome(FepOrdStatus.CANCELED.name(), 5L, 72000L);
