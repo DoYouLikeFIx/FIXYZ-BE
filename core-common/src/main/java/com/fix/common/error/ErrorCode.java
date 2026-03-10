@@ -21,6 +21,7 @@ public enum ErrorCode {
   CHANNEL_SESSION_EXPIRED("CHANNEL-001", "Channel session expired", 410),
   CURRENT_PASSWORD_MISMATCH("CURRENT_PASSWORD_MISMATCH", "Current password mismatch", 400),
   CORE_RESOURCE_NOT_FOUND("CORE_001", "Resource not found", 404),
+  CORE_PROVISIONING_UNAVAILABLE("CORE-001", "Corebank provisioning unavailable", 503),
   CORE_PROVISIONING_FAILED("CORE-004", "Provisioning transaction failed", 500),
   FEP_ORDER_NOT_FOUND("9008", "FEP order not found", 404),
   ORD_INVALID_REQUEST("ORD_001", "Invalid order request", 400),

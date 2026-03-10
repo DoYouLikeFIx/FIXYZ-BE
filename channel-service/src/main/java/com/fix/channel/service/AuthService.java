@@ -1,5 +1,6 @@
 package com.fix.channel.service;
 
+import com.fix.channel.client.CorebankProvisioningClient;
 import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
@@ -53,6 +54,7 @@ public class AuthService {
   private final SecurityEventRepository securityEventRepository;
   private final PasswordEncoder passwordEncoder;
   private final LoginIpRateLimitService loginIpRateLimitService;
+  private final CorebankProvisioningClient corebankProvisioningClient;
   @SuppressWarnings("rawtypes")
   private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
 
@@ -68,7 +70,7 @@ public class AuthService {
   private int accountLockoutMaxFailedAttempts;
 
   @Transactional
-  public AuthRegisterResult register(AuthRegisterCommand command) {
+  public AuthRegisterResult register(AuthRegisterCommand command, String correlationId) {
     String email = normalizeEmail(command.getEmail());
 
     Member member = Member.registerUser(
@@ -86,6 +88,13 @@ public class AuthService {
       }
       throw ex;
     }
+
+    corebankProvisioningClient.provisionDefaultAccount(
+        saved.getId(),
+        saved.getMemberNo(),
+        saved.getEmail(),
+        correlationId
+    );
 
     auditLogRepository.save(AuditLog.of(
         saved.getId(),
