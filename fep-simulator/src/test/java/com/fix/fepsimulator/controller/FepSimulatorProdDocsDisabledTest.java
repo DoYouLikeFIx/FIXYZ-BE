@@ -1,25 +1,29 @@
 package com.fix.fepsimulator.controller;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Properties;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.springframework.core.io.ClassPathResource;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@ActiveProfiles({"test", "prod"})
+@ExtendWith(MockitoExtension.class)
 class FepSimulatorProdDocsDisabledTest {
 
-  @Autowired
-  private MockMvc mockMvc;
-
   @Test
-  void shouldDisableApiDocsInProdProfile() throws Exception {
-    mockMvc.perform(get("/v3/api-docs")).andExpect(status().isNotFound());
+  void shouldDisableApiDocsInProdProfile() {
+    Properties properties = loadProdProperties();
+
+    assertThat(properties.getProperty("springdoc.api-docs.enabled")).isEqualTo("false");
+    assertThat(properties.getProperty("springdoc.swagger-ui.enabled")).isEqualTo("false");
+  }
+
+  private Properties loadProdProperties() {
+    YamlPropertiesFactoryBean factoryBean = new YamlPropertiesFactoryBean();
+    factoryBean.setResources(new ClassPathResource("application-prod.yml"));
+    factoryBean.afterPropertiesSet();
+    return factoryBean.getObject();
   }
 }

@@ -227,6 +227,12 @@
           "correlationId": {
             "type": "string"
           },
+          "userMessageKey": {
+            "type": "string"
+          },
+          "operatorCode": {
+            "type": "string"
+          },
           "timestamp": {
             "type": "string",
             "format": "date-time"

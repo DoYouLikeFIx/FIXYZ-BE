@@ -1,7 +1,7 @@
 package com.fix.channel.service;
 
-import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.AuditAction;
+import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
@@ -10,10 +10,9 @@ import com.fix.channel.vo.MemberProfileResult;
 import com.fix.channel.vo.MemberProfileUpdateCommand;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
-import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -111,6 +110,7 @@ public class MemberService {
         member.getCreatedAt()
     );
   }
+
   private String resolveClientIp(HttpServletRequest request) {
     String forwardedFor = request.getHeader("X-Forwarded-For");
     if (forwardedFor != null && !forwardedFor.isBlank()) {
@@ -128,10 +128,6 @@ public class MemberService {
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {
-    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-    if (correlationId == null || correlationId.isBlank()) {
-      return UUID.randomUUID().toString();
-    }
-    return correlationId;
+    return CorrelationIdSupport.ensureCorrelationId(request);
   }
 }

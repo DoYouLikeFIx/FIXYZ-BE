@@ -1,21 +1,22 @@
-package com.fix.channel.config;
+package com.fix.channel.exception;
 
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.error.FixException;
 import com.fix.common.error.RetryAfterBusinessException;
 import com.fix.common.error.SystemException;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
-import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -24,7 +25,7 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(FixException.class)
   public ResponseEntity<ApiErrorResponse> handleFixException(FixException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), request);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, null);
   }
 
   @ExceptionHandler(BusinessException.class)
@@ -33,12 +34,12 @@ public class GlobalExceptionHandler {
     if (ex instanceof RetryAfterBusinessException retryAfterBusinessException) {
       retryAfterSeconds = retryAfterBusinessException.getRetryAfterSeconds();
     }
-    return build(ex.getErrorCode(), ex.getMessage(), request, retryAfterSeconds);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, retryAfterSeconds);
   }
 
   @ExceptionHandler(SystemException.class)
   public ResponseEntity<ApiErrorResponse> handleSystemException(SystemException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), request);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, null);
   }
 
   @ExceptionHandler({
@@ -62,17 +63,24 @@ public class GlobalExceptionHandler {
   }
 
   private ResponseEntity<ApiErrorResponse> build(ErrorCode errorCode, String message, HttpServletRequest request) {
-    return build(errorCode, message, request, null);
+    return build(errorCode, message, null, request, null);
   }
 
   private ResponseEntity<ApiErrorResponse> build(
       ErrorCode errorCode,
       String message,
+      ErrorMetadata metadata,
       HttpServletRequest request,
       Long retryAfterSeconds
   ) {
-    String correlationId = resolveCorrelationId(request);
-    ApiErrorResponse response = ApiErrorResponse.from(errorCode, message, request.getRequestURI(), correlationId);
+    String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
+    ApiErrorResponse response = ApiErrorResponse.from(
+        errorCode,
+        message,
+        request.getRequestURI(),
+        correlationId,
+        metadata
+    );
 
     ResponseEntity.BodyBuilder builder = ResponseEntity
         .status(errorCode.httpStatus())
@@ -84,17 +92,8 @@ public class GlobalExceptionHandler {
     return builder.body(response);
   }
 
-  private String resolveCorrelationId(HttpServletRequest request) {
-    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-    if (correlationId == null || correlationId.isBlank()) {
-      return UUID.randomUUID().toString();
-    }
-    return correlationId;
-  }
-
   private String resolveValidationMessage(Exception ex) {
     if (ex instanceof BindException bindException && bindException.hasFieldErrors()) {
-      // 팀원이 로그/응답만 보고도 원인을 파악할 수 있도록 첫 번째 필드 오류 메시지를 우선 노출한다.
       String message = bindException.getFieldErrors().getFirst().getDefaultMessage();
       if (message != null && !message.isBlank()) {
         return message;

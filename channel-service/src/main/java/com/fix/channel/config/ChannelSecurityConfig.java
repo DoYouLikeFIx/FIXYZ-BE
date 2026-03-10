@@ -5,9 +5,9 @@ import com.fix.channel.service.ChannelSessionInvalidationService;
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.Cookie;
 import java.util.Arrays;
-import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.context.annotation.Bean;
@@ -48,13 +48,10 @@ public class ChannelSecurityConfig {
     http
         .sessionManagement(session -> session
             .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-            .sessionFixation(sessionFixation -> sessionFixation.changeSessionId()))
+        .sessionFixation(sessionFixation -> sessionFixation.changeSessionId()))
         .exceptionHandling(exceptionHandling -> exceptionHandling
             .authenticationEntryPoint((request, response, authException) -> {
-              String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-              if (correlationId == null || correlationId.isBlank()) {
-                correlationId = UUID.randomUUID().toString();
-              }
+              String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
 
               ErrorCode errorCode = resolveAuthErrorCode(
                   request.getCookies(),
