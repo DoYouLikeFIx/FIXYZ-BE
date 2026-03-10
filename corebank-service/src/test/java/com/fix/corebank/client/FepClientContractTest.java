@@ -1,5 +1,6 @@
 package com.fix.corebank.client;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -11,13 +12,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.fep.FepOrderType;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
 import com.fix.common.web.CommonHeaders;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +35,10 @@ class FepClientContractTest {
   private static final String CL_ORD_ID_3 = "123e4567-e89b-42d3-a456-426614174203";
   private static final String CL_ORD_ID_4 = "123e4567-e89b-42d3-a456-426614174204";
   private static final String CL_ORD_ID_5 = "123e4567-e89b-42d3-a456-426614174205";
+  private static final String CL_ORD_ID_6 = "123e4567-e89b-42d3-a456-426614174206";
+  private static final String CL_ORD_ID_7 = "123e4567-e89b-42d3-a456-426614174207";
+  private static final String CL_ORD_ID_8 = "123e4567-e89b-42d3-a456-426614174208";
+  private static final String CL_ORD_ID_9 = "123e4567-e89b-42d3-a456-426614174209";
 
   private WireMockServer wireMockServer;
   private FepClient fepClient;
@@ -80,9 +88,9 @@ class FepClientContractTest {
   @Test
   void shouldSendVersionedGatewayRequestAndParseExplicitStatuses() {
     wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
-        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+        .willReturn(aResponse()
             .withHeader("Content-Type", "application/json")
-                    .withBody("""
+            .withBody("""
                 {
                   "success": true,
                   "data": {
@@ -99,24 +107,7 @@ class FepClientContractTest {
                 }
                 """.formatted(CL_ORD_ID_2, CL_ORD_ID_2))));
 
-    FepOutboundOrderPayload payload = new FepOutboundOrderPayload(
-        CL_ORD_ID_2,
-        "ACC-001",
-        "005930",
-        FepSecurityExchange.KRX,
-        FepSide.BUY,
-        FepOrderType.LIMIT,
-        10L,
-        72000L,
-        null,
-        null,
-        null,
-        null,
-        "KRW",
-        "ref-client-002"
-    );
-
-    FepOrderResult result = fepClient.submitOrder(payload, "trace-client-002");
+    FepOrderResult result = fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_2, "ref-client-002"), "trace-client-002");
 
     assertThat(result.clOrdId()).isEqualTo(CL_ORD_ID_2);
     assertThat(result.execType()).isEqualTo(FepExecType.FILL);
@@ -147,9 +138,9 @@ class FepClientContractTest {
   @Test
   void shouldOmitPriceFieldForMarketOrders() {
     wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
-        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+        .willReturn(aResponse()
             .withHeader("Content-Type", "application/json")
-                    .withBody("""
+            .withBody("""
                 {
                   "success": true,
                   "data": {
@@ -175,8 +166,8 @@ class FepClientContractTest {
         10L,
         null,
         "qsnap-1",
-        java.time.Instant.parse("2026-03-01T10:00:00Z"),
-        com.fix.common.fep.FepQuoteSourceMode.DELAYED,
+        Instant.parse("2026-03-01T10:00:00Z"),
+        FepQuoteSourceMode.DELAYED,
         72000L,
         "KRW",
         "ref-client-003"
@@ -192,7 +183,7 @@ class FepClientContractTest {
   @Test
   void shouldQueryVersionedStatusContract() {
     wireMockServer.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_4)))
-        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+        .willReturn(aResponse()
             .withHeader("Content-Type", "application/json")
             .withBody("""
                 {
@@ -221,15 +212,16 @@ class FepClientContractTest {
   @Test
   void shouldRejectMalformedSubmitResponsePayload() {
     wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
-        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+        .willReturn(aResponse()
             .withHeader("Content-Type", "application/json")
-                    .withBody("""
+            .withBody("""
                 {
                   "success": true,
                   "data": {
-                    "clOrdId": "WRONG-CLIENT-ID",
+                    "clOrdId": "",
                     "fepOrderId": "FEP-KRX-%s",
                     "execType": "FILL",
+                    "ordStatus": "FILLED",
                     "executedQty": 10,
                     "executedPrice": 72000,
                     "leavesQty": 0,
@@ -239,8 +231,227 @@ class FepClientContractTest {
                 }
                 """.formatted(CL_ORD_ID_5))));
 
-    FepOutboundOrderPayload payload = new FepOutboundOrderPayload(
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_5, "ref-client-005"), "trace-client-005"))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("clOrdId is required");
+  }
+
+  @Test
+  void shouldMapDocumentedGatewaySubmitRcsToNormalizedTaxonomy() {
+    assertMappedSubmitError(
+        CL_ORD_ID_1,
+        400,
+        "9001",
+        ErrorCode.CHANNEL_ROUTE_NOT_FOUND,
+        "error.channel.route_not_found",
+        "NO_ROUTE"
+    );
+    assertMappedSubmitError(
+        CL_ORD_ID_2,
+        503,
+        "9002",
+        ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+        "error.fep.unavailable",
+        "POOL_EXHAUSTED"
+    );
+    assertMappedSubmitError(
+        CL_ORD_ID_3,
+        503,
+        "9003",
+        ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+        "error.fep.unavailable",
+        "NOT_LOGGED_ON"
+    );
+    assertMappedSubmitError(
+        CL_ORD_ID_4,
+        504,
+        "9004",
+        ErrorCode.FEP_GATEWAY_TIMEOUT,
+        "error.fep.timeout",
+        "TIMEOUT"
+    );
+    assertMappedSubmitError(
         CL_ORD_ID_5,
+        503,
+        "9005",
+        ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+        "error.fep.unavailable",
+        "KEY_EXPIRED"
+    );
+    assertMappedSubmitError(
+        CL_ORD_ID_6,
+        400,
+        "9097",
+        ErrorCode.FEP_ORDER_REJECTED,
+        "error.fep.rejected",
+        "ORDER_REJECTED"
+    );
+    assertMappedSubmitError(
+        CL_ORD_ID_7,
+        503,
+        "9098",
+        ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+        "error.fep.unavailable",
+        "CIRCUIT_OPEN"
+    );
+    assertMappedSubmitError(
+        CL_ORD_ID_8,
+        409,
+        "9099",
+        ErrorCode.CORE_CONCURRENCY_CONFLICT,
+        "error.core.concurrency_conflict",
+        "CONCURRENCY_FAILURE"
+    );
+  }
+
+  @Test
+  void shouldFallbackUnknownExternalGatewayCodes() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(502, "9555", "unclassified upstream failure")));
+
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_9, "ref-unknown-001"), "trace-unknown-001"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FEP_UNKNOWN_EXTERNAL);
+          assertThat(ex.getMetadata().userMessageKey()).isEqualTo("error.fep.unknown_external");
+          assertThat(ex.getMetadata().operatorCode()).isEqualTo("UNKNOWN_EXTERNAL_9555");
+        });
+  }
+
+  @Test
+  void shouldPreserveNormalizedGatewayErrorsWhenRcIsAbsent() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(aResponse()
+            .withStatus(422)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "VALIDATION-001",
+                  "message": "symbol is invalid"
+                }
+                """)));
+
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_9, "ref-validation-001"), "trace-validation-001"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
+          assertThat(ex.getMessage()).isEqualTo("symbol is invalid");
+          assertThat(ex.getMetadata()).isNull();
+        });
+  }
+
+  @Test
+  void shouldTranslateStatusQueryFailuresThroughTaxonomy() {
+    assertMappedStatusError(
+        CL_ORD_ID_4,
+        504,
+        "9004",
+        ErrorCode.FEP_GATEWAY_TIMEOUT,
+        "error.fep.timeout",
+        "TIMEOUT"
+    );
+    assertMappedStatusError(
+        CL_ORD_ID_4,
+        409,
+        "9099",
+        ErrorCode.CORE_CONCURRENCY_CONFLICT,
+        "error.core.concurrency_conflict",
+        "CONCURRENCY_FAILURE"
+    );
+  }
+
+  @Test
+  void shouldSupportLegacyTopLevelExternalCodeBodies() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(aResponse()
+            .withStatus(504)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "9004",
+                  "message": "legacy timeout body"
+                }
+                """)));
+
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_9, "ref-legacy-001"), "trace-legacy-001"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FEP_GATEWAY_TIMEOUT);
+          assertThat(ex.getMetadata().userMessageKey()).isEqualTo("error.fep.timeout");
+          assertThat(ex.getMetadata().operatorCode()).isEqualTo("TIMEOUT");
+        });
+  }
+
+  private void assertMappedSubmitError(
+      String clOrdId,
+      int httpStatus,
+      String externalRc,
+      ErrorCode expectedErrorCode,
+      String expectedUserMessageKey,
+      String expectedOperatorCode
+  ) {
+    wireMockServer.resetAll();
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(httpStatus, externalRc, "failure " + externalRc)));
+
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(clOrdId, "ref-" + externalRc), "trace-" + externalRc))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(expectedErrorCode);
+          assertThat(ex.getMetadata().userMessageKey()).isEqualTo(expectedUserMessageKey);
+          assertThat(ex.getMetadata().operatorCode()).isEqualTo(expectedOperatorCode);
+        });
+  }
+
+  private void assertMappedStatusError(
+      String clOrdId,
+      int httpStatus,
+      String externalRc,
+      ErrorCode expectedErrorCode,
+      String expectedUserMessageKey,
+      String expectedOperatorCode
+  ) {
+    wireMockServer.resetAll();
+    wireMockServer.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(clOrdId)))
+        .willReturn(canonicalGatewayError(httpStatus, externalRc, "status failure " + externalRc)));
+
+    assertThatThrownBy(() -> fepClient.queryOrderStatus(clOrdId, "trace-status-" + externalRc))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(expectedErrorCode);
+          assertThat(ex.getMetadata().userMessageKey()).isEqualTo(expectedUserMessageKey);
+          assertThat(ex.getMetadata().operatorCode()).isEqualTo(expectedOperatorCode);
+        });
+  }
+
+  private com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder canonicalGatewayError(
+      int httpStatus,
+      String externalRc,
+      String message
+  ) {
+    return aResponse()
+        .withStatus(httpStatus)
+        .withHeader("Content-Type", "application/json")
+        .withBody("""
+            {
+              "success": false,
+              "rc": "%s",
+              "data": null,
+              "error": {
+                "code": "%s",
+                "message": "%s",
+                "rcDescription": "%s",
+                "retryAfterSeconds": null
+              },
+              "traceId": "trace-%s"
+            }
+            """.formatted(
+            externalRc,
+            FepExternalErrorTaxonomy.resolve(externalRc).errorCode().code(),
+            message,
+            FepExternalErrorTaxonomy.resolve(externalRc).metadata().operatorCode(),
+            externalRc
+        ));
+  }
+
+  private FepOutboundOrderPayload buildSubmitPayload(String clOrdId, String referenceId) {
+    return new FepOutboundOrderPayload(
+        clOrdId,
         "ACC-001",
         "005930",
         FepSecurityExchange.KRX,
@@ -253,11 +464,7 @@ class FepClientContractTest {
         null,
         null,
         "KRW",
-        "ref-client-005"
+        referenceId
     );
-
-    assertThatThrownBy(() -> fepClient.submitOrder(payload, "trace-client-005"))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("clOrdId");
   }
 }

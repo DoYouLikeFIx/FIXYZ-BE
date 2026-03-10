@@ -44,6 +44,12 @@ class CorebankDtoVoBoundaryArchTest {
           .that().resideInAnyPackage("..dto.request..", "..dto.response..")
           .should(notBeRecord());
 
+  @ArchTest
+  static final ArchRule globalExceptionHandlerShouldLiveInExceptionPackage =
+      classes()
+          .that().haveSimpleName("GlobalExceptionHandler")
+          .should().resideInAPackage("..exception..");
+
   private static ArchCondition<JavaClass> notBeRecord() {
     return new ArchCondition<>("not be a record") {
       @Override

@@ -5,6 +5,7 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.fep.FepOrderType;
 import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
+import com.fix.common.web.CorrelationIdSupport;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.JournalEntry;
 import com.fix.corebank.entity.LedgerEntry;
@@ -31,7 +32,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Locale;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -199,7 +199,7 @@ public class CorebankOrderService {
   }
 
   private String correlationId(String operation, String clOrdId) {
-    return "corebank-" + operation + "-" + clOrdId + "-" + UUID.randomUUID();
+    return CorrelationIdSupport.currentOrGenerate();
   }
 
   private Instant startOfUtcDay() {
