@@ -547,6 +547,45 @@
           }
         }
       }
+    },
+    "/api/v1/accounts/{accountId}/orders": {
+      "get": {
+        "tags": [
+          "account-controller"
+        ],
+        "operationId": "getOrderHistory",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AccountOrderHistoryQueryRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAccountOrderHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1391,6 +1430,100 @@
             "$ref": "#/components/schemas/ApiErrorResponse"
           },
           "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AccountOrderHistoryQueryRequest": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "minimum": 0,
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AccountOrderHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            }
+          },
+          "totalElements": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseAccountOrderHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AccountOrderHistoryResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Item": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "symbolName": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "number"
+          },
+          "unitPrice": {
+            "type": "number"
+          },
+          "totalAmount": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "clOrdId": {
+            "type": "string"
+          },
+          "createdAt": {
             "type": "string",
             "format": "date-time"
           }

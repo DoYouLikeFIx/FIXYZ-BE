@@ -20,9 +20,14 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +52,36 @@ public class CorebankOrderPersistenceService {
   public OrderSnapshot getRequiredOrder(String clOrdId) {
     return findOrder(clOrdId)
         .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "order not found"));
+  }
+
+  @Transactional(readOnly = true)
+  public AccountOrderHistoryPage findAccountOrderHistory(Long accountId, int page, int size) {
+    Pageable pageable = PageRequest.of(
+        page,
+        size,
+        Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"))
+    );
+    Page<Order> orderPage = orderRepository.findByAccountId(accountId, pageable);
+
+    List<AccountOrderHistoryRow> content = orderPage.getContent().stream()
+        .map(order -> new AccountOrderHistoryRow(
+            order.getSymbol(),
+            order.getSide(),
+            order.getOrderQty(),
+            order.getOrderPrice(),
+            order.getStatus(),
+            order.getClOrdId(),
+            order.getCreatedAt()
+        ))
+        .toList();
+
+    return new AccountOrderHistoryPage(
+        content,
+        orderPage.getTotalElements(),
+        orderPage.getTotalPages(),
+        orderPage.getNumber(),
+        orderPage.getSize()
+    );
   }
 
   @Transactional
@@ -160,7 +195,27 @@ public class CorebankOrderPersistenceService {
           order.getOrderPrice(),
           order.getStatus()
       );
-    }
+      }
+  }
+
+  public record AccountOrderHistoryRow(
+      String symbol,
+      String side,
+      BigDecimal orderQty,
+      BigDecimal orderPrice,
+      String status,
+      String clOrdId,
+      Instant createdAt
+  ) {
+  }
+
+  public record AccountOrderHistoryPage(
+      List<AccountOrderHistoryRow> content,
+      long totalElements,
+      int totalPages,
+      int number,
+      int size
+  ) {
   }
 
   public record OrderSnapshot(

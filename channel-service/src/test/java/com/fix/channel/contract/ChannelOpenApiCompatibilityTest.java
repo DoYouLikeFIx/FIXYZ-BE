@@ -26,9 +26,23 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode accountPositionResponse = contract.path("components").path("schemas")
         .path("ApiResponseAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas").path("AccountPositionResponse");
+    JsonNode accountOrderHistoryResponse = contract.path("components").path("schemas")
+        .path("ApiResponseAccountOrderHistoryResponse");
+    JsonNode accountOrderHistorySchema = contract.path("components").path("schemas")
+        .path("AccountOrderHistoryResponse");
+    JsonNode accountOrderHistoryItemSchema = resolveRefSchema(
+        contract,
+        accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText()
+    );
 
     assertThat(fieldNames(paths))
-        .contains("/api/v1/auth/login", "/api/v1/orders", "/api/v1/orders/sessions", "/api/v1/accounts/{accountId}/positions");
+        .contains(
+            "/api/v1/auth/login",
+            "/api/v1/orders",
+            "/api/v1/orders/sessions",
+            "/api/v1/accounts/{accountId}/positions",
+            "/api/v1/accounts/{accountId}/orders"
+        );
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
         .contains(
@@ -49,8 +63,14 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
+    assertThat(fieldNames(accountOrderHistorySchema.path("properties")))
+        .contains("content", "totalElements", "totalPages", "number", "size");
+    assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))
+        .contains("symbol", "symbolName", "side", "qty", "unitPrice", "totalAmount", "status", "clOrdId", "createdAt");
   }
 
   private Path openApiContract() {
@@ -69,5 +89,13 @@ class ChannelOpenApiCompatibilityTest {
     Set<String> names = new TreeSet<>();
     node.fieldNames().forEachRemaining(names::add);
     return names;
+  }
+
+  private JsonNode resolveRefSchema(JsonNode contract, String ref) {
+    if (ref == null || !ref.startsWith("#/components/schemas/")) {
+      return objectMapper.createObjectNode();
+    }
+    String schemaName = ref.substring("#/components/schemas/".length());
+    return contract.path("components").path("schemas").path(schemaName);
   }
 }

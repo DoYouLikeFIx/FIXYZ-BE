@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
+import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
+import com.fix.channel.vo.AccountOrderHistoryItemResult;
+import com.fix.channel.vo.AccountOrderHistoryResult;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
 import com.fix.common.error.BusinessException;
@@ -13,6 +16,7 @@ import com.fix.common.web.CommonHeaders;
 import java.net.SocketTimeoutException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -31,6 +35,7 @@ public class CorebankClient {
 
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
   private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
+  private static final String COREBANK_ACCOUNT_ORDERS_PATH = "/internal/v1/accounts/{accountId}/orders";
 
   private final RestClient restClient;
   private final String internalSecret;
@@ -116,6 +121,38 @@ public class CorebankClient {
           balance,
           responseBody.currency(),
           responseBody.asOf()
+      );
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public AccountOrderHistoryResult getAccountOrderHistory(AccountOrderHistoryQueryCommand command, String correlationId) {
+    try {
+      CorebankApiResponse<CorebankAccountOrderHistoryResponse> response = restClient.get()
+          .uri(uriBuilder -> uriBuilder
+              .path(COREBANK_ACCOUNT_ORDERS_PATH)
+              .queryParam("memberId", command.getMemberId())
+              .queryParam("page", command.getPage())
+              .queryParam("size", command.getSize())
+              .build(command.getAccountId()))
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankAccountOrderHistoryResponse responseBody = extractBody(response);
+      List<CorebankAccountOrderHistoryItemResponse> coreItems = responseBody.content();
+      List<AccountOrderHistoryItemResult> items = coreItems == null
+          ? List.of()
+          : coreItems.stream().map(this::mapOrderHistoryItem).toList();
+      return AccountOrderHistoryResult.of(
+          items,
+          defaultLong(responseBody.totalElements(), 0L),
+          defaultInt(responseBody.totalPages(), 0),
+          defaultInt(responseBody.number(), command.getPage()),
+          defaultInt(responseBody.size(), command.getSize())
       );
     } catch (RestClientException ex) {
       throw translateFailure(ex);
@@ -226,6 +263,33 @@ public class CorebankClient {
     return value != null ? value : defaultValue;
   }
 
+  private int defaultInt(Integer value, int defaultValue) {
+    return value != null ? value : defaultValue;
+  }
+
+  private long defaultLong(Long value, long defaultValue) {
+    return value != null ? value : defaultValue;
+  }
+
+  private AccountOrderHistoryItemResult mapOrderHistoryItem(CorebankAccountOrderHistoryItemResponse item) {
+    BigDecimal qty = defaultDecimal(item.qty(), BigDecimal.ZERO);
+    BigDecimal unitPrice = defaultDecimal(item.unitPrice(), BigDecimal.ZERO);
+    BigDecimal totalAmount = defaultDecimal(item.totalAmount(), qty.multiply(unitPrice));
+    String symbol = defaultIfBlank(item.symbol(), item.symbolName());
+    String symbolName = defaultIfBlank(item.symbolName(), symbol);
+    return AccountOrderHistoryItemResult.of(
+        symbol,
+        symbolName,
+        item.side(),
+        qty,
+        unitPrice,
+        totalAmount,
+        item.status(),
+        item.clOrdId(),
+        item.createdAt()
+    );
+  }
+
   @JsonIgnoreProperties(ignoreUnknown = true)
   private record CorebankApiResponse<T>(
       boolean success,
@@ -255,6 +319,30 @@ public class CorebankClient {
       BigDecimal availableBalance,
       String currency,
       Instant asOf
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankAccountOrderHistoryResponse(
+      List<CorebankAccountOrderHistoryItemResponse> content,
+      Long totalElements,
+      Integer totalPages,
+      Integer number,
+      Integer size
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankAccountOrderHistoryItemResponse(
+      String symbol,
+      String symbolName,
+      String side,
+      BigDecimal qty,
+      BigDecimal unitPrice,
+      BigDecimal totalAmount,
+      String status,
+      String clOrdId,
+      Instant createdAt
   ) {
   }
 

@@ -188,6 +188,68 @@ class ChannelErrorContractTest {
 
   @Test
   @WithMockUser(username = "qa-user")
+  void shouldForwardSessionMemberIdAndExposePagedOrderHistory() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/orders"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("page", equalTo("0"))
+        .withQueryParam("size", equalTo("20"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "content": [
+                      {
+                        "symbol": "005930",
+                        "symbolName": "005930",
+                        "side": "BUY",
+                        "qty": 2.0000,
+                        "unitPrice": 70100.0000,
+                        "totalAmount": 140200.0000,
+                        "status": "FILLED",
+                        "clOrdId": "123e4567-e89b-42d3-a456-426614174320",
+                        "createdAt": "2026-03-10T00:00:00Z"
+                      }
+                    ],
+                    "totalElements": 1,
+                    "totalPages": 1,
+                    "number": 0,
+                    "size": 20
+                  }
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/orders", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-history")
+            .param("page", "0")
+            .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-history"))
+        .andExpect(jsonPath("$.data.content[0].symbol").value("005930"))
+        .andExpect(jsonPath("$.data.content[0].symbolName").value("005930"))
+        .andExpect(jsonPath("$.data.content[0].qty").value(2.0))
+        .andExpect(jsonPath("$.data.content[0].unitPrice").value(70100.0))
+        .andExpect(jsonPath("$.data.content[0].totalAmount").value(140200.0))
+        .andExpect(jsonPath("$.data.content[0].clOrdId").value("123e4567-e89b-42d3-a456-426614174320"))
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.totalPages").value(1))
+        .andExpect(jsonPath("$.data.number").value(0))
+        .andExpect(jsonPath("$.data.size").value(20));
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/orders"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("page", equalTo("0"))
+        .withQueryParam("size", equalTo("20"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-history")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
   void shouldReturnAuthRequiredWhenSessionDoesNotContainMemberId() throws Exception {
     mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
             .param("symbol", "005930"))
@@ -225,6 +287,37 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.path").value("/api/v1/accounts/1/positions"))
         .andExpect(jsonPath("$.correlationId").value("trace-channel-ownership"))
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldExposeOwnershipErrorForAccountOrderHistoryBoundary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/orders"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(403)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "AUTH-005",
+                  "message": "forbidden account ownership",
+                  "path": "/internal/v1/accounts/1/orders",
+                  "correlationId": "trace-core-ownership-history",
+                  "timestamp": "2026-03-10T00:00:00Z"
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/orders", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-history-ownership")
+            .param("page", "0")
+            .param("size", "20"))
+        .andExpect(status().isForbidden())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-history-ownership"))
+        .andExpect(jsonPath("$.code").value("AUTH-005"))
+        .andExpect(jsonPath("$.message").value("forbidden account ownership"))
+        .andExpect(jsonPath("$.path").value("/api/v1/accounts/1/orders"))
+        .andExpect(jsonPath("$.correlationId").value("trace-channel-history-ownership"));
   }
 
   @Test
@@ -269,5 +362,16 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.message").value("Core dependency unavailable"))
         .andExpect(jsonPath("$.path").value("/api/v1/accounts/1/positions"))
         .andExpect(jsonPath("$.correlationId").value("trace-channel-core-unavailable"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldReturnValidationErrorForMalformedAccountOrderHistoryPagination() throws Exception {
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/orders", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .param("page", "-1")
+            .param("size", "0"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"));
   }
 }
