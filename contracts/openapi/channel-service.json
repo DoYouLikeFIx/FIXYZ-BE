@@ -539,6 +539,7 @@
         "tags": [
           "account-controller"
         ],
+        "summary": "Get account position",
         "operationId": "getPosition",
         "parameters": [
           {
@@ -551,11 +552,11 @@
             }
           },
           {
-            "name": "request",
+            "name": "symbol",
             "in": "query",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/AccountPositionQueryRequest"
+              "type": "string"
             }
           }
         ],
@@ -566,6 +567,59 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseAccountPositionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{accountId}/orders": {
+      "get": {
+        "tags": [
+          "account-controller"
+        ],
+        "summary": "Get account order history",
+        "operationId": "getOrderHistory",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAccountOrderHistoryResponse"
                 }
               }
             }
@@ -1345,18 +1399,6 @@
           }
         }
       },
-      "AccountPositionQueryRequest": {
-        "required": [
-          "symbol"
-        ],
-        "type": "object",
-        "properties": {
-          "symbol": {
-            "minLength": 1,
-            "type": "string"
-          }
-        }
-      },
       "AccountPositionResponse": {
         "type": "object",
         "properties": {
@@ -1408,6 +1450,84 @@
             "$ref": "#/components/schemas/ApiErrorResponse"
           },
           "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AccountOrderHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            }
+          },
+          "totalElements": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ApiResponseAccountOrderHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AccountOrderHistoryResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Item": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "symbolName": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "number"
+          },
+          "unitPrice": {
+            "type": "number"
+          },
+          "totalAmount": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "clOrdId": {
+            "type": "string"
+          },
+          "createdAt": {
             "type": "string",
             "format": "date-time"
           }
