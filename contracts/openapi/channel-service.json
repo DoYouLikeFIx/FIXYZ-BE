@@ -550,6 +550,37 @@
         }
       }
     },
+    "/api/v1/accounts/{accountId}/summary": {
+      "get": {
+        "tags": [
+          "account-controller"
+        ],
+        "operationId": "getSummary",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAccountPositionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{accountId}/positions": {
       "get": {
         "tags": [
@@ -582,6 +613,37 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseAccountPositionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{accountId}/positions/list": {
+      "get": {
+        "tags": [
+          "account-controller"
+        ],
+        "operationId": "getPositions",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListAccountPositionResponse"
                 }
               }
             }
@@ -1500,18 +1562,6 @@
           }
         }
       },
-      "AccountPositionQueryRequest": {
-        "required": [
-          "symbol"
-        ],
-        "type": "object",
-        "properties": {
-          "symbol": {
-            "minLength": 1,
-            "type": "string"
-          }
-        }
-      },
       "AccountPositionResponse": {
         "type": "object",
         "properties": {
@@ -1558,6 +1608,39 @@
           },
           "data": {
             "$ref": "#/components/schemas/AccountPositionResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AccountPositionQueryRequest": {
+        "required": [
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseListAccountPositionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountPositionResponse"
+            }
           },
           "error": {
             "$ref": "#/components/schemas/ApiErrorResponse"

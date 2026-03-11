@@ -6,6 +6,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fix.common.error.BusinessException;
@@ -59,7 +60,9 @@ class HttpCorebankProvisioningClientTest {
         "test-secret"
     );
 
-    client.provisionDefaultAccount(123L, "M-123", "member123@fix.local", "corr-123");
+    Long accountId = client.provisionDefaultAccount(123L, "M-123", "member123@fix.local", "corr-123");
+
+    assertThat(accountId).isEqualTo(1001L);
 
     wireMockServer.verify(postRequestedFor(urlEqualTo("/internal/v1/portfolio"))
         .withHeader("X-Internal-Secret", equalTo("test-secret"))

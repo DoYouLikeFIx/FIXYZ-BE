@@ -35,6 +35,8 @@ class CorebankOpenApiCompatibilityTest {
         .path("ApiResponseInternalAccountStatusTransitionResponse");
     JsonNode accountStatusTransitionSchema = contract.path("components").path("schemas")
         .path("InternalAccountStatusTransitionResponse");
+    JsonNode accountPositionListResponse = contract.path("components").path("schemas")
+        .path("ApiResponseListInternalAccountPositionResponse");
     JsonNode accountOrderHistoryResponse = contract.path("components").path("schemas")
         .path("ApiResponseInternalAccountOrderHistoryResponse");
     JsonNode accountOrderHistorySchema = contract.path("components").path("schemas")
@@ -47,6 +49,9 @@ class CorebankOpenApiCompatibilityTest {
     JsonNode requeryOperation = paths.path("/internal/v1/orders/{clOrdId}/requery").path("get");
     JsonNode requeryParameters = requeryOperation.path("parameters");
     JsonNode attemptCountParameter = parameterByName(requeryParameters, "attemptCount");
+    JsonNode positionsOperation = paths.path("/internal/v1/accounts/{accountId}/positions").path("get");
+    JsonNode positionsListOperation = paths.path("/internal/v1/accounts/{accountId}/positions/list").path("get");
+    JsonNode summaryOperation = paths.path("/internal/v1/accounts/{accountId}/summary").path("get");
 
     assertThat(fieldNames(paths))
         .contains(
@@ -54,6 +59,9 @@ class CorebankOpenApiCompatibilityTest {
             "/internal/v1/orders/{clOrdId}/requery",
             "/internal/v1/portfolio",
             "/internal/v1/accounts/{accountId}/positions",
+            "/internal/v1/accounts/{accountId}/status",
+            "/internal/v1/accounts/{accountId}/positions/list",
+            "/internal/v1/accounts/{accountId}/summary",
             "/internal/v1/accounts/{accountId}/status",
             "/internal/v1/accounts/{accountId}/orders"
         );
@@ -79,6 +87,8 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountStatusTransitionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountPositionListResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
@@ -87,6 +97,16 @@ class CorebankOpenApiCompatibilityTest {
         .contains("accountNumber", "status", "orderEligible", "denialCode", "asOf");
     assertThat(fieldNames(accountStatusTransitionSchema.path("properties")))
         .contains("previousStatus", "newStatus", "changed", "eventId", "reason", "actor", "context", "asOf");
+    assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseInternalAccountPositionResponse");
+    assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseInternalAccountPositionResponse");
+    assertThat(positionsListOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseListInternalAccountPositionResponse");
+    assertThat(accountPositionListResponse.path("properties").path("data").path("type").asText())
+        .isEqualTo("array");
+    assertThat(accountPositionListResponse.path("properties").path("data").path("items").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalAccountPositionResponse");
     assertThat(fieldNames(accountOrderHistorySchema.path("properties")))
         .contains("content", "totalElements", "totalPages", "number", "size");
     assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))

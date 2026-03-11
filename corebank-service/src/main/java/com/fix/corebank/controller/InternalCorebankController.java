@@ -6,6 +6,8 @@ import com.fix.common.validation.ContractPatterns;
 import com.fix.corebank.dto.request.InternalAccountPositionRequest;
 import com.fix.corebank.dto.request.InternalAccountStatusRequest;
 import com.fix.corebank.dto.request.InternalAccountStatusTransitionRequest;
+import com.fix.corebank.dto.request.InternalAccountPositionsRequest;
+import com.fix.corebank.dto.request.InternalAccountSummaryRequest;
 import com.fix.corebank.dto.request.InternalAccountOrderHistoryRequest;
 import com.fix.corebank.dto.request.InternalOrderCreateRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
@@ -22,6 +24,7 @@ import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
+import java.util.List;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -86,6 +89,28 @@ public class InternalCorebankController {
   ) {
     return ApiResponse.success(InternalAccountStatusTransitionResponse.from(
         corebankOrderService.transitionAccountStatus(request.toVo(accountId, correlationId))
+    ));
+  }
+
+  @GetMapping("/accounts/{accountId}/positions/list")
+  public ApiResponse<List<InternalAccountPositionResponse>> accountPositions(
+      @PathVariable Long accountId,
+      @Valid @ModelAttribute InternalAccountPositionsRequest request
+  ) {
+    return ApiResponse.success(
+        corebankOrderService.getAccountPositions(request.toVo(accountId)).stream()
+            .map(InternalAccountPositionResponse::from)
+            .toList()
+    );
+  }
+
+  @GetMapping("/accounts/{accountId}/summary")
+  public ApiResponse<InternalAccountPositionResponse> accountSummary(
+      @PathVariable Long accountId,
+      @Valid @ModelAttribute InternalAccountSummaryRequest request
+  ) {
+    return ApiResponse.success(InternalAccountPositionResponse.from(
+        corebankOrderService.getAccountSummary(request.toVo(accountId))
     ));
   }
 
