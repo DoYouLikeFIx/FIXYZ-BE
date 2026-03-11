@@ -64,6 +64,37 @@ class CoreFlywayMigrationTest {
   }
 
   @Test
+  void shouldCreateAccountStatusEventsTableAndIndexes() {
+    Integer tableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'ACCOUNT_STATUS_EVENTS'",
+        Integer.class
+    );
+    Integer previousStatusLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ACCOUNT_STATUS_EVENTS' AND COLUMN_NAME = 'PREVIOUS_STATUS'",
+        Integer.class
+    );
+    Integer accountIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'ACCOUNT_STATUS_EVENTS' "
+            + "AND INDEX_NAME = 'IDX_ACCOUNT_STATUS_EVENTS_ACCOUNT_ID_CREATED_AT'",
+        Integer.class
+    );
+    Integer memberIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'ACCOUNT_STATUS_EVENTS' "
+            + "AND INDEX_NAME = 'IDX_ACCOUNT_STATUS_EVENTS_MEMBER_ID_CREATED_AT'",
+        Integer.class
+    );
+
+    assertThat(tableCount).isNotNull();
+    assertThat(tableCount).isEqualTo(1);
+    assertThat(previousStatusLength).isEqualTo(16);
+    assertThat(accountIndexCount).isEqualTo(1);
+    assertThat(memberIndexCount).isEqualTo(1);
+  }
+
+  @Test
   void shouldFixMoneyScaleToDecimal194() {
     Integer cashBalanceScale = jdbcTemplate.queryForObject(
         "SELECT NUMERIC_SCALE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ACCOUNTS' AND COLUMN_NAME = 'CASH_BALANCE'",

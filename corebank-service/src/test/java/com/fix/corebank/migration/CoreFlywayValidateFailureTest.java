@@ -19,7 +19,9 @@ class CoreFlywayValidateFailureTest {
   private static final List<String> MIGRATION_FILES = List.of(
       "V1__create_member_table.sql",
       "V2__create_corebank_scaffolding_tables.sql",
-      "V3__align_member_accounts_constraints.sql"
+      "V3__align_member_accounts_constraints.sql",
+      "V4__add_order_external_sync_tracking.sql",
+      "V5__add_account_status_events.sql"
   );
 
   @Test
