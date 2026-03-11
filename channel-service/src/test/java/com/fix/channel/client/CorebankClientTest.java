@@ -79,6 +79,22 @@ class CorebankClientTest {
   }
 
   @Test
+  void shouldFallbackToInternalErrorForNon503504WithoutMachineCode() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo(SYMBOL))
+        .willReturn(aResponse()
+            .withStatus(404)
+            .withHeader("Content-Type", "text/plain")
+            .withBody("not found")));
+
+    assertThatThrownBy(() -> corebankClient.getAccountPosition(command(), "trace-core-internal"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(ex -> ((BusinessException) ex).getErrorCode())
+        .isEqualTo(ErrorCode.INTERNAL_ERROR);
+  }
+
+  @Test
   void shouldPreserveKnownCorebankMachineCodeWhenProvided() {
     wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
         .withQueryParam("memberId", equalTo("301"))

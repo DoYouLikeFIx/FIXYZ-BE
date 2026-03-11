@@ -175,7 +175,7 @@ public class CorebankClient {
     if (statusCode == 503) {
       return ErrorCode.CORE_DEPENDENCY_UNAVAILABLE;
     }
-    return ErrorCode.CORE_DEPENDENCY_UNAVAILABLE;
+    return ErrorCode.INTERNAL_ERROR;
   }
 
   private boolean isTimeout(Throwable throwable) {
