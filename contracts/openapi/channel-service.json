@@ -129,6 +129,89 @@
         }
       }
     },
+    "/api/v1/auth/password/reset": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "resetPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password/forgot": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "forgotPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordForgotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePasswordForgotResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password/forgot/challenge": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "bootstrapForgotPasswordChallenge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordForgotChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePasswordForgotChallengeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/otp/verify": {
       "post": {
         "tags": [
@@ -688,6 +771,132 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PasswordResetRequest": {
+        "required": [
+          "newPassword",
+          "token"
+        ],
+        "type": "object",
+        "properties": {
+          "token": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "newPassword": {
+            "minLength": 1,
+            "pattern": "^(?\u003d.*[A-Z])(?\u003d.*\\d)(?\u003d.*[@$!%*?\u0026])[A-Za-z\\d@$!%*?\u0026]{8,}$",
+            "type": "string"
+          }
+        }
+      },
+      "PasswordForgotRequest": {
+        "required": [
+          "email"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "type": "string",
+            "format": "email"
+          },
+          "challengeToken": {
+            "type": "string"
+          },
+          "challengeAnswer": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponsePasswordForgotResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PasswordForgotResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PasswordForgotResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "recovery": {
+            "$ref": "#/components/schemas/RecoveryResponse"
+          }
+        }
+      },
+      "RecoveryResponse": {
+        "type": "object",
+        "properties": {
+          "challengeEndpoint": {
+            "type": "string"
+          },
+          "challengeMayBeRequired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PasswordForgotChallengeRequest": {
+        "required": [
+          "email"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "ApiResponsePasswordForgotChallengeResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PasswordForgotChallengeResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PasswordForgotChallengeResponse": {
+        "type": "object",
+        "properties": {
+          "challengeToken": {
+            "type": "string"
+          },
+          "challengeType": {
+            "type": "string"
+          },
+          "challengeTtlSeconds": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

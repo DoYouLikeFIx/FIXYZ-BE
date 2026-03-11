@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.corebank.client.FepClient;
@@ -33,8 +34,8 @@ import com.fix.corebank.vo.AccountPositionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
-import java.math.BigDecimal;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -79,19 +80,26 @@ class CorebankOrderServiceTest {
   private LedgerEntryRefRepository ledgerEntryRefRepository;
 
   private StubFepClient fepClient;
+  private CorebankOrderPersistenceService corebankOrderPersistenceService;
   private CorebankOrderService corebankOrderService;
 
   @BeforeEach
   void setUp() {
     fepClient = new StubFepClient();
-    corebankOrderService = new CorebankOrderService(
+    corebankOrderPersistenceService = new CorebankOrderPersistenceService(
         accountRepository,
         orderRepository,
         positionRepository,
         executionRepository,
         journalEntryRepository,
         ledgerEntryRepository,
-        ledgerEntryRefRepository,
+        ledgerEntryRefRepository
+    );
+    corebankOrderService = new CorebankOrderService(
+        accountRepository,
+        positionRepository,
+        executionRepository,
+        corebankOrderPersistenceService,
         fepClient
     );
   }
@@ -235,6 +243,8 @@ class CorebankOrderServiceTest {
     assertThat(first.isIdempotent()).isFalse();
     assertThat(second.isIdempotent()).isTrue();
     assertThat(first.getStatus()).isEqualTo("FILLED");
+    assertThat(first.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_CONFIRMED);
+    assertThat(second.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_CONFIRMED);
     assertThat(fepClient.submitCalls()).isEqualTo(1);
   }
 
@@ -254,7 +264,9 @@ class CorebankOrderServiceTest {
         9003L
     );
 
-    when(orderRepository.findByClOrdId(PAYLOAD_BOUND_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(orderRepository.findByClOrdId(PAYLOAD_BOUND_CL_ORD_ID))
+        .thenReturn(Optional.empty())
+        .thenReturn(Optional.of(savedOrder));
     when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
     when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
     when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
@@ -291,6 +303,8 @@ class CorebankOrderServiceTest {
     assertThat(fepClient.lastSubmitPayload()).isNotNull();
     assertThat(fepClient.lastSubmitPayload().clOrdId()).isEqualTo(PAYLOAD_BOUND_CL_ORD_ID);
     assertThat(fepClient.lastSubmitPayload().referenceId()).isEqualTo(PAYLOAD_BOUND_CL_ORD_ID);
+    assertThat(savedOrder.getFepReferenceId()).isEqualTo("FEP-KRX-" + PAYLOAD_BOUND_CL_ORD_ID);
+    assertThat(savedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_CONFIRMED);
   }
 
   @Test
@@ -309,7 +323,9 @@ class CorebankOrderServiceTest {
         9001L
     );
 
-    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID))
+        .thenReturn(Optional.empty())
+        .thenReturn(Optional.of(savedOrder));
     when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
     final boolean[] lockObserved = {false};
     when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930"))
@@ -354,6 +370,59 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldPersistExternalSyncFailureWhenSubmitFailsAfterLocalCommit() {
+    Account account = persistedAccount();
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
+    Order savedOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            IDEMPOTENT_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("3.0000"),
+            new BigDecimal("70200.0000")
+        ),
+        9010L
+    );
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID))
+        .thenReturn(Optional.empty())
+        .thenReturn(Optional.of(savedOrder));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+    when(orderRepository.saveAndFlush(any(Order.class))).thenReturn(savedOrder);
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7010L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8010L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitFailure(new BusinessException(
+        ErrorCode.FEP_GATEWAY_TIMEOUT,
+        ErrorCode.FEP_GATEWAY_TIMEOUT.defaultMessage(),
+        new ErrorMetadata("error.fep.timeout", "TIMEOUT")
+    ));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .extracting(ex -> ((BusinessException) ex).getErrorCode())
+        .isEqualTo(ErrorCode.FEP_GATEWAY_TIMEOUT);
+
+    assertThat(savedOrder.getStatus()).isEqualTo("ACCEPTED");
+    assertThat(savedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(savedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+  }
+
+  @Test
   void shouldRequeryOrderStatusThroughFepClient() {
     Order existingOrder = persistedOrder(
         Order.accepted(
@@ -385,7 +454,142 @@ class CorebankOrderServiceTest {
     InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID));
 
     assertThat(result.getStatus()).isEqualTo("UNKNOWN");
+    assertThat(result.getMessage()).isEqualTo("order not found in exchange");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(result.getRetriable()).isTrue();
+    assertThat(result.getEscalationRequired()).isFalse();
+    assertThat(result.getAttemptCount()).isEqualTo(1);
+    assertThat(result.getMaxRetryCount()).isEqualTo(5);
     assertThat(fepClient.queryCalls()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldEscalateUnknownRequeryWhenAttemptThresholdIsReached() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9004L
+    );
+    existingOrder.updateStatus("UNKNOWN");
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+    fepClient.setQueryResult(new FepOrderResult(
+        REQUERY_CL_ORD_ID,
+        null,
+        null,
+        FepOrdStatus.UNKNOWN,
+        null,
+        null,
+        null,
+        null,
+        Instant.parse("2026-03-01T10:11:00Z"),
+        "still unresolved"
+    ));
+
+    InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 5));
+
+    assertThat(result.getStatus()).isEqualTo("UNKNOWN");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(result.getRetriable()).isFalse();
+    assertThat(result.getEscalationRequired()).isTrue();
+    assertThat(result.getAttemptCount()).isEqualTo(5);
+    assertThat(result.getMaxRetryCount()).isEqualTo(5);
+  }
+
+  @Test
+  void shouldReturnRetriableMetadataForTransientRequeryTimeout() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9005L
+    );
+    existingOrder.updateStatus("PENDING");
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+    fepClient.setQueryFailure(new BusinessException(
+        ErrorCode.FEP_GATEWAY_TIMEOUT,
+        ErrorCode.FEP_GATEWAY_TIMEOUT.defaultMessage()
+    ));
+
+    InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING");
+    assertThat(result.getMessage()).isEqualTo("Exchange connectivity timeout");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(result.getRetriable()).isTrue();
+    assertThat(result.getEscalationRequired()).isFalse();
+    assertThat(result.getAttemptCount()).isEqualTo(2);
+    assertThat(result.getMaxRetryCount()).isEqualTo(5);
+  }
+
+  @Test
+  void shouldNotRetryTransientRequeryFailureWhenLocalOrderIsAlreadyTerminal() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9006L
+    );
+    existingOrder.updateStatus("FILLED");
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+    fepClient.setQueryFailure(new BusinessException(
+        ErrorCode.FEP_GATEWAY_TIMEOUT,
+        ErrorCode.FEP_GATEWAY_TIMEOUT.defaultMessage()
+    ));
+
+    InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
+
+    assertThat(result.getStatus()).isEqualTo("FILLED");
+    assertThat(result.getMessage()).isEqualTo("Exchange connectivity timeout");
+    assertThat(result.getExternalSyncStatus()).isNull();
+    assertThat(result.getRetriable()).isFalse();
+    assertThat(result.getEscalationRequired()).isFalse();
+    assertThat(result.getAttemptCount()).isEqualTo(2);
+    assertThat(result.getMaxRetryCount()).isEqualTo(5);
+  }
+
+  @Test
+  void shouldKeepTransactionalBoundariesInPersistenceServiceOnly() throws Exception {
+    Method createOrder = CorebankOrderService.class.getMethod("createOrder", InternalOrderCreateCommand.class);
+    Method requeryOrder = CorebankOrderService.class.getMethod("requeryOrder", InternalOrderRequeryCommand.class);
+    Method prepareOrderSubmission = CorebankOrderPersistenceService.class.getMethod(
+        "prepareOrderSubmission",
+        InternalOrderCreateCommand.class
+    );
+    Method getRequiredOrder = CorebankOrderPersistenceService.class.getMethod("getRequiredOrder", String.class);
+    Method updateOrderState = CorebankOrderPersistenceService.class.getMethod(
+        "updateOrderState",
+        String.class,
+        String.class,
+        String.class,
+        String.class,
+        String.class
+    );
+
+    assertThat(createOrder.getAnnotation(Transactional.class)).isNull();
+    assertThat(requeryOrder.getAnnotation(Transactional.class)).isNull();
+    assertThat(prepareOrderSubmission.getAnnotation(Transactional.class)).isNotNull();
+    assertThat(getRequiredOrder.getAnnotation(Transactional.class)).isNotNull();
+    assertThat(getRequiredOrder.getAnnotation(Transactional.class).readOnly()).isTrue();
+    assertThat(updateOrderState.getAnnotation(Transactional.class)).isNotNull();
   }
 
   private Account persistedAccount() {
@@ -417,6 +621,8 @@ class CorebankOrderServiceTest {
 
     private FepOrderResult submitResult;
     private FepOrderResult queryResult;
+    private RuntimeException submitFailure;
+    private RuntimeException queryFailure;
     private FepOutboundOrderPayload lastSubmitPayload;
     private Runnable onSubmit = () -> {
     };
@@ -432,12 +638,18 @@ class CorebankOrderServiceTest {
       onSubmit.run();
       submitCalls++;
       lastSubmitPayload = payload;
+      if (submitFailure != null) {
+        throw submitFailure;
+      }
       return submitResult;
     }
 
     @Override
     public FepOrderResult queryOrderStatus(String clOrdId, String correlationId) {
       queryCalls++;
+      if (queryFailure != null) {
+        throw queryFailure;
+      }
       return queryResult;
     }
 
@@ -445,8 +657,16 @@ class CorebankOrderServiceTest {
       this.submitResult = submitResult;
     }
 
+    private void setSubmitFailure(RuntimeException submitFailure) {
+      this.submitFailure = submitFailure;
+    }
+
     private void setQueryResult(FepOrderResult queryResult) {
       this.queryResult = queryResult;
+    }
+
+    private void setQueryFailure(RuntimeException queryFailure) {
+      this.queryFailure = queryFailure;
     }
 
     private void onSubmit(Runnable onSubmit) {

@@ -3,17 +3,20 @@ package com.fix.channel.exception;
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.error.FixException;
+import com.fix.common.error.RetryAfterBusinessException;
 import com.fix.common.error.SystemException;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -22,17 +25,21 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(FixException.class)
   public ResponseEntity<ApiErrorResponse> handleFixException(FixException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, null);
   }
 
   @ExceptionHandler(BusinessException.class)
   public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request);
+    Long retryAfterSeconds = null;
+    if (ex instanceof RetryAfterBusinessException retryAfterBusinessException) {
+      retryAfterSeconds = retryAfterBusinessException.getRetryAfterSeconds();
+    }
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, retryAfterSeconds);
   }
 
   @ExceptionHandler(SystemException.class)
   public ResponseEntity<ApiErrorResponse> handleSystemException(SystemException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, null);
   }
 
   @ExceptionHandler({
@@ -56,27 +63,37 @@ public class GlobalExceptionHandler {
   }
 
   private ResponseEntity<ApiErrorResponse> build(ErrorCode errorCode, String message, HttpServletRequest request) {
-    return build(errorCode, message, null, request);
+    return build(errorCode, message, null, request, null);
   }
 
   private ResponseEntity<ApiErrorResponse> build(
       ErrorCode errorCode,
       String message,
-      com.fix.common.error.ErrorMetadata metadata,
-      HttpServletRequest request
+      ErrorMetadata metadata,
+      HttpServletRequest request,
+      Long retryAfterSeconds
   ) {
     String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
-    ApiErrorResponse response = ApiErrorResponse.from(errorCode, message, request.getRequestURI(), correlationId, metadata);
+    ApiErrorResponse response = ApiErrorResponse.from(
+        errorCode,
+        message,
+        request.getRequestURI(),
+        correlationId,
+        metadata
+    );
 
-    return ResponseEntity
+    ResponseEntity.BodyBuilder builder = ResponseEntity
         .status(errorCode.httpStatus())
-        .header(CommonHeaders.X_CORRELATION_ID, correlationId)
-        .body(response);
+        .header(CommonHeaders.X_CORRELATION_ID, correlationId);
+    if (retryAfterSeconds != null && retryAfterSeconds > 0) {
+      builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds));
+    }
+
+    return builder.body(response);
   }
 
   private String resolveValidationMessage(Exception ex) {
     if (ex instanceof BindException bindException && bindException.hasFieldErrors()) {
-      // 팀원이 로그/응답만 보고도 원인을 파악할 수 있도록 첫 번째 필드 오류 메시지를 우선 노출한다.
       String message = bindException.getFieldErrors().getFirst().getDefaultMessage();
       if (message != null && !message.isBlank()) {
         return message;

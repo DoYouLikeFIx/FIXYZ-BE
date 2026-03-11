@@ -51,7 +51,7 @@ public class FepClient {
     this.objectMapper = objectMapper;
   }
 
-  @CircuitBreaker(name = "fep", fallbackMethod = "submitOrderFallback")
+  @CircuitBreaker(name = "fep-submit", fallbackMethod = "submitOrderFallback")
   public FepOrderResult submitOrder(FepOutboundOrderPayload payload, String correlationId) {
     try {
       FepGatewayEnvelope<FepGatewayOrderResponse> response = restClient.post()
@@ -72,7 +72,7 @@ public class FepClient {
     }
   }
 
-  @CircuitBreaker(name = "fep", fallbackMethod = "queryOrderStatusFallback")
+  @CircuitBreaker(name = "fep-status", fallbackMethod = "queryOrderStatusFallback")
   public FepOrderResult queryOrderStatus(String clOrdId, String correlationId) {
     if (!ContractPatterns.isUuidV4(clOrdId)) {
       throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "clOrdId must be a UUID v4");
@@ -123,6 +123,17 @@ public class FepClient {
       if (translatedError != null) {
         return translatedError;
       }
+      if (restClientResponseException.getStatusCode().value() == 401) {
+        return new BusinessException(
+            ErrorCode.AUTH_REQUIRED,
+            defaultIfBlank(
+                errorResponse == null ? null : errorResponse.message(),
+                ErrorCode.AUTH_REQUIRED.defaultMessage()
+            ),
+            restClientResponseException,
+            errorResponse == null ? null : errorResponse.metadata()
+        );
+      }
       if (restClientResponseException.getStatusCode().value() == 504) {
         return new BusinessException(
             ErrorCode.FEP_GATEWAY_TIMEOUT,
@@ -158,20 +169,30 @@ public class FepClient {
     if (errorResponse == null) {
       return null;
     }
+    if (FepExternalErrorTaxonomy.isMappedExternalRc(errorResponse.externalRc())) {
+      return FepExternalErrorTaxonomy.toException(errorResponse.externalRc(), restClientResponseException);
+    }
+    if (errorResponse.normalizedCode() != null && !errorResponse.normalizedCode().isBlank()) {
+      BusinessException normalizedError = ErrorCode.fromCode(errorResponse.normalizedCode())
+          .map(errorCode -> new BusinessException(
+              errorCode,
+              defaultIfBlank(errorResponse.message(), errorCode.defaultMessage()),
+              restClientResponseException,
+              errorResponse.metadata()
+          ))
+          .orElse(null);
+      if (normalizedError != null) {
+        if (normalizedError.getErrorCode() == ErrorCode.FEP_UNKNOWN_EXTERNAL
+            && FepExternalErrorTaxonomy.isExternalRc(errorResponse.externalRc())) {
+          return FepExternalErrorTaxonomy.toException(errorResponse.externalRc(), restClientResponseException);
+        }
+        return normalizedError;
+      }
+    }
     if (FepExternalErrorTaxonomy.isExternalRc(errorResponse.externalRc())) {
       return FepExternalErrorTaxonomy.toException(errorResponse.externalRc(), restClientResponseException);
     }
-    if (errorResponse.normalizedCode() == null || errorResponse.normalizedCode().isBlank()) {
-      return null;
-    }
-    return ErrorCode.fromCode(errorResponse.normalizedCode())
-        .map(errorCode -> new BusinessException(
-            errorCode,
-            defaultIfBlank(errorResponse.message(), errorCode.defaultMessage()),
-            restClientResponseException,
-            errorResponse.metadata()
-        ))
-        .orElse(null);
+    return null;
   }
 
   private GatewayApiErrorResponse parseError(String responseBody) {

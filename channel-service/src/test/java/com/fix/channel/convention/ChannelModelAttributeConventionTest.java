@@ -9,12 +9,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 class ChannelModelAttributeConventionTest {
 
   @Test
-  void requestDtoParametersInControllersMustUseModelAttribute() throws ClassNotFoundException {
+  void requestDtoParametersInControllersMustDeclareExplicitBinding() throws ClassNotFoundException {
     ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
     scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
 
@@ -33,8 +34,10 @@ class ChannelModelAttributeConventionTest {
         for (Parameter parameter : method.getParameters()) {
           String parameterTypeName = parameter.getType().getName();
           if (parameterTypeName.contains(".dto.request.")) {
-            assertThat(parameter.isAnnotationPresent(ModelAttribute.class))
-                .as("%s#%s parameter %s must use @ModelAttribute",
+            boolean explicitBinding = parameter.isAnnotationPresent(ModelAttribute.class)
+                || parameter.isAnnotationPresent(RequestBody.class);
+            assertThat(explicitBinding)
+                .as("%s#%s parameter %s must declare @ModelAttribute or @RequestBody",
                     controllerClass.getSimpleName(),
                     method.getName(),
                     parameter.getName())

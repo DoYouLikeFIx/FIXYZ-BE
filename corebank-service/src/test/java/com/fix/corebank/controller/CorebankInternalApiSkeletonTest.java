@@ -4,8 +4,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fix.common.error.BusinessException;
@@ -15,12 +13,9 @@ import com.fix.common.web.CommonHeaders;
 import com.fix.corebank.filter.CorrelationIdFilter;
 import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.ExecutionRepository;
-import com.fix.corebank.repository.JournalEntryRepository;
-import com.fix.corebank.repository.LedgerEntryRefRepository;
-import com.fix.corebank.repository.LedgerEntryRepository;
-import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.service.AccountProvisioningService;
+import com.fix.corebank.service.CorebankOrderPersistenceService;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.support.CorebankStandaloneMvcSupport;
 import com.fix.corebank.vo.AccountProvisioningCommand;
@@ -34,16 +29,13 @@ import com.fix.corebank.vo.PortfolioQueryCommand;
 import com.fix.corebank.vo.PortfolioResult;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mockito;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 
-@ExtendWith(MockitoExtension.class)
 class CorebankInternalApiSkeletonTest {
 
   private static final String CORE_CL_ORD_ID_1 = "123e4567-e89b-42d3-a456-426614174210";
@@ -52,12 +44,12 @@ class CorebankInternalApiSkeletonTest {
 
   private MockMvc mockMvc;
   private StubCorebankOrderService corebankOrderService;
-  private AccountProvisioningService accountProvisioningService;
+  private StubAccountProvisioningService accountProvisioningService;
 
   @BeforeEach
   void setUp() {
     corebankOrderService = new StubCorebankOrderService();
-    accountProvisioningService = Mockito.mock(AccountProvisioningService.class);
+    accountProvisioningService = new StubAccountProvisioningService();
     mockMvc = CorebankStandaloneMvcSupport.build(
         List.of(
             new CorrelationIdFilter(),
@@ -73,25 +65,24 @@ class CorebankInternalApiSkeletonTest {
   @Test
   void shouldSupportInternalPortfolioAndOrderEndpoints() throws Exception {
     String correlationId = "66cf95fd-3660-48a6-9e71-7ed42257b748";
-    when(accountProvisioningService.provisionDefaultAccount(any(AccountProvisioningCommand.class)))
-        .thenReturn(
-            AccountProvisioningResult.of(
-                1L,
-                "11000000000301",
-                "ACTIVE",
-                false,
-                301L,
-                Instant.parse("2026-03-01T10:00:00Z")
-            ),
-            AccountProvisioningResult.of(
-                1L,
-                "11000000000301",
-                "ACTIVE",
-                true,
-                301L,
-                Instant.parse("2026-03-01T10:00:00Z")
-            )
-        );
+    accountProvisioningService.setProvisioningResults(
+        AccountProvisioningResult.of(
+            1L,
+            "11000000000301",
+            "ACTIVE",
+            false,
+            301L,
+            Instant.parse("2026-03-01T10:00:00Z")
+        ),
+        AccountProvisioningResult.of(
+            1L,
+            "11000000000301",
+            "ACTIVE",
+            true,
+            301L,
+            Instant.parse("2026-03-01T10:00:00Z")
+        )
+    );
 
     corebankOrderService.setPortfolioResult(PortfolioResult.of(
         1L,
@@ -191,7 +182,8 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(jsonPath("$.data.status").value("FILLED"));
 
     mockMvc.perform(get("/internal/v1/orders/{clOrdId}/requery", CORE_CL_ORD_ID_1)
-            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("attemptCount", "5"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.clOrdId").value(CORE_CL_ORD_ID_1))
         .andExpect(jsonPath("$.data.status").value("FILLED"));
@@ -228,6 +220,40 @@ class CorebankInternalApiSkeletonTest {
   }
 
   @Test
+  void shouldExposeSchedulerRequeryMetadataAndValidateAttemptCount() throws Exception {
+    corebankOrderService.setRequeryOrderResult(InternalOrderResult.requery(
+        1002L,
+        CORE_CL_ORD_ID_2,
+        "UNKNOWN",
+        true,
+        new BigDecimal("2.0000"),
+        "still unresolved",
+        false,
+        true,
+        5,
+        5
+    ));
+
+    mockMvc.perform(get("/internal/v1/orders/{clOrdId}/requery", CORE_CL_ORD_ID_2)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("attemptCount", "5"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(CORE_CL_ORD_ID_2))
+        .andExpect(jsonPath("$.data.status").value("UNKNOWN"))
+        .andExpect(jsonPath("$.data.message").value("still unresolved"))
+        .andExpect(jsonPath("$.data.retriable").value(false))
+        .andExpect(jsonPath("$.data.escalationRequired").value(true))
+        .andExpect(jsonPath("$.data.attemptCount").value(5))
+        .andExpect(jsonPath("$.data.maxRetryCount").value(5));
+
+    mockMvc.perform(get("/internal/v1/orders/{clOrdId}/requery", CORE_CL_ORD_ID_2)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("attemptCount", "0"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+  }
+
+  @Test
   void shouldRejectFractionalOrderInputsBeforeCallingFepClient() throws Exception {
     mockMvc.perform(post("/internal/v1/orders")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -245,11 +271,10 @@ class CorebankInternalApiSkeletonTest {
 
   @Test
   void shouldReturn422WhenProvisioningPayloadMissesMemberId() throws Exception {
-    when(accountProvisioningService.provisionDefaultAccount(any(AccountProvisioningCommand.class)))
-        .thenThrow(new BusinessException(
-            ErrorCode.CONTRACT_VALIDATION_FAILED,
-            "memberId is required"
-        ));
+    accountProvisioningService.setProvisioningFailure(new BusinessException(
+        ErrorCode.CONTRACT_VALIDATION_FAILED,
+        "memberId is required"
+    ));
 
     mockMvc.perform(post("/internal/v1/portfolio")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -300,12 +325,9 @@ class CorebankInternalApiSkeletonTest {
     private StubCorebankOrderService() {
       super(
           (AccountRepository) null,
-          (OrderRepository) null,
           (PositionRepository) null,
           (ExecutionRepository) null,
-          (JournalEntryRepository) null,
-          (LedgerEntryRepository) null,
-          (LedgerEntryRefRepository) null,
+          (CorebankOrderPersistenceService) null,
           null
       );
     }
@@ -363,6 +385,41 @@ class CorebankInternalApiSkeletonTest {
 
     private int createOrderCalls() {
       return createOrderCalls;
+    }
+  }
+
+  private static final class StubAccountProvisioningService extends AccountProvisioningService {
+
+    private final List<AccountProvisioningResult> results = new ArrayList<>();
+    private RuntimeException provisioningFailure;
+    private int nextIndex;
+
+    private StubAccountProvisioningService() {
+      super(null, null, null);
+    }
+
+    @Override
+    public AccountProvisioningResult provisionDefaultAccount(AccountProvisioningCommand command) {
+      if (provisioningFailure != null) {
+        throw provisioningFailure;
+      }
+      if (nextIndex >= results.size()) {
+        throw new IllegalStateException("No stub provisioning result configured");
+      }
+      return results.get(nextIndex++);
+    }
+
+    private void setProvisioningResults(AccountProvisioningResult... provisioningResults) {
+      results.clear();
+      results.addAll(List.of(provisioningResults));
+      provisioningFailure = null;
+      nextIndex = 0;
+    }
+
+    private void setProvisioningFailure(RuntimeException provisioningFailure) {
+      results.clear();
+      this.provisioningFailure = provisioningFailure;
+      nextIndex = 0;
     }
   }
 }

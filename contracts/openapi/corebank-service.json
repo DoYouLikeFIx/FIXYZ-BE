@@ -149,11 +149,16 @@
             }
           },
           {
-            "name": "request",
+            "name": "attemptCount",
             "in": "query",
-            "required": true,
+            "description": "1-based requery attempt count from the scheduler. Unresolved results escalate when this reaches recovery.max-retry-count.",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/InternalOrderRequeryRequest"
+              "minimum": 1,
+              "type": "integer",
+              "description": "1-based requery attempt count from the scheduler. Unresolved results escalate when this reaches recovery.max-retry-count.",
+              "format": "int32",
+              "default": 1
             }
           }
         ],
@@ -406,11 +411,31 @@
           "status": {
             "type": "string"
           },
+          "externalSyncStatus": {
+            "type": "string"
+          },
           "idempotent": {
             "type": "boolean"
           },
           "orderQuantity": {
             "type": "number"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retriable": {
+            "type": "boolean"
+          },
+          "escalationRequired": {
+            "type": "boolean"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxRetryCount": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -472,9 +497,6 @@
             "type": "number"
           }
         }
-      },
-      "InternalOrderRequeryRequest": {
-        "type": "object"
       },
       "InternalAccountPositionRequest": {
         "required": [

@@ -40,6 +40,8 @@ class FepClientContractTest {
   private static final String CL_ORD_ID_8 = "123e4567-e89b-42d3-a456-426614174208";
   private static final String CL_ORD_ID_9 = "123e4567-e89b-42d3-a456-426614174209";
   private static final String CL_ORD_ID_10 = "123e4567-e89b-42d3-a456-426614174210";
+  private static final String CL_ORD_ID_11 = "123e4567-e89b-42d3-a456-426614174211";
+  private static final String CL_ORD_ID_12 = "123e4567-e89b-42d3-a456-426614174212";
 
   private WireMockServer wireMockServer;
   private FepClient fepClient;
@@ -363,6 +365,58 @@ class FepClientContractTest {
           assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
           assertThat(ex.getMessage()).isEqualTo("symbol is invalid");
           assertThat(ex.getMetadata()).isNull();
+        });
+  }
+
+  @Test
+  void shouldPreferNormalizedGatewayErrorsWhenRawRcIsUnmapped() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(aResponse()
+            .withStatus(500)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": false,
+                  "rc": "9999",
+                  "data": null,
+                  "error": {
+                    "code": "SYS_500",
+                    "message": "gateway failed internally"
+                  },
+                  "traceId": "trace-9999"
+                }
+                """)));
+
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_11, "ref-sys-500"), "trace-sys-500"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.SYS_INTERNAL_ERROR);
+          assertThat(ex.getMessage()).isEqualTo("gateway failed internally");
+        });
+  }
+
+  @Test
+  void shouldPreserveNormalizedAuthFailuresWhenGatewayAlsoReturnsLegacyRc() {
+    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(aResponse()
+            .withStatus(401)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": false,
+                  "rc": "9401",
+                  "data": null,
+                  "error": {
+                    "code": "AUTH-003",
+                    "message": "Missing or invalid X-Internal-Secret"
+                  },
+                  "traceId": "trace-9401"
+                }
+                """)));
+
+    assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_12, "ref-auth-003"), "trace-auth-003"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.AUTH_REQUIRED);
+          assertThat(ex.getMessage()).isEqualTo(ErrorCode.AUTH_REQUIRED.defaultMessage());
         });
   }
 

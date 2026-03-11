@@ -1,7 +1,7 @@
 package com.fix.channel.service;
 
-import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.AuditAction;
+import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
@@ -13,13 +13,9 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.session.FindByIndexNameSessionRepository;
-import org.springframework.session.Session;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,8 +26,7 @@ public class MemberService {
   private final MemberRepository memberRepository;
   private final AuditLogRepository auditLogRepository;
   private final PasswordEncoder passwordEncoder;
-  @SuppressWarnings("rawtypes")
-  private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
+  private final ChannelSessionInvalidationService channelSessionInvalidationService;
 
   @Transactional(readOnly = true)
   public MemberProfileResult readMyProfile(HttpServletRequest request) {
@@ -82,7 +77,7 @@ public class MemberService {
         resolveCorrelationId(request)
     ));
 
-    invalidateAllMemberSessions(member.getEmail());
+    channelSessionInvalidationService.invalidateAllPasswordSessions(member.getEmail());
     HttpSession currentSession = request.getSession(false);
     if (currentSession != null) {
       currentSession.invalidate();
@@ -114,18 +109,6 @@ public class MemberService {
         member.getRole(),
         member.getCreatedAt()
     );
-  }
-
-  private void invalidateAllMemberSessions(String email) {
-    @SuppressWarnings("rawtypes")
-    FindByIndexNameSessionRepository sessionRepository = sessionRepositoryProvider.getIfAvailable();
-    if (sessionRepository == null) {
-      return;
-    }
-
-    @SuppressWarnings("unchecked")
-    Map<String, ? extends Session> sessions = sessionRepository.findByPrincipalName(email);
-    sessions.keySet().forEach(sessionRepository::deleteById);
   }
 
   private String resolveClientIp(HttpServletRequest request) {

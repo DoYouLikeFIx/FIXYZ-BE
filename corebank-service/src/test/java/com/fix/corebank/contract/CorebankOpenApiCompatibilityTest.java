@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.MissingNode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -26,6 +27,10 @@ class CorebankOpenApiCompatibilityTest {
         .path("ApiResponseInternalAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas")
         .path("InternalAccountPositionResponse");
+    JsonNode internalOrderSchema = contract.path("components").path("schemas").path("InternalOrderResponse");
+    JsonNode requeryOperation = paths.path("/internal/v1/orders/{clOrdId}/requery").path("get");
+    JsonNode requeryParameters = requeryOperation.path("parameters");
+    JsonNode attemptCountParameter = parameterByName(requeryParameters, "attemptCount");
 
     assertThat(fieldNames(paths))
         .contains(
@@ -54,6 +59,17 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
+    assertThat(fieldNames(internalOrderSchema.path("properties")))
+        .contains("message", "retriable", "escalationRequired", "attemptCount", "maxRetryCount", "externalSyncStatus");
+    assertThat(requeryParameters.isArray()).isTrue();
+    assertThat(attemptCountParameter.path("name").asText()).isEqualTo("attemptCount");
+    assertThat(attemptCountParameter.path("in").asText()).isEqualTo("query");
+    assertThat(attemptCountParameter.path("required").asBoolean()).isFalse();
+    assertThat(attemptCountParameter.path("schema").path("minimum").asInt())
+        .isEqualTo(1);
+    assertThat(attemptCountParameter.path("schema").path("default").asInt())
+        .isEqualTo(1);
+    assertThat(parameterByName(requeryParameters, "request").isMissingNode()).isTrue();
   }
 
   private Path openApiContract() {
@@ -72,5 +88,14 @@ class CorebankOpenApiCompatibilityTest {
     Set<String> names = new TreeSet<>();
     node.fieldNames().forEachRemaining(names::add);
     return names;
+  }
+
+  private JsonNode parameterByName(JsonNode parameters, String name) {
+    for (JsonNode parameter : parameters) {
+      if (name.equals(parameter.path("name").asText())) {
+        return parameter;
+      }
+    }
+    return MissingNode.getInstance();
   }
 }
