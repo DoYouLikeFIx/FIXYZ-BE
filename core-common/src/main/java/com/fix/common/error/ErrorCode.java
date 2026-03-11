@@ -43,6 +43,7 @@ public enum ErrorCode {
   FEP_ORDER_NOT_FOUND("9008", "FEP order not found", 404),
   ORD_INVALID_REQUEST("ORD_001", "Invalid order request", 400),
   ORDER_SESSION_NOT_FOUND("ORD-008", "Order session not found", 404),
+  ORD_ACCOUNT_STATUS_BLOCKED("ORD-012", "Account status blocked", 422),
   RATE_LIMIT_EXCEEDED("RATE_001", "Rate limit exceeded", 429),
   FEP_GATEWAY_UNAVAILABLE("FEP-001", "Exchange service unavailable", 503),
   FEP_GATEWAY_TIMEOUT("FEP-002", "Exchange connectivity timeout", 504),

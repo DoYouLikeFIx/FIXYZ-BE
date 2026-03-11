@@ -56,7 +56,7 @@ class CoreCommonContractTest {
   }
 
   @Test
-  void shouldResolveStory22OwnershipAndDependencyErrorCodes() {
+  void shouldResolveStory22AndStory26ContractErrorCodes() {
     assertEquals(
         ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
         ErrorCode.fromCode("AUTH-005").orElseThrow()
@@ -68,6 +68,10 @@ class CoreCommonContractTest {
     assertEquals(
         ErrorCode.CORE_DEPENDENCY_UNAVAILABLE,
         ErrorCode.fromCode("CORE-902").orElseThrow()
+    );
+    assertEquals(
+        ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED,
+        ErrorCode.fromCode("ORD-012").orElseThrow()
     );
   }
 }
