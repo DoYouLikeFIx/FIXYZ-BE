@@ -17,7 +17,10 @@ public record FepOrderResult(
     Long leavesQty,
     Instant transactTime,
     Instant queryTime,
-    String message
+    String message,
+    String rejectReason,
+    Long canceledQty,
+    String parseError
 ) {
 
   public static FepOrderResult fromSubmitResponse(FepGatewayOrderResponse response, String expectedClOrdId) {
@@ -39,7 +42,10 @@ public record FepOrderResult(
         response.leavesQty(),
         response.transactTime(),
         response.queryTime(),
-        response.message()
+        response.message(),
+        null,
+        null,
+        null
     );
   }
 
@@ -49,10 +55,17 @@ public record FepOrderResult(
     require(response.ordStatus() != null, "ordStatus is required in status response");
     require(response.queryTime() != null, "queryTime is required in status response");
 
-    if (response.ordStatus() == FepOrdStatus.UNKNOWN) {
-      require(!isBlank(response.message()), "message is required when ordStatus is UNKNOWN");
-    } else {
-      require(response.execType() != null, "execType is required unless ordStatus is UNKNOWN");
+    switch (response.ordStatus()) {
+      case UNKNOWN, PENDING -> require(!isBlank(response.message()), "message is required when ordStatus is " + response.ordStatus());
+      case MALFORMED -> {
+        require(!isBlank(response.message()), "message is required when ordStatus is MALFORMED");
+        require(!isBlank(response.parseError()), "parseError is required when ordStatus is MALFORMED");
+      }
+      case REJECTED -> {
+        require(response.execType() != null, "execType is required for terminal status responses");
+        require(!isBlank(response.rejectReason()), "rejectReason is required when ordStatus is REJECTED");
+      }
+      default -> require(response.execType() != null, "execType is required for terminal status responses");
     }
 
     return new FepOrderResult(
@@ -65,7 +78,10 @@ public record FepOrderResult(
         response.leavesQty(),
         response.transactTime(),
         response.queryTime(),
-        response.message()
+        response.message(),
+        response.rejectReason(),
+        response.canceledQty(),
+        response.parseError()
     );
   }
 

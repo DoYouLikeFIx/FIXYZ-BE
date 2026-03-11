@@ -11,6 +11,9 @@ public record GatewayExecutionOutcome(
     Long executedQty,
     Long executedPrice,
     Long leavesQty,
-    Instant transactTime
+    Instant transactTime,
+    String message,
+    String rejectReason,
+    String parseError
 ) {
 }

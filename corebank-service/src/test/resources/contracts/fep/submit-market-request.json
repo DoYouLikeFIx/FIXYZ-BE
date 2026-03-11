@@ -1,0 +1,15 @@
+{
+  "clOrdId": "{{clOrdId}}",
+  "accountId": "ACC-001",
+  "symbol": "005930",
+  "securityExchange": "KRX",
+  "side": "BUY",
+  "orderType": "MARKET",
+  "qty": 10,
+  "quoteSnapshotId": "{{quoteSnapshotId}}",
+  "quoteAsOf": "{{quoteAsOf}}",
+  "quoteSourceMode": "DELAYED",
+  "preTradePrice": {{preTradePrice}},
+  "currency": "KRW",
+  "referenceId": "{{referenceId}}"
+}

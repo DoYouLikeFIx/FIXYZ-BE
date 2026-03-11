@@ -33,7 +33,10 @@ public class FixDataPlaneService {
           null,
           null,
           Instant.now(),
-          "external system does not have a matching order"
+          "external system does not have a matching order",
+          null,
+          null,
+          null
       );
     }
     return order.toResult(Instant.now());
@@ -48,7 +51,10 @@ public class FixDataPlaneService {
         command.qty(),
         executedPrice,
         0L,
-        Instant.now()
+        Instant.now(),
+        null,
+        null,
+        null
     );
   }
 
@@ -73,7 +79,10 @@ public class FixDataPlaneService {
         executedQty,
         executedQty > 0 ? executedPrice : null,
         leavesAfterCancel,
-        Instant.now()
+        Instant.now(),
+        null,
+        null,
+        null
     );
   }
 
@@ -90,7 +99,10 @@ public class FixDataPlaneService {
               0L,
               null,
               0L,
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.FAILED,
           null,
@@ -107,7 +119,10 @@ public class FixDataPlaneService {
               0L,
               null,
               0L,
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.FAILED,
           null,
@@ -124,7 +139,10 @@ public class FixDataPlaneService {
               totalQty,
               order.getExecutedPrice() != null ? order.getExecutedPrice() : order.getRequestedPrice(),
               0L,
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.COMPLETED,
           null,
@@ -141,7 +159,10 @@ public class FixDataPlaneService {
               executedQty,
               order.getExecutedPrice() != null ? order.getExecutedPrice() : order.getRequestedPrice(),
               order.getLeavesQty(),
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.COMPLETED,
           null,
@@ -158,7 +179,10 @@ public class FixDataPlaneService {
               executedQty,
               order.getExecutedPrice(),
               0L,
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.CANCELED,
           executedQty > 0 ? FepExecutionResult.PARTIAL_FILL_CANCEL : null,
@@ -183,7 +207,10 @@ public class FixDataPlaneService {
             totalQty,
             order.getRequestedPrice(),
             0L,
-            Instant.now()
+            Instant.now(),
+            null,
+            null,
+            null
         ),
         FepReplayFinalStatus.COMPLETED,
         null,
@@ -211,7 +238,10 @@ public class FixDataPlaneService {
               totalQty,
               requeryExecutedPrice,
               0L,
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.COMPLETED,
           null,
@@ -225,7 +255,10 @@ public class FixDataPlaneService {
               requeryExecutedQty,
               requeryExecutedPrice,
               Math.max(totalQty - requeryExecutedQty, 0L),
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.COMPLETED,
           null,
@@ -239,7 +272,10 @@ public class FixDataPlaneService {
               requeryExecutedQty,
               requeryExecutedQty > 0 ? requeryExecutedPrice : null,
               0L,
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.CANCELED,
           requeryExecutedQty > 0 ? FepExecutionResult.PARTIAL_FILL_CANCEL : null,
@@ -253,7 +289,10 @@ public class FixDataPlaneService {
               0L,
               null,
               0L,
-              Instant.now()
+              Instant.now(),
+              null,
+              null,
+              null
           ),
           FepReplayFinalStatus.FAILED,
           null,
@@ -277,7 +316,10 @@ public class FixDataPlaneService {
             totalQty,
             executedPrice,
             0L,
-            Instant.now()
+            Instant.now(),
+            null,
+            null,
+            null
         ),
         FepReplayFinalStatus.COMPLETED,
         null,

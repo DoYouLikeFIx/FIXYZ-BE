@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "data": {
+    "clOrdId": "{{clOrdId}}",
+    "ordStatus": "REJECTED",
+    "execType": "REJECTED",
+    "rejectReason": "{{rejectReason}}",
+    "transactTime": "{{transactTime}}",
+    "queryTime": "{{queryTime}}"
+  }
+}

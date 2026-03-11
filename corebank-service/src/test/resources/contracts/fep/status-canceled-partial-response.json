@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": {
+    "clOrdId": "{{clOrdId}}",
+    "fepOrderId": "{{fepOrderId}}",
+    "ordStatus": "CANCELED",
+    "execType": "CANCELED",
+    "executedQty": 5,
+    "executedPrice": 72000,
+    "canceledQty": 5,
+    "transactTime": "{{transactTime}}",
+    "queryTime": "{{queryTime}}"
+  }
+}

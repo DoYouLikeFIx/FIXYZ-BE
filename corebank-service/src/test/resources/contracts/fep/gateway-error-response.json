@@ -1,0 +1,7 @@
+{
+  "code": "{{code}}",
+  "message": "{{message}}",
+  "userMessageKey": "{{userMessageKey}}",
+  "operatorCode": "{{operatorCode}}",
+  "timestamp": "{{timestamp}}"
+}

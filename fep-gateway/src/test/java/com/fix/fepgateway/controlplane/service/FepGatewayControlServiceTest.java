@@ -42,6 +42,9 @@ class FepGatewayControlServiceTest {
         0L,
         Instant.parse("2026-03-10T00:00:00Z"),
         Instant.parse("2026-03-10T00:00:05Z"),
+        null,
+        null,
+        null,
         null
     );
     RecordingFixDataPlaneService fixDataPlaneService = new RecordingFixDataPlaneService(expected);
@@ -72,7 +75,10 @@ class FepGatewayControlServiceTest {
         null,
         null,
         Instant.parse("2026-03-10T00:00:05Z"),
-        "external system does not have a matching order"
+        "external system does not have a matching order",
+        null,
+        null,
+        null
     );
     RecordingFixDataPlaneService fixDataPlaneService = new RecordingFixDataPlaneService(expected);
     FepGatewayControlService service = new FepGatewayControlService(

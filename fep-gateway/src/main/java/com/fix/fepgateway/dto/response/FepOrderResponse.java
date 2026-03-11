@@ -17,7 +17,10 @@ public record FepOrderResponse(
     Long leavesQty,
     Instant transactTime,
     Instant queryTime,
-    String message
+    String message,
+    String rejectReason,
+    Long canceledQty,
+    String parseError
 ) {
 
   public static FepOrderResponse from(GatewayOrderResult result) {
@@ -31,7 +34,10 @@ public record FepOrderResponse(
         result.leavesQty(),
         result.transactTime(),
         result.queryTime(),
-        result.message()
+        result.message(),
+        result.rejectReason(),
+        result.canceledQty(),
+        result.parseError()
     );
   }
 }

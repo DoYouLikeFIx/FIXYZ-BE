@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": {
+    "clOrdId": "{{clOrdId}}",
+    "fepOrderId": "{{fepOrderId}}",
+    "ordStatus": "PARTIALLY_FILLED",
+    "execType": "PARTIAL_FILL",
+    "executedQty": 5,
+    "executedPrice": 72000,
+    "leavesQty": 5,
+    "transactTime": "{{transactTime}}",
+    "queryTime": "{{queryTime}}"
+  }
+}

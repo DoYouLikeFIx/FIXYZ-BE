@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "data": {
+    "clOrdId": "{{clOrdId}}",
+    "ordStatus": "MALFORMED",
+    "parseError": "{{parseError}}",
+    "queryTime": "{{queryTime}}",
+    "message": "{{message}}"
+  }
+}

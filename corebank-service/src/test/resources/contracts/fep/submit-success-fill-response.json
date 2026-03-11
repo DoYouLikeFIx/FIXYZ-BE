@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "data": {
+    "clOrdId": "{{clOrdId}}",
+    "fepOrderId": "{{fepOrderId}}",
+    "execType": "FILL",
+    "ordStatus": "FILLED",
+    "executedQty": 10,
+    "executedPrice": 72000,
+    "leavesQty": 0,
+    "transactTime": "{{transactTime}}"
+  }
+}

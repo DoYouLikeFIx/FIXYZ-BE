@@ -119,11 +119,12 @@ public class CorebankOrderService {
               gatewayStatus.ordStatus().name(),
               externalSyncStatusForRequery(gatewayStatus.ordStatus(), command.getAttemptCount()),
               resolveFepReferenceId(order, gatewayStatus.fepOrderId()),
-              failureReasonForRequery(gatewayStatus.ordStatus(), gatewayStatus.message())
+              failureReasonForRequery(gatewayStatus)
           );
+      String requeryMessage = failureReasonForRequery(gatewayStatus);
       return mapToRequeryResult(
           updatedOrder,
-          gatewayStatus.message(),
+          requeryMessage,
           classifyRequeryOutcome(gatewayStatus.ordStatus(), command.getAttemptCount())
       );
     } catch (BusinessException ex) {
@@ -290,12 +291,22 @@ public class CorebankOrderService {
         : order.fepReferenceId();
   }
 
-  private String failureReasonForRequery(FepOrdStatus ordStatus, String message) {
-    return switch (ordStatus) {
+  private String failureReasonForRequery(FepOrderResult result) {
+    return switch (result.ordStatus()) {
       case FILLED, PARTIALLY_FILLED, CANCELED -> null;
-      case REJECTED -> message != null && !message.isBlank() ? message : "REJECTED";
-      case UNKNOWN, PENDING, MALFORMED -> message;
+      case REJECTED -> firstNonBlank(result.rejectReason(), result.message(), "REJECTED");
+      case UNKNOWN, PENDING -> result.message();
+      case MALFORMED -> firstNonBlank(result.parseError(), result.message());
     };
+  }
+
+  private String firstNonBlank(String... candidates) {
+    for (String candidate : candidates) {
+      if (candidate != null && !candidate.isBlank()) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   private String failureReason(BusinessException ex) {

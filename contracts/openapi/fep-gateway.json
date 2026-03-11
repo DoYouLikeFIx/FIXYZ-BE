@@ -596,6 +596,16 @@
           },
           "message": {
             "type": "string"
+          },
+          "rejectReason": {
+            "type": "string"
+          },
+          "canceledQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "parseError": {
+            "type": "string"
           }
         }
       },
@@ -807,6 +817,18 @@
           "status": {
             "minLength": 1,
             "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional unresolved-status detail shown for UNKNOWN/PENDING/MALFORMED responses."
+          },
+          "rejectReason": {
+            "type": "string",
+            "description": "Optional exchange rejection reason surfaced on REJECTED responses."
+          },
+          "parseError": {
+            "type": "string",
+            "description": "Optional FIX parser diagnostic surfaced on MALFORMED responses."
           },
           "executedQty": {
             "type": "integer",

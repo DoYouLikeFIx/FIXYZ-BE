@@ -36,7 +36,11 @@ class FepGatewayOpenApiCompatibilityTest {
       "executedPrice",
       "leavesQty",
       "transactTime",
-      "queryTime"
+      "queryTime",
+      "message",
+      "rejectReason",
+      "canceledQty",
+      "parseError"
   );
 
   private final ObjectMapper objectMapper = new ObjectMapper();
@@ -108,6 +112,9 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(fieldNames(internalStatusSchema.path("properties")))
         .contains(
             "status",
+            "message",
+            "rejectReason",
+            "parseError",
             "executedQty",
             "executedPrice",
             "recoveryStatus",
