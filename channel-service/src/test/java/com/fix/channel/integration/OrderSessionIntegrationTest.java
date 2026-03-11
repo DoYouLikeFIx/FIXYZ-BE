@@ -24,15 +24,18 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.test.context.support.WithAnonymousUser;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.mock.web.MockHttpSession;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@WithMockUser(username = "order-user")
 class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Autowired
@@ -105,7 +108,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     String createdExpiresAt = created.path("data").path("expiresAt").asText();
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId())
+            .session(authenticatedSession(authSession))
             .param("orderSessionId", orderSessionId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
@@ -149,7 +152,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174264", "ORD-REF-CHANGED"))
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
+            .session(authenticatedSession(authSession)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("ORD_001"))
         .andExpect(jsonPath("$.message").value("clOrdId replay payload mismatch"))
@@ -171,7 +174,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     String orderSessionId = created.path("data").path("orderSessionId").asText();
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .sessionAttr("AUTH_MEMBER_ID", intruder.memberId())
+            .session(authenticatedSession(intruder))
             .param("orderSessionId", orderSessionId))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
@@ -196,7 +199,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174262", "ORD-REF-003B"))
-            .sessionAttr("AUTH_MEMBER_ID", intruder.memberId()))
+            .session(authenticatedSession(intruder)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
@@ -216,7 +219,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId())
+            .session(authenticatedSession(authSession))
             .param("orderSessionId", orderSessionId))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
@@ -243,7 +246,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174263", "ORD-REF-004B"))
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
+            .session(authenticatedSession(authSession)))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
         .andExpect(jsonPath("$.message").value("Order session not found."))
@@ -266,7 +269,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174269", "ORD-REF-CHANGED"))
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
+            .session(authenticatedSession(authSession)))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
         .andExpect(jsonPath("$.message").value("Order session not found."))
@@ -290,7 +293,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .sessionAttr("AUTH_MEMBER_ID", intruder.memberId())
+            .session(authenticatedSession(intruder))
             .param("orderSessionId", orderSessionId))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
@@ -318,14 +321,13 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174271", "ORD-REF-004E"))
-            .sessionAttr("AUTH_MEMBER_ID", intruder.memberId()))
+            .session(authenticatedSession(intruder)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
         .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions"));
   }
 
-  @WithAnonymousUser
   @Test
   void shouldRequireAuthenticationForStatusLookup() throws Exception {
     mockMvc.perform(get("/api/v1/orders/sessions")
@@ -344,7 +346,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     AuthSession authSession = login("validation.user@fixyz.com", "Abcd1234!");
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
+            .session(authenticatedSession(authSession)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_001"))
         .andExpect(jsonPath("$.message").value("exactly one of orderSessionId or clOrdId is required"));
@@ -359,7 +361,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     AuthSession authSession = login("dual.user@fixyz.com", "Abcd1234!");
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId())
+            .session(authenticatedSession(authSession))
             .param("orderSessionId", "123e4567-e89b-42d3-a456-426614174266")
             .param("clOrdId", "123e4567-e89b-42d3-a456-426614174267"))
         .andExpect(status().isBadRequest())
@@ -380,7 +382,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174268", oversizedOrderRef))
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
+            .session(authenticatedSession(authSession)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_001"))
         .andExpect(jsonPath("$.message").value("size must be between 1 and 64"));
@@ -402,7 +404,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174299", "ORD-REF-RL-10"))
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
+            .session(authenticatedSession(authSession)))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("RATE_001"))
         .andExpect(jsonPath("$.message").value("rate limit exceeded"))
@@ -439,7 +441,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174399", "ORD-REF-RL-OVER"))
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
+            .session(authenticatedSession(authSession)))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("RATE_001"));
   }
@@ -458,7 +460,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .with(csrf().asHeader())
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload(clOrdId, orderRef))
-            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
+            .session(authenticatedSession(authSession)))
         .andExpect(expectedStatus)
         .andExpect(jsonPath("$.success").value(true))
         .andReturn();
@@ -474,6 +476,20 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     Member member = memberRepository.findByEmail(email)
         .orElseThrow(() -> new AssertionError("member not found for email " + email));
     return new AuthSession(member.getId(), email);
+  }
+
+  private MockHttpSession authenticatedSession(AuthSession authSession) {
+    SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+    securityContext.setAuthentication(new UsernamePasswordAuthenticationToken(
+        authSession.email(),
+        "N/A",
+        java.util.List.of(new SimpleGrantedAuthority("ROLE_USER"))
+    ));
+
+    MockHttpSession session = new MockHttpSession();
+    session.setAttribute("AUTH_MEMBER_ID", authSession.memberId());
+    session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
+    return session;
   }
 
   private record AuthSession(Long memberId, String email) {
