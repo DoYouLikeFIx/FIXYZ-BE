@@ -99,9 +99,29 @@ public class GlobalExceptionHandler {
         return message;
       }
     }
+    if (ex instanceof BindException bindException && bindException.hasGlobalErrors()) {
+      String message = bindException.getGlobalErrors().getFirst().getDefaultMessage();
+      if (message != null && !message.isBlank()) {
+        return message;
+      }
+    }
     if (ex instanceof MethodArgumentNotValidException methodArgumentNotValidException
         && methodArgumentNotValidException.hasFieldErrors()) {
       String message = methodArgumentNotValidException.getFieldErrors().getFirst().getDefaultMessage();
+      if (message != null && !message.isBlank()) {
+        return message;
+      }
+    }
+    if (ex instanceof MethodArgumentNotValidException methodArgumentNotValidException
+        && methodArgumentNotValidException.hasGlobalErrors()) {
+      String message = methodArgumentNotValidException.getGlobalErrors().getFirst().getDefaultMessage();
+      if (message != null && !message.isBlank()) {
+        return message;
+      }
+    }
+    if (ex instanceof ConstraintViolationException constraintViolationException
+        && !constraintViolationException.getConstraintViolations().isEmpty()) {
+      String message = constraintViolationException.getConstraintViolations().iterator().next().getMessage();
       if (message != null && !message.isBlank()) {
         return message;
       }
