@@ -31,18 +31,24 @@ import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
+import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
+import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -182,6 +188,68 @@ class CorebankOrderServiceTest {
         .isInstanceOf(BusinessException.class)
         .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
             .isEqualTo(ErrorCode.CORE_RESOURCE_NOT_FOUND));
+  }
+
+  @Test
+  void shouldReturnOrderHistoryWhenOwnershipMatches() {
+    Instant newest = Instant.parse("2026-03-01T10:02:00Z");
+    Instant older = Instant.parse("2026-03-01T10:01:00Z");
+    Account account = persistedAccount();
+    Order newestOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            "123e4567-e89b-42d3-a456-426614174230",
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9010L
+    ), newest);
+    Order olderOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            "123e4567-e89b-42d3-a456-426614174231",
+            "000660",
+            "SELL",
+            new BigDecimal("1.0000"),
+            new BigDecimal("120000.0000")
+        ),
+        9011L
+    ), older);
+    PageRequest pageable = PageRequest.of(0, 2, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
+
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(orderRepository.findByAccountId(ACCOUNT_ID, pageable))
+        .thenReturn(new PageImpl<>(List.of(newestOrder, olderOrder), pageable, 2));
+
+    AccountOrderHistoryResult result = corebankOrderService.getAccountOrderHistory(
+        AccountOrderHistoryQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, 0, 2)
+    );
+
+    assertThat(result.getContent()).hasSize(2);
+    assertThat(result.getContent().get(0).getClOrdId()).isEqualTo("123e4567-e89b-42d3-a456-426614174230");
+    assertThat(result.getContent().get(0).getSymbol()).isEqualTo("005930");
+    assertThat(result.getContent().get(0).getSymbolName()).isEqualTo("005930");
+    assertThat(result.getContent().get(0).getQty()).isEqualByComparingTo("2.0000");
+    assertThat(result.getContent().get(0).getUnitPrice()).isEqualByComparingTo("70100.0000");
+    assertThat(result.getContent().get(0).getTotalAmount()).isEqualByComparingTo("140200.00000000");
+    assertThat(result.getTotalElements()).isEqualTo(2);
+    assertThat(result.getTotalPages()).isEqualTo(1);
+    assertThat(result.getNumber()).isEqualTo(0);
+    assertThat(result.getSize()).isEqualTo(2);
+  }
+
+  @Test
+  void shouldRejectOrderHistoryLookupWhenOwnershipMismatches() {
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));
+
+    assertThatThrownBy(() -> corebankOrderService.getAccountOrderHistory(
+        AccountOrderHistoryQueryCommand.of(ACCOUNT_ID, OTHER_MEMBER_ID, 0, 20)
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP));
   }
 
   @Test
@@ -614,6 +682,11 @@ class CorebankOrderServiceTest {
 
   private <T> T withUpdatedAt(T target, Instant updatedAt) {
     ReflectionTestUtils.setField(target, "updatedAt", updatedAt);
+    return target;
+  }
+
+  private <T> T withCreatedAt(T target, Instant createdAt) {
+    ReflectionTestUtils.setField(target, "createdAt", createdAt);
     return target;
   }
 

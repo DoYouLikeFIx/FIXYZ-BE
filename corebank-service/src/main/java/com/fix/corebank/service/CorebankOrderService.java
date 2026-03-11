@@ -18,6 +18,9 @@ import com.fix.corebank.repository.ExecutionRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
+import com.fix.corebank.vo.AccountOrderHistoryItemResult;
+import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
+import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
@@ -27,6 +30,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -100,6 +104,35 @@ public class CorebankOrderService {
         resolveAsOf(account, positionOptional)
     );
   }
+
+  @Transactional(readOnly = true)
+  public AccountOrderHistoryResult getAccountOrderHistory(AccountOrderHistoryQueryCommand command) {
+    Account account = accountRepository.findById(command.getAccountId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+
+    if (!account.getMemberId().equals(command.getMemberId())) {
+      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
+    }
+
+    CorebankOrderPersistenceService.AccountOrderHistoryPage historyPage =
+        orderPersistenceService.findAccountOrderHistory(
+            command.getAccountId(),
+            command.getPage(),
+            command.getSize()
+        );
+    List<AccountOrderHistoryItemResult> content = historyPage.content().stream()
+        .map(this::mapOrderHistoryItem)
+        .toList();
+
+    return AccountOrderHistoryResult.of(
+        content,
+        historyPage.totalElements(),
+        historyPage.totalPages(),
+        historyPage.number(),
+        historyPage.size()
+    );
+  }
+
   public InternalOrderResult createOrder(InternalOrderCreateCommand command) {
     return orderPersistenceService.findOrder(command.getClOrdId())
         .map(existing -> mapToOrderResult(existing, true))
@@ -327,6 +360,28 @@ public class CorebankOrderService {
       return accountUpdatedAt;
     }
     return accountUpdatedAt.isAfter(positionUpdatedAt) ? accountUpdatedAt : positionUpdatedAt;
+  }
+
+  private AccountOrderHistoryItemResult mapOrderHistoryItem(
+      CorebankOrderPersistenceService.AccountOrderHistoryRow row
+  ) {
+    BigDecimal qty = defaultDecimal(row.orderQty(), BigDecimal.ZERO);
+    BigDecimal unitPrice = defaultDecimal(row.orderPrice(), BigDecimal.ZERO);
+    return AccountOrderHistoryItemResult.of(
+        row.symbol(),
+        row.symbol(),
+        row.side(),
+        qty,
+        unitPrice,
+        qty.multiply(unitPrice),
+        row.status(),
+        row.clOrdId(),
+        row.createdAt()
+    );
+  }
+
+  private BigDecimal defaultDecimal(BigDecimal value, BigDecimal fallback) {
+    return value == null ? fallback : value;
   }
 
   private record RequerySignal(

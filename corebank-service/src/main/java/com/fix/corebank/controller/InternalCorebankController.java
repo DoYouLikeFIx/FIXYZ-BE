@@ -4,10 +4,12 @@ import com.fix.common.error.ApiResponse;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.validation.ContractPatterns;
 import com.fix.corebank.dto.request.InternalAccountPositionRequest;
+import com.fix.corebank.dto.request.InternalAccountOrderHistoryRequest;
 import com.fix.corebank.dto.request.InternalOrderCreateRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
 import com.fix.corebank.dto.request.InternalPortfolioRequest;
 import com.fix.corebank.dto.request.InternalPortfolioProvisioningRequest;
+import com.fix.corebank.dto.response.InternalAccountOrderHistoryResponse;
 import com.fix.corebank.dto.response.InternalAccountPositionResponse;
 import com.fix.corebank.dto.response.InternalOrderResponse;
 import com.fix.corebank.dto.response.InternalPortfolioResponse;
@@ -58,6 +60,16 @@ public class InternalCorebankController {
   ) {
     return ApiResponse.success(InternalAccountPositionResponse.from(
         corebankOrderService.getAccountPosition(request.toVo(accountId))
+    ));
+  }
+
+  @GetMapping("/accounts/{accountId}/orders")
+  public ApiResponse<InternalAccountOrderHistoryResponse> accountOrderHistory(
+      @PathVariable Long accountId,
+      @Valid @ModelAttribute InternalAccountOrderHistoryRequest request
+  ) {
+    return ApiResponse.success(InternalAccountOrderHistoryResponse.from(
+        corebankOrderService.getAccountOrderHistory(request.toVo(accountId))
     ));
   }
 

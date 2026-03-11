@@ -22,6 +22,9 @@ import com.fix.corebank.vo.AccountProvisioningCommand;
 import com.fix.corebank.vo.AccountProvisioningResult;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
+import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
+import com.fix.corebank.vo.AccountOrderHistoryResult;
+import com.fix.corebank.vo.AccountOrderHistoryItemResult;
 import com.fix.corebank.vo.InternalOrderResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
@@ -102,6 +105,25 @@ class CorebankInternalApiSkeletonTest {
         "KRW",
         Instant.parse("2026-03-01T10:01:00Z")
     ));
+    corebankOrderService.setAccountOrderHistoryResult(AccountOrderHistoryResult.of(
+        List.of(
+            AccountOrderHistoryItemResult.of(
+                "005930",
+                "005930",
+                "BUY",
+                new BigDecimal("2.0000"),
+                new BigDecimal("70100.0000"),
+                new BigDecimal("140200.00000000"),
+                "FILLED",
+                CORE_CL_ORD_ID_1,
+                Instant.parse("2026-03-01T10:02:00Z")
+            )
+        ),
+        1L,
+        1,
+        0,
+        20
+    ));
     corebankOrderService.setCreateOrderResult(InternalOrderResult.of(
         1001L,
         CORE_CL_ORD_ID_1,
@@ -166,8 +188,25 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(jsonPath("$.data.availableQuantity").value(120.0))
         .andExpect(jsonPath("$.data.availableQty").value(120.0))
         .andExpect(jsonPath("$.data.balance").value(1000000.0))
-        .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
-        .andExpect(jsonPath("$.data.currency").value("KRW"));
+            .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
+            .andExpect(jsonPath("$.data.currency").value("KRW"));
+
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/orders", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301")
+            .param("page", "0")
+            .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].symbol").value("005930"))
+        .andExpect(jsonPath("$.data.content[0].symbolName").value("005930"))
+        .andExpect(jsonPath("$.data.content[0].qty").value(2.0))
+        .andExpect(jsonPath("$.data.content[0].unitPrice").value(70100.0))
+        .andExpect(jsonPath("$.data.content[0].totalAmount").value(140200.0))
+        .andExpect(jsonPath("$.data.content[0].clOrdId").value(CORE_CL_ORD_ID_1))
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.totalPages").value(1))
+        .andExpect(jsonPath("$.data.number").value(0))
+        .andExpect(jsonPath("$.data.size").value(20));
 
     mockMvc.perform(post("/internal/v1/orders")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -217,6 +256,33 @@ class CorebankInternalApiSkeletonTest {
             .param("symbol", "005930"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value(ErrorCode.CORE_RESOURCE_NOT_FOUND.code()));
+  }
+
+  @Test
+  void shouldMapOwnershipFailureForAccountOrderHistoryEndpoint() throws Exception {
+    corebankOrderService.setAccountOrderHistoryFailure(new BusinessException(
+        ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
+        "forbidden account ownership"
+    ));
+
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/orders", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301")
+            .param("page", "0")
+            .param("size", "20"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
+  }
+
+  @Test
+  void shouldValidatePaginationForAccountOrderHistoryEndpoint() throws Exception {
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/orders", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301")
+            .param("page", "-1")
+            .param("size", "0"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
   }
 
   @Test
@@ -317,6 +383,8 @@ class CorebankInternalApiSkeletonTest {
     private PortfolioResult portfolioResult;
     private AccountPositionResult accountPositionResult;
     private RuntimeException accountPositionFailure;
+    private AccountOrderHistoryResult accountOrderHistoryResult;
+    private RuntimeException accountOrderHistoryFailure;
     private InternalOrderResult createOrderResult;
     private InternalOrderResult requeryOrderResult;
     private RuntimeException createOrderFailure;
@@ -346,6 +414,14 @@ class CorebankInternalApiSkeletonTest {
     }
 
     @Override
+    public AccountOrderHistoryResult getAccountOrderHistory(AccountOrderHistoryQueryCommand command) {
+      if (accountOrderHistoryFailure != null) {
+        throw accountOrderHistoryFailure;
+      }
+      return accountOrderHistoryResult;
+    }
+
+    @Override
     public InternalOrderResult createOrder(InternalOrderCreateCommand command) {
       createOrderCalls++;
       if (createOrderFailure != null) {
@@ -369,6 +445,14 @@ class CorebankInternalApiSkeletonTest {
 
     private void setAccountPositionFailure(RuntimeException accountPositionFailure) {
       this.accountPositionFailure = accountPositionFailure;
+    }
+
+    private void setAccountOrderHistoryResult(AccountOrderHistoryResult accountOrderHistoryResult) {
+      this.accountOrderHistoryResult = accountOrderHistoryResult;
+    }
+
+    private void setAccountOrderHistoryFailure(RuntimeException accountOrderHistoryFailure) {
+      this.accountOrderHistoryFailure = accountOrderHistoryFailure;
     }
 
     private void setCreateOrderResult(InternalOrderResult createOrderResult) {

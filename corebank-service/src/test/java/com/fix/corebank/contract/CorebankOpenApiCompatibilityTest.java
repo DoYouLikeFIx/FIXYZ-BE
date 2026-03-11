@@ -27,6 +27,14 @@ class CorebankOpenApiCompatibilityTest {
         .path("ApiResponseInternalAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas")
         .path("InternalAccountPositionResponse");
+    JsonNode accountOrderHistoryResponse = contract.path("components").path("schemas")
+        .path("ApiResponseInternalAccountOrderHistoryResponse");
+    JsonNode accountOrderHistorySchema = contract.path("components").path("schemas")
+        .path("InternalAccountOrderHistoryResponse");
+    JsonNode accountOrderHistoryItemSchema = resolveRefSchema(
+        contract,
+        accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText()
+    );
     JsonNode internalOrderSchema = contract.path("components").path("schemas").path("InternalOrderResponse");
     JsonNode requeryOperation = paths.path("/internal/v1/orders/{clOrdId}/requery").path("get");
     JsonNode requeryParameters = requeryOperation.path("parameters");
@@ -37,7 +45,8 @@ class CorebankOpenApiCompatibilityTest {
             "/internal/v1/orders",
             "/internal/v1/orders/{clOrdId}/requery",
             "/internal/v1/portfolio",
-            "/internal/v1/accounts/{accountId}/positions"
+            "/internal/v1/accounts/{accountId}/positions",
+            "/internal/v1/accounts/{accountId}/orders"
         );
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
@@ -57,8 +66,14 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
+    assertThat(fieldNames(accountOrderHistorySchema.path("properties")))
+        .contains("content", "totalElements", "totalPages", "number", "size");
+    assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))
+        .contains("symbol", "symbolName", "side", "qty", "unitPrice", "totalAmount", "status", "clOrdId", "createdAt");
     assertThat(fieldNames(internalOrderSchema.path("properties")))
         .contains("message", "retriable", "escalationRequired", "attemptCount", "maxRetryCount", "externalSyncStatus");
     assertThat(requeryParameters.isArray()).isTrue();
@@ -97,5 +112,13 @@ class CorebankOpenApiCompatibilityTest {
       }
     }
     return MissingNode.getInstance();
+  }
+
+  private JsonNode resolveRefSchema(JsonNode contract, String ref) {
+    if (ref == null || !ref.startsWith("#/components/schemas/")) {
+      return objectMapper.createObjectNode();
+    }
+    String schemaName = ref.substring("#/components/schemas/".length());
+    return contract.path("components").path("schemas").path(schemaName);
   }
 }
