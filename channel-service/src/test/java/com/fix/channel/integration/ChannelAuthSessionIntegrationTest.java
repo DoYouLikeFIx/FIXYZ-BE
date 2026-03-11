@@ -25,12 +25,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.session.Session;
 import org.springframework.session.SessionRepository;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -62,7 +62,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   @Autowired
   private StringRedisTemplate stringRedisTemplate;
 
-  @MockBean
+  @MockitoBean
   private CorebankProvisioningClient corebankProvisioningClient;
 
   @BeforeEach
@@ -463,9 +463,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))
-        .andExpect(status().isGone())
-        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
-        .andExpect(jsonPath("$.message").value("channel session expired"));
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-016"))
+        .andExpect(jsonPath("$.message").value("stale session after password change"));
 
     mockMvc.perform(post("/api/v1/auth/login")
             .with(csrf())
