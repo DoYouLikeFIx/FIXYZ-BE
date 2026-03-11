@@ -2,6 +2,7 @@ package com.fix.channel.controller;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -9,6 +10,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMoc
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -246,6 +248,101 @@ class ChannelErrorContractTest {
         .withQueryParam("size", equalTo("20"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-history")));
+  }
+
+  @Test
+  @WithMockUser(username = "admin-user")
+  void shouldForwardAdminStatusTransitionAndExposeTransitionResponse() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.patch(urlPathEqualTo("/internal/v1/accounts/1/status"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "previousStatus": "ACTIVE",
+                    "newStatus": "FROZEN",
+                    "changed": true,
+                    "eventId": 9001,
+                    "reason": "risk-control",
+                    "actor": "ops-admin",
+                    "context": "ticket=FIX-43",
+                    "asOf": "2026-03-10T00:00:00Z"
+                  }
+                }
+                """)));
+
+    mockMvc.perform(patch("/api/v1/admin/accounts/{accountId}/status", 1L)
+            .with(csrf())
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-transition")
+            .contentType("application/json")
+            .content("""
+                {
+                  "memberId": 301,
+                  "status": "FROZEN",
+                  "reason": "risk-control",
+                  "actor": "ops-admin",
+                  "context": "ticket=FIX-43"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-transition"))
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.memberId").value(301L))
+        .andExpect(jsonPath("$.data.previousStatus").value("ACTIVE"))
+        .andExpect(jsonPath("$.data.newStatus").value("FROZEN"))
+        .andExpect(jsonPath("$.data.changed").value(true))
+        .andExpect(jsonPath("$.data.eventId").value(9001))
+        .andExpect(jsonPath("$.data.reason").value("risk-control"))
+        .andExpect(jsonPath("$.data.actor").value("ops-admin"))
+        .andExpect(jsonPath("$.data.context").value("ticket=FIX-43"))
+        .andExpect(jsonPath("$.data.asOf").value("2026-03-10T00:00:00Z"));
+
+    WIRE_MOCK_SERVER.verify(patchRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/status"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-admin-transition")));
+  }
+
+  @Test
+  @WithMockUser(username = "admin-user")
+  void shouldExposeOwnershipErrorForAdminStatusTransitionBoundary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.patch(urlPathEqualTo("/internal/v1/accounts/1/status"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(403)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "AUTH-005",
+                  "message": "forbidden account ownership",
+                  "path": "/internal/v1/accounts/1/status",
+                  "correlationId": "trace-core-admin-ownership",
+                  "timestamp": "2026-03-10T00:00:00Z"
+                }
+                """)));
+
+    mockMvc.perform(patch("/api/v1/admin/accounts/{accountId}/status", 1L)
+            .with(csrf())
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-ownership")
+            .contentType("application/json")
+            .content("""
+                {
+                  "memberId": 301,
+                  "status": "FROZEN",
+                  "reason": "risk-control",
+                  "actor": "ops-admin"
+                }
+                """))
+        .andExpect(status().isForbidden())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-ownership"))
+        .andExpect(jsonPath("$.code").value("AUTH-005"))
+        .andExpect(jsonPath("$.message").value("forbidden account ownership"))
+        .andExpect(jsonPath("$.path").value("/api/v1/admin/accounts/1/status"))
+        .andExpect(jsonPath("$.correlationId").value("trace-channel-admin-ownership"));
   }
 
   @Test

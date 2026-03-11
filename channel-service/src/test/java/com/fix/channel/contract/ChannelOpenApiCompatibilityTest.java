@@ -30,6 +30,10 @@ class ChannelOpenApiCompatibilityTest {
         .path("ApiResponseAccountOrderHistoryResponse");
     JsonNode accountOrderHistorySchema = contract.path("components").path("schemas")
         .path("AccountOrderHistoryResponse");
+    JsonNode adminStatusTransitionResponse = contract.path("components").path("schemas")
+        .path("ApiResponseAdminAccountStatusTransitionResponse");
+    JsonNode adminStatusTransitionSchema = contract.path("components").path("schemas")
+        .path("AdminAccountStatusTransitionResponse");
     JsonNode accountOrderHistoryItemSchema = resolveRefSchema(
         contract,
         accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText()
@@ -41,7 +45,8 @@ class ChannelOpenApiCompatibilityTest {
             "/api/v1/orders",
             "/api/v1/orders/sessions",
             "/api/v1/accounts/{accountId}/positions",
-            "/api/v1/accounts/{accountId}/orders"
+            "/api/v1/accounts/{accountId}/orders",
+            "/api/v1/admin/accounts/{accountId}/status"
         );
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
@@ -65,12 +70,16 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminStatusTransitionResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
     assertThat(fieldNames(accountOrderHistorySchema.path("properties")))
         .contains("content", "totalElements", "totalPages", "number", "size");
     assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))
         .contains("symbol", "symbolName", "side", "qty", "unitPrice", "totalAmount", "status", "clOrdId", "createdAt");
+    assertThat(fieldNames(adminStatusTransitionSchema.path("properties")))
+        .contains("previousStatus", "newStatus", "changed", "eventId", "reason", "actor", "context", "asOf");
   }
 
   private Path openApiContract() {
