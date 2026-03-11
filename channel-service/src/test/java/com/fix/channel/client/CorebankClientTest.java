@@ -10,6 +10,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
+import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
+import com.fix.channel.vo.AccountOrderHistoryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -25,6 +27,8 @@ class CorebankClientTest {
   private static final Long ACCOUNT_ID = 1L;
   private static final Long MEMBER_ID = 301L;
   private static final String SYMBOL = "005930";
+  private static final int PAGE = 0;
+  private static final int SIZE = 20;
 
   private WireMockServer wireMockServer;
   private CorebankClient corebankClient;
@@ -160,7 +164,79 @@ class CorebankClientTest {
         .withHeader("X-Correlation-Id", equalTo("trace-channel-alias")));
   }
 
+  @Test
+  void shouldMapAccountOrderHistoryResponse() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/orders"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("page", equalTo("0"))
+        .withQueryParam("size", equalTo("20"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "content": [
+                      {
+                        "symbol": "005930",
+                        "side": "BUY",
+                        "qty": 2.0000,
+                        "unitPrice": 70100.0000,
+                        "status": "FILLED",
+                        "clOrdId": "123e4567-e89b-42d3-a456-426614174310",
+                        "createdAt": "2026-03-10T00:00:00Z"
+                      }
+                    ],
+                    "totalElements": 1,
+                    "totalPages": 1,
+                    "number": 0,
+                    "size": 20
+                  }
+                }
+                """)));
+
+    AccountOrderHistoryResult result = corebankClient.getAccountOrderHistory(historyCommand(), "trace-history");
+
+    assertThat(result.getContent()).hasSize(1);
+    assertThat(result.getContent().get(0).getSymbol()).isEqualTo("005930");
+    assertThat(result.getContent().get(0).getSymbolName()).isEqualTo("005930");
+    assertThat(result.getContent().get(0).getQty()).isEqualByComparingTo("2.0000");
+    assertThat(result.getContent().get(0).getUnitPrice()).isEqualByComparingTo("70100.0000");
+    assertThat(result.getContent().get(0).getTotalAmount()).isEqualByComparingTo("140200.00000000");
+    assertThat(result.getContent().get(0).getClOrdId()).isEqualTo("123e4567-e89b-42d3-a456-426614174310");
+    assertThat(result.getTotalElements()).isEqualTo(1);
+    assertThat(result.getTotalPages()).isEqualTo(1);
+    assertThat(result.getNumber()).isEqualTo(0);
+    assertThat(result.getSize()).isEqualTo(20);
+
+    wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/orders"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("page", equalTo("0"))
+        .withQueryParam("size", equalTo("20"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-history")));
+  }
+
+  @Test
+  void shouldMapHistory503ToCoreDependencyUnavailable() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/orders"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("page", equalTo("0"))
+        .withQueryParam("size", equalTo("20"))
+        .willReturn(aResponse().withStatus(503).withBody("service unavailable")));
+
+    assertThatThrownBy(() -> corebankClient.getAccountOrderHistory(historyCommand(), "trace-history-503"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(ex -> ((BusinessException) ex).getErrorCode())
+        .isEqualTo(ErrorCode.CORE_DEPENDENCY_UNAVAILABLE);
+  }
+
   private AccountPositionQueryCommand command() {
     return AccountPositionQueryCommand.of(ACCOUNT_ID, MEMBER_ID, SYMBOL);
+  }
+
+  private AccountOrderHistoryQueryCommand historyCommand() {
+    return AccountOrderHistoryQueryCommand.of(ACCOUNT_ID, MEMBER_ID, PAGE, SIZE);
   }
 }
