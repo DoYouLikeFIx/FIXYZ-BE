@@ -22,6 +22,8 @@ import com.fix.corebank.vo.AccountProvisioningCommand;
 import com.fix.corebank.vo.AccountProvisioningResult;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
+import com.fix.corebank.vo.AccountStatusQueryCommand;
+import com.fix.corebank.vo.AccountStatusResult;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.AccountOrderHistoryItemResult;
@@ -103,6 +105,15 @@ class CorebankInternalApiSkeletonTest {
         new BigDecimal("120.0000"),
         new BigDecimal("1000000.0000"),
         "KRW",
+        Instant.parse("2026-03-01T10:01:00Z")
+    ));
+    corebankOrderService.setAccountStatusResult(AccountStatusResult.of(
+        1L,
+        301L,
+        "11000000000301",
+        "ACTIVE",
+        true,
+        null,
         Instant.parse("2026-03-01T10:01:00Z")
     ));
     corebankOrderService.setAccountOrderHistoryResult(AccountOrderHistoryResult.of(
@@ -191,6 +202,16 @@ class CorebankInternalApiSkeletonTest {
             .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
             .andExpect(jsonPath("$.data.currency").value("KRW"));
 
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/status", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.memberId").value(301L))
+        .andExpect(jsonPath("$.data.accountNumber").value("11000000000301"))
+        .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+        .andExpect(jsonPath("$.data.orderEligible").value(true));
+
     mockMvc.perform(get("/internal/v1/accounts/{accountId}/orders", 1L)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
             .param("memberId", "301")
@@ -256,6 +277,20 @@ class CorebankInternalApiSkeletonTest {
             .param("symbol", "005930"))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value(ErrorCode.CORE_RESOURCE_NOT_FOUND.code()));
+  }
+
+  @Test
+  void shouldMapOwnershipFailureForAccountStatusEndpoint() throws Exception {
+    corebankOrderService.setAccountStatusFailure(new BusinessException(
+        ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
+        "forbidden account ownership"
+    ));
+
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/status", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
   }
 
   @Test
@@ -383,6 +418,8 @@ class CorebankInternalApiSkeletonTest {
     private PortfolioResult portfolioResult;
     private AccountPositionResult accountPositionResult;
     private RuntimeException accountPositionFailure;
+    private AccountStatusResult accountStatusResult;
+    private RuntimeException accountStatusFailure;
     private AccountOrderHistoryResult accountOrderHistoryResult;
     private RuntimeException accountOrderHistoryFailure;
     private InternalOrderResult createOrderResult;
@@ -411,6 +448,14 @@ class CorebankInternalApiSkeletonTest {
         throw accountPositionFailure;
       }
       return accountPositionResult;
+    }
+
+    @Override
+    public AccountStatusResult getAccountStatus(AccountStatusQueryCommand command) {
+      if (accountStatusFailure != null) {
+        throw accountStatusFailure;
+      }
+      return accountStatusResult;
     }
 
     @Override
@@ -445,6 +490,14 @@ class CorebankInternalApiSkeletonTest {
 
     private void setAccountPositionFailure(RuntimeException accountPositionFailure) {
       this.accountPositionFailure = accountPositionFailure;
+    }
+
+    private void setAccountStatusResult(AccountStatusResult accountStatusResult) {
+      this.accountStatusResult = accountStatusResult;
+    }
+
+    private void setAccountStatusFailure(RuntimeException accountStatusFailure) {
+      this.accountStatusFailure = accountStatusFailure;
     }
 
     private void setAccountOrderHistoryResult(AccountOrderHistoryResult accountOrderHistoryResult) {

@@ -7,6 +7,7 @@ import com.fix.common.fep.FepOrderType;
 import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
 import com.fix.common.web.CorrelationIdSupport;
+import com.fix.corebank.domain.AccountStatus;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
@@ -18,6 +19,8 @@ import com.fix.corebank.repository.ExecutionRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
+import com.fix.corebank.vo.AccountStatusQueryCommand;
+import com.fix.corebank.vo.AccountStatusResult;
 import com.fix.corebank.vo.AccountOrderHistoryItemResult;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
@@ -102,6 +105,27 @@ public class CorebankOrderService {
         account.getCashBalance(),
         account.getCurrency(),
         resolveAsOf(account, positionOptional)
+    );
+  }
+
+  @Transactional(readOnly = true)
+  public AccountStatusResult getAccountStatus(AccountStatusQueryCommand command) {
+    Account account = accountRepository.findById(command.getAccountId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+
+    if (!account.getMemberId().equals(command.getMemberId())) {
+      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
+    }
+
+    AccountStatus accountStatus = parseAccountStatus(account);
+    return AccountStatusResult.of(
+        account.getId(),
+        account.getMemberId(),
+        account.getAccountNo(),
+        accountStatus.name(),
+        accountStatus.isOrderEligible(),
+        accountStatus.isOrderEligible() ? null : ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED.code(),
+        resolveAccountAsOf(account)
     );
   }
 
@@ -371,6 +395,19 @@ public class CorebankOrderService {
       return accountUpdatedAt;
     }
     return accountUpdatedAt.isAfter(positionUpdatedAt) ? accountUpdatedAt : positionUpdatedAt;
+  }
+
+  private Instant resolveAccountAsOf(Account account) {
+    Instant updatedAt = account.getUpdatedAt();
+    return updatedAt != null ? updatedAt : Instant.now();
+  }
+
+  private AccountStatus parseAccountStatus(Account account) {
+    try {
+      return AccountStatus.from(account.getStatus());
+    } catch (IllegalArgumentException ex) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "unsupported account status: " + account.getStatus(), ex);
+    }
   }
 
   private AccountOrderHistoryItemResult mapOrderHistoryItem(

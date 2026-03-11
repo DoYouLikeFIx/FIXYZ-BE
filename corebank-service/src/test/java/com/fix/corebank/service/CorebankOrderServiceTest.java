@@ -31,6 +31,8 @@ import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
+import com.fix.corebank.vo.AccountStatusQueryCommand;
+import com.fix.corebank.vo.AccountStatusResult;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
@@ -188,6 +190,57 @@ class CorebankOrderServiceTest {
         .isInstanceOf(BusinessException.class)
         .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
             .isEqualTo(ErrorCode.CORE_RESOURCE_NOT_FOUND));
+  }
+
+  @Test
+  void shouldReturnActiveAccountStatusWhenOwnershipMatches() {
+    Account account = withUpdatedAt(persistedAccount(), Instant.parse("2026-03-01T10:00:00Z"));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+
+    AccountStatusResult result = corebankOrderService.getAccountStatus(
+        AccountStatusQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID)
+    );
+
+    assertThat(result.getAccountId()).isEqualTo(ACCOUNT_ID);
+    assertThat(result.getMemberId()).isEqualTo(OWNER_MEMBER_ID);
+    assertThat(result.getAccountNumber()).isEqualTo("ACC-1001");
+    assertThat(result.getStatus()).isEqualTo("ACTIVE");
+    assertThat(result.isOrderEligible()).isTrue();
+    assertThat(result.getDenialCode()).isNull();
+    assertThat(result.getAsOf()).isEqualTo(Instant.parse("2026-03-01T10:00:00Z"));
+  }
+
+  @Test
+  void shouldReturnOrd012WhenAccountStatusBlocksOrderEligibility() {
+    Account frozenAccount = Account.of(
+        "ACC-1002",
+        OWNER_MEMBER_ID,
+        "FROZEN",
+        "KRW",
+        new BigDecimal("100000000.0000"),
+        new BigDecimal("500.0000")
+    );
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(withId(frozenAccount, ACCOUNT_ID)));
+
+    AccountStatusResult result = corebankOrderService.getAccountStatus(
+        AccountStatusQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID)
+    );
+
+    assertThat(result.getStatus()).isEqualTo("FROZEN");
+    assertThat(result.isOrderEligible()).isFalse();
+    assertThat(result.getDenialCode()).isEqualTo("ORD-012");
+  }
+
+  @Test
+  void shouldRejectAccountStatusLookupWhenOwnershipMismatches() {
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));
+
+    assertThatThrownBy(() -> corebankOrderService.getAccountStatus(
+        AccountStatusQueryCommand.of(ACCOUNT_ID, OTHER_MEMBER_ID)
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP));
   }
 
   @Test
