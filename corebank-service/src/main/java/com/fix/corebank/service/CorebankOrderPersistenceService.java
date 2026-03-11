@@ -4,18 +4,22 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.corebank.domain.AccountStatus;
 import com.fix.corebank.entity.Account;
+import com.fix.corebank.entity.AccountStatusEvent;
 import com.fix.corebank.entity.JournalEntry;
 import com.fix.corebank.entity.LedgerEntry;
 import com.fix.corebank.entity.LedgerEntryRef;
 import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.AccountRepository;
+import com.fix.corebank.repository.AccountStatusEventRepository;
 import com.fix.corebank.repository.ExecutionRepository;
 import com.fix.corebank.repository.JournalEntryRepository;
 import com.fix.corebank.repository.LedgerEntryRefRepository;
 import com.fix.corebank.repository.LedgerEntryRepository;
 import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
+import com.fix.corebank.vo.AccountStatusTransitionCommand;
+import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -37,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CorebankOrderPersistenceService {
 
   private final AccountRepository accountRepository;
+  private final AccountStatusEventRepository accountStatusEventRepository;
   private final OrderRepository orderRepository;
   private final PositionRepository positionRepository;
   private final ExecutionRepository executionRepository;
@@ -127,6 +132,60 @@ public class CorebankOrderPersistenceService {
   }
 
   @Transactional
+  public AccountStatusTransitionResult transitionAccountStatus(AccountStatusTransitionCommand command) {
+    Account account = accountRepository.findByIdForUpdate(command.getAccountId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+
+    if (!account.getMemberId().equals(command.getMemberId())) {
+      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
+    }
+
+    AccountStatus previousStatus = parseAccountStatus(account.getStatus());
+    AccountStatus nextStatus = parseAccountStatus(command.getTargetStatus());
+    if (previousStatus == nextStatus) {
+      return AccountStatusTransitionResult.of(
+          account.getId(),
+          account.getMemberId(),
+          previousStatus.name(),
+          previousStatus.name(),
+          false,
+          null,
+          command.getReason(),
+          command.getActor(),
+          command.getContext(),
+          account.getUpdatedAt()
+      );
+    }
+
+    account.updateStatus(nextStatus.name());
+    accountRepository.flush();
+
+    AccountStatusEvent event = accountStatusEventRepository.save(AccountStatusEvent.of(
+        account.getId(),
+        account.getMemberId(),
+        previousStatus.name(),
+        nextStatus.name(),
+        command.getReason(),
+        command.getActor(),
+        command.getContext(),
+        command.getCorrelationId()
+    ));
+
+    return AccountStatusTransitionResult.of(
+        account.getId(),
+        account.getMemberId(),
+        previousStatus.name(),
+        nextStatus.name(),
+        true,
+        event.getId(),
+        command.getReason(),
+        command.getActor(),
+        command.getContext(),
+        account.getUpdatedAt()
+    );
+  }
+
+  @Transactional
   public OrderSnapshot updateOrderState(
       String clOrdId,
       String status,
@@ -165,18 +224,21 @@ public class CorebankOrderPersistenceService {
   }
 
   private void ensureOrderEligibleAccountStatus(Account account) {
-    final AccountStatus accountStatus;
-    try {
-      accountStatus = AccountStatus.from(account.getStatus());
-    } catch (IllegalArgumentException ex) {
-      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "unsupported account status: " + account.getStatus(), ex);
-    }
+    AccountStatus accountStatus = parseAccountStatus(account.getStatus());
 
     if (!accountStatus.isOrderEligible()) {
       throw new BusinessException(
           ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED,
           "account status " + accountStatus.name() + " is not eligible for order placement"
       );
+    }
+  }
+
+  private AccountStatus parseAccountStatus(String rawStatus) {
+    try {
+      return AccountStatus.from(rawStatus);
+    } catch (IllegalArgumentException ex) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "unsupported account status: " + rawStatus, ex);
     }
   }
 

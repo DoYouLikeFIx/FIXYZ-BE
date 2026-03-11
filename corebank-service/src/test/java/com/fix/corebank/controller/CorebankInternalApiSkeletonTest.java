@@ -1,6 +1,7 @@
 package com.fix.corebank.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -24,6 +25,8 @@ import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
 import com.fix.corebank.vo.AccountStatusQueryCommand;
 import com.fix.corebank.vo.AccountStatusResult;
+import com.fix.corebank.vo.AccountStatusTransitionCommand;
+import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.AccountOrderHistoryItemResult;
@@ -149,6 +152,18 @@ class CorebankInternalApiSkeletonTest {
         true,
         new BigDecimal("2.0000")
     ));
+    corebankOrderService.setAccountStatusTransitionResult(AccountStatusTransitionResult.of(
+        1L,
+        301L,
+        "ACTIVE",
+        "FROZEN",
+        true,
+        9001L,
+        "risk-control",
+        "ops-admin",
+        "ticket=FIX-43",
+        Instant.parse("2026-03-01T10:03:00Z")
+    ));
 
     mockMvc.perform(post("/internal/v1/portfolio")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -247,6 +262,26 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.clOrdId").value(CORE_CL_ORD_ID_1))
         .andExpect(jsonPath("$.data.status").value("FILLED"));
+
+    mockMvc.perform(patch("/internal/v1/accounts/{accountId}/status", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "memberId": 301,
+                  "status": "FROZEN",
+                  "reason": "risk-control",
+                  "actor": "ops-admin",
+                  "context": "ticket=FIX-43"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.previousStatus").value("ACTIVE"))
+        .andExpect(jsonPath("$.data.newStatus").value("FROZEN"))
+        .andExpect(jsonPath("$.data.changed").value(true))
+        .andExpect(jsonPath("$.data.eventId").value(9001L));
   }
 
   @Test
@@ -289,6 +324,29 @@ class CorebankInternalApiSkeletonTest {
     mockMvc.perform(get("/internal/v1/accounts/{accountId}/status", 1L)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
             .param("memberId", "301"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
+  }
+
+  @Test
+  void shouldMapOwnershipFailureForAccountStatusTransitionEndpoint() throws Exception {
+    corebankOrderService.setAccountStatusTransitionFailure(new BusinessException(
+        ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
+        "forbidden account ownership"
+    ));
+
+    mockMvc.perform(patch("/internal/v1/accounts/{accountId}/status", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-transition-forbidden")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "memberId": 301,
+                  "status": "FROZEN",
+                  "reason": "risk-control",
+                  "actor": "ops-admin"
+                }
+                """))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
   }
@@ -420,6 +478,8 @@ class CorebankInternalApiSkeletonTest {
     private RuntimeException accountPositionFailure;
     private AccountStatusResult accountStatusResult;
     private RuntimeException accountStatusFailure;
+    private AccountStatusTransitionResult accountStatusTransitionResult;
+    private RuntimeException accountStatusTransitionFailure;
     private AccountOrderHistoryResult accountOrderHistoryResult;
     private RuntimeException accountOrderHistoryFailure;
     private InternalOrderResult createOrderResult;
@@ -456,6 +516,14 @@ class CorebankInternalApiSkeletonTest {
         throw accountStatusFailure;
       }
       return accountStatusResult;
+    }
+
+    @Override
+    public AccountStatusTransitionResult transitionAccountStatus(AccountStatusTransitionCommand command) {
+      if (accountStatusTransitionFailure != null) {
+        throw accountStatusTransitionFailure;
+      }
+      return accountStatusTransitionResult;
     }
 
     @Override
@@ -498,6 +566,14 @@ class CorebankInternalApiSkeletonTest {
 
     private void setAccountStatusFailure(RuntimeException accountStatusFailure) {
       this.accountStatusFailure = accountStatusFailure;
+    }
+
+    private void setAccountStatusTransitionResult(AccountStatusTransitionResult accountStatusTransitionResult) {
+      this.accountStatusTransitionResult = accountStatusTransitionResult;
+    }
+
+    private void setAccountStatusTransitionFailure(RuntimeException accountStatusTransitionFailure) {
+      this.accountStatusTransitionFailure = accountStatusTransitionFailure;
     }
 
     private void setAccountOrderHistoryResult(AccountOrderHistoryResult accountOrderHistoryResult) {

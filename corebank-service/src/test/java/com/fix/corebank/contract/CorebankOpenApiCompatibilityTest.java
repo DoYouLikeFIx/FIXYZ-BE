@@ -31,6 +31,10 @@ class CorebankOpenApiCompatibilityTest {
         .path("ApiResponseInternalAccountStatusResponse");
     JsonNode accountStatusSchema = contract.path("components").path("schemas")
         .path("InternalAccountStatusResponse");
+    JsonNode accountStatusTransitionResponse = contract.path("components").path("schemas")
+        .path("ApiResponseInternalAccountStatusTransitionResponse");
+    JsonNode accountStatusTransitionSchema = contract.path("components").path("schemas")
+        .path("InternalAccountStatusTransitionResponse");
     JsonNode accountOrderHistoryResponse = contract.path("components").path("schemas")
         .path("ApiResponseInternalAccountOrderHistoryResponse");
     JsonNode accountOrderHistorySchema = contract.path("components").path("schemas")
@@ -73,12 +77,16 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountStatusResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountStatusTransitionResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
     assertThat(fieldNames(accountStatusSchema.path("properties")))
         .contains("accountNumber", "status", "orderEligible", "denialCode", "asOf");
+    assertThat(fieldNames(accountStatusTransitionSchema.path("properties")))
+        .contains("previousStatus", "newStatus", "changed", "eventId", "reason", "actor", "context", "asOf");
     assertThat(fieldNames(accountOrderHistorySchema.path("properties")))
         .contains("content", "totalElements", "totalPages", "number", "size");
     assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))

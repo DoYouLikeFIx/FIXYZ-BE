@@ -21,6 +21,8 @@ import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
 import com.fix.corebank.vo.AccountStatusQueryCommand;
 import com.fix.corebank.vo.AccountStatusResult;
+import com.fix.corebank.vo.AccountStatusTransitionCommand;
+import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.AccountOrderHistoryItemResult;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
@@ -155,6 +157,10 @@ public class CorebankOrderService {
         historyPage.number(),
         historyPage.size()
     );
+  }
+
+  public AccountStatusTransitionResult transitionAccountStatus(AccountStatusTransitionCommand command) {
+    return orderPersistenceService.transitionAccountStatus(command);
   }
 
   public InternalOrderResult createOrder(InternalOrderCreateCommand command) {

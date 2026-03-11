@@ -5,6 +5,7 @@ import com.fix.common.web.CommonHeaders;
 import com.fix.common.validation.ContractPatterns;
 import com.fix.corebank.dto.request.InternalAccountPositionRequest;
 import com.fix.corebank.dto.request.InternalAccountStatusRequest;
+import com.fix.corebank.dto.request.InternalAccountStatusTransitionRequest;
 import com.fix.corebank.dto.request.InternalAccountOrderHistoryRequest;
 import com.fix.corebank.dto.request.InternalOrderCreateRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
@@ -13,6 +14,7 @@ import com.fix.corebank.dto.request.InternalPortfolioProvisioningRequest;
 import com.fix.corebank.dto.response.InternalAccountOrderHistoryResponse;
 import com.fix.corebank.dto.response.InternalAccountPositionResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusResponse;
+import com.fix.corebank.dto.response.InternalAccountStatusTransitionResponse;
 import com.fix.corebank.dto.response.InternalOrderResponse;
 import com.fix.corebank.dto.response.InternalPortfolioResponse;
 import com.fix.corebank.dto.response.InternalPortfolioProvisioningResponse;
@@ -27,6 +29,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -72,6 +75,17 @@ public class InternalCorebankController {
   ) {
     return ApiResponse.success(InternalAccountStatusResponse.from(
         corebankOrderService.getAccountStatus(request.toVo(accountId))
+    ));
+  }
+
+  @PatchMapping(value = "/accounts/{accountId}/status", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ApiResponse<InternalAccountStatusTransitionResponse> transitionAccountStatus(
+      @PathVariable Long accountId,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Valid @RequestBody InternalAccountStatusTransitionRequest request
+  ) {
+    return ApiResponse.success(InternalAccountStatusTransitionResponse.from(
+        corebankOrderService.transitionAccountStatus(request.toVo(accountId, correlationId))
     ));
   }
 
