@@ -2,6 +2,7 @@ package com.fix.corebank.service;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.corebank.domain.AccountStatus;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.JournalEntry;
 import com.fix.corebank.entity.LedgerEntry;
@@ -88,6 +89,7 @@ public class CorebankOrderPersistenceService {
   public PendingOrderSubmission prepareOrderSubmission(InternalOrderCreateCommand command) {
     Account account = accountRepository.findById(command.getAccountId())
         .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+    ensureOrderEligibleAccountStatus(account);
 
     String side = normalizeSide(command.getSide());
     positionRepository.findByAccountIdAndSymbolForUpdate(command.getAccountId(), command.getSymbol())
@@ -160,6 +162,22 @@ public class CorebankOrderPersistenceService {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "side must be BUY or SELL");
     }
     return normalized;
+  }
+
+  private void ensureOrderEligibleAccountStatus(Account account) {
+    final AccountStatus accountStatus;
+    try {
+      accountStatus = AccountStatus.from(account.getStatus());
+    } catch (IllegalArgumentException ex) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "unsupported account status: " + account.getStatus(), ex);
+    }
+
+    if (!accountStatus.isOrderEligible()) {
+      throw new BusinessException(
+          ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED,
+          "account status " + accountStatus.name() + " is not eligible for order placement"
+      );
+    }
   }
 
   private Instant startOfUtcDay() {

@@ -306,6 +306,50 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldRejectOrderCreationWhenAccountIsFrozen() {
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccountWithStatus("FROZEN")));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED);
+          assertThat(businessException.getMessage()).contains("FROZEN");
+        });
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectOrderCreationWhenAccountIsClosed() {
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccountWithStatus("CLOSED")));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED);
+          assertThat(businessException.getMessage()).contains("CLOSED");
+        });
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
   void shouldHandleClOrdIdIdempotency() {
     Account account = persistedAccount();
     Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
@@ -813,14 +857,19 @@ class CorebankOrderServiceTest {
   }
 
   private Account persistedAccount() {
-    Account account = Account.of(
+    Account account = persistedAccountWithStatus("ACTIVE");
+    return withId(account, ACCOUNT_ID);
+  }
+
+  private Account persistedAccountWithStatus(String status) {
+    return Account.of(
         "ACC-1001",
         OWNER_MEMBER_ID,
+        status,
         "KRW",
         new BigDecimal("100000000.0000"),
         new BigDecimal("500.0000")
     );
-    return withId(account, ACCOUNT_ID);
   }
 
   private Order persistedOrder(Order order, Long id) {
