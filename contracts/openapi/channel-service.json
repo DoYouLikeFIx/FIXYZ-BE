@@ -46,14 +46,28 @@
         "tags": [
           "order-session-controller"
         ],
+        "summary": "Get an order session",
+        "description": "Provide exactly one of orderSessionId or clOrdId. Do not send both.",
         "operationId": "get",
         "parameters": [
           {
-            "name": "request",
+            "name": "orderSessionId",
             "in": "query",
-            "required": true,
+            "description": "Server-issued order session id. Provide exactly one of orderSessionId or clOrdId.",
+            "required": false,
             "schema": {
-              "$ref": "#/components/schemas/OrderSessionQueryRequest"
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "query",
+            "description": "Client order id. Provide exactly one of orderSessionId or clOrdId.",
+            "required": false,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
             }
           }
         ],
@@ -74,20 +88,31 @@
         "tags": [
           "order-session-controller"
         ],
+        "summary": "Create or replay an order session",
         "operationId": "create_1",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/OrderSessionCreateRequest"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderSessionCreateRequest"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderSessionResponse"
+                }
+              }
+            }
+          },
           "200": {
-            "description": "OK",
+            "description": "Existing active session replayed",
             "content": {
               "*/*": {
                 "schema": {
@@ -547,45 +572,6 @@
           }
         }
       }
-    },
-    "/api/v1/accounts/{accountId}/orders": {
-      "get": {
-        "tags": [
-          "account-controller"
-        ],
-        "operationId": "getOrderHistory",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/AccountOrderHistoryQueryRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseAccountOrderHistoryResponse"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -699,20 +685,17 @@
       "OrderSessionCreateRequest": {
         "required": [
           "clOrdId",
-          "memberId",
           "orderRef"
         ],
         "type": "object",
         "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
           "clOrdId": {
             "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
           "orderRef": {
+            "maxLength": 64,
             "minLength": 1,
             "type": "string"
           }
@@ -739,15 +722,22 @@
       "OrderSessionResponse": {
         "type": "object",
         "properties": {
-          "sessionId": {
-            "type": "integer",
-            "format": "int64"
+          "orderSessionId": {
+            "type": "string"
           },
           "clOrdId": {
             "type": "string"
           },
           "status": {
             "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remainingSeconds": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -1130,18 +1120,6 @@
           }
         }
       },
-      "OrderSessionQueryRequest": {
-        "type": "object",
-        "properties": {
-          "sessionId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "clOrdId": {
-            "type": "string"
-          }
-        }
-      },
       "NotificationStreamRequest": {
         "required": [
           "memberId"
@@ -1430,100 +1408,6 @@
             "$ref": "#/components/schemas/ApiErrorResponse"
           },
           "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "AccountOrderHistoryQueryRequest": {
-        "type": "object",
-        "properties": {
-          "page": {
-            "minimum": 0,
-            "type": "integer",
-            "format": "int32"
-          },
-          "size": {
-            "maximum": 100,
-            "minimum": 1,
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "AccountOrderHistoryResponse": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Item"
-            }
-          },
-          "totalElements": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "totalPages": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "number": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "size": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "ApiResponseAccountOrderHistoryResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/AccountOrderHistoryResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "Item": {
-        "type": "object",
-        "properties": {
-          "symbol": {
-            "type": "string"
-          },
-          "symbolName": {
-            "type": "string"
-          },
-          "side": {
-            "type": "string"
-          },
-          "qty": {
-            "type": "number"
-          },
-          "unitPrice": {
-            "type": "number"
-          },
-          "totalAmount": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string"
-          },
-          "clOrdId": {
-            "type": "string"
-          },
-          "createdAt": {
             "type": "string",
             "format": "date-time"
           }
