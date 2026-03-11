@@ -1,4 +1,4 @@
-﻿# Account Status Contract v1 (Story 2.6)
+# Account Status Contract v1 (Story 2.6)
 
 Status: LOCKED  
 Owner: BE corebank-service + BE channel-service  

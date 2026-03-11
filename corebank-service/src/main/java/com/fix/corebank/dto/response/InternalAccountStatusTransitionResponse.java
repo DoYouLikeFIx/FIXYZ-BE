@@ -1,8 +1,10 @@
 package com.fix.corebank.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
 import java.time.Instant;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class InternalAccountStatusTransitionResponse {
 
   private final Long accountId;

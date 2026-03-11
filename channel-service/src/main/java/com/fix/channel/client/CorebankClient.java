@@ -184,11 +184,20 @@ public class CorebankClient {
           });
 
       CorebankAccountStatusTransitionResponse responseBody = extractBody(response);
+      String previousStatus = responseBody.previousStatus();
+      String newStatus = responseBody.newStatus();
+      if (previousStatus == null || newStatus == null) {
+        throw new BusinessException(
+            ErrorCode.INTERNAL_ERROR,
+            "corebank response missing previousStatus or newStatus"
+        );
+      }
+
       return AdminAccountStatusTransitionResult.of(
           defaultLong(responseBody.accountId(), command.getAccountId()),
           defaultLong(responseBody.memberId(), command.getMemberId()),
-          firstNonNull(responseBody.previousStatus(), command.getStatus()),
-          firstNonNull(responseBody.newStatus(), command.getStatus()),
+          previousStatus,
+          newStatus,
           responseBody.changed(),
           responseBody.eventId(),
           firstNonNull(responseBody.reason(), command.getReason()),

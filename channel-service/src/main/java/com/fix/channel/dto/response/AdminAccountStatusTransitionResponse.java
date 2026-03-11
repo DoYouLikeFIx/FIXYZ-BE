@@ -1,8 +1,10 @@
 package com.fix.channel.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fix.channel.vo.AdminAccountStatusTransitionResult;
 import java.time.Instant;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class AdminAccountStatusTransitionResponse {
 
   private final Long accountId;
