@@ -39,6 +39,11 @@ class FepGatewayOrderContractTest {
   private static final String INTERNAL_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174015";
   private static final String INTERNAL_PARTIAL_EMPTY_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174016";
   private static final String INTERNAL_MARKET_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174017";
+  private static final String INTERNAL_PENDING_FEP_ID_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174036";
+  private static final String INTERNAL_PENDING_MESSAGE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174037";
+  private static final String INTERNAL_MALFORMED_TO_PENDING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174038";
+  private static final String INTERNAL_PRESERVE_MALFORMED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174039";
+  private static final String INTERNAL_DEFAULT_MALFORMED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174040";
   private static final String INTERNAL_REJECTED_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174031";
   private static final String CANCEL_TIMEOUT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174018";
   private static final String CANCEL_REJECT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174019";
@@ -578,8 +583,231 @@ class FepGatewayOrderContractTest {
   }
 
   @Test
+  void shouldPreserveExistingFepOrderIdWhenInternalStatusStaysPendingWithoutExecution() throws Exception {
+    GatewayOrder order = GatewayOrder.received(
+        INTERNAL_PENDING_FEP_ID_CL_ORD_ID,
+        "005930",
+        "BUY",
+        BigDecimal.TEN,
+        "LIMIT",
+        72000L,
+        "FIX"
+    );
+    String existingFepOrderId = "FEP-KRX-" + INTERNAL_PENDING_FEP_ID_CL_ORD_ID;
+    order.applyExecution(new GatewayExecutionOutcome(
+        existingFepOrderId,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        10L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        "exchange acknowledgement pending",
+        null,
+        null
+    ));
+    gatewayOrderRepository.save(order);
+
+    mockMvc.perform(post("/fep-internal/v1/orders/{clOrdId}/status", INTERNAL_PENDING_FEP_ID_CL_ORD_ID)
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-internal-pending-fep-id")
+            .header(CommonHeaders.X_CL_ORD_ID, INTERNAL_PENDING_FEP_ID_CL_ORD_ID)
+            .content("""
+                {
+                  "status": "PENDING",
+                  "cancelFailureMode": "TIMEOUT"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.ordStatus").value("PENDING"))
+        .andExpect(jsonPath("$.data.fepOrderId").doesNotExist());
+
+    GatewayOrder persisted = gatewayOrderRepository.findByClOrdId(INTERNAL_PENDING_FEP_ID_CL_ORD_ID).orElseThrow();
+    assertThat(persisted.getFepOrderId()).isEqualTo(existingFepOrderId);
+  }
+
+  @Test
+  void shouldPreserveExistingPendingMessageWhenInternalStatusStaysPendingWithoutMessage() throws Exception {
+    GatewayOrder order = GatewayOrder.received(
+        INTERNAL_PENDING_MESSAGE_CL_ORD_ID,
+        "005930",
+        "BUY",
+        BigDecimal.TEN,
+        "LIMIT",
+        72000L,
+        "FIX"
+    );
+    order.applyExecution(new GatewayExecutionOutcome(
+        "FEP-KRX-" + INTERNAL_PENDING_MESSAGE_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        10L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        "exchange acknowledgement pending",
+        null,
+        null
+    ));
+    gatewayOrderRepository.save(order);
+
+    mockMvc.perform(post("/fep-internal/v1/orders/{clOrdId}/status", INTERNAL_PENDING_MESSAGE_CL_ORD_ID)
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-internal-pending-message")
+            .header(CommonHeaders.X_CL_ORD_ID, INTERNAL_PENDING_MESSAGE_CL_ORD_ID)
+            .content("""
+                {
+                  "status": "PENDING"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.ordStatus").value("PENDING"))
+        .andExpect(jsonPath("$.data.message").value("exchange acknowledgement pending"));
+
+    GatewayOrder persisted = gatewayOrderRepository.findByClOrdId(INTERNAL_PENDING_MESSAGE_CL_ORD_ID).orElseThrow();
+    assertThat(persisted.getMessage()).isEqualTo("exchange acknowledgement pending");
+  }
+
+  @Test
+  void shouldResetMalformedDiagnosticsWhenInternalStatusMovesToPendingWithoutMessage() throws Exception {
+    GatewayOrder order = GatewayOrder.received(
+        INTERNAL_MALFORMED_TO_PENDING_CL_ORD_ID,
+        "005930",
+        "BUY",
+        BigDecimal.TEN,
+        "LIMIT",
+        72000L,
+        "FIX"
+    );
+    order.applyExecution(new GatewayExecutionOutcome(
+        null,
+        null,
+        FepOrdStatus.MALFORMED,
+        null,
+        null,
+        null,
+        null,
+        "FIX ExecutionReport parse failed; manual review required",
+        null,
+        "PARSE_ERROR:Tag 39 missing or invalid"
+    ));
+    gatewayOrderRepository.save(order);
+
+    mockMvc.perform(post("/fep-internal/v1/orders/{clOrdId}/status", INTERNAL_MALFORMED_TO_PENDING_CL_ORD_ID)
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-internal-reset-malformed-to-pending")
+            .header(CommonHeaders.X_CL_ORD_ID, INTERNAL_MALFORMED_TO_PENDING_CL_ORD_ID)
+            .content("""
+                {
+                  "status": "PENDING"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.ordStatus").value("PENDING"))
+        .andExpect(jsonPath("$.data.message").value("execution report is still pending"))
+        .andExpect(jsonPath("$.data.parseError").doesNotExist());
+
+    GatewayOrder persisted = gatewayOrderRepository.findByClOrdId(INTERNAL_MALFORMED_TO_PENDING_CL_ORD_ID).orElseThrow();
+    assertThat(persisted.getMessage()).isEqualTo("execution report is still pending");
+    assertThat(persisted.getParseError()).isNull();
+  }
+
+  @Test
+  void shouldPreserveMalformedDiagnosticsWhenInternalStatusStaysMalformedWithoutDiagnostics() throws Exception {
+    GatewayOrder order = GatewayOrder.received(
+        INTERNAL_PRESERVE_MALFORMED_CL_ORD_ID,
+        "005930",
+        "BUY",
+        BigDecimal.TEN,
+        "LIMIT",
+        72000L,
+        "FIX"
+    );
+    order.applyExecution(new GatewayExecutionOutcome(
+        null,
+        null,
+        FepOrdStatus.MALFORMED,
+        null,
+        null,
+        null,
+        null,
+        "FIX ExecutionReport parse failed; manual review required",
+        null,
+        "PARSE_ERROR:Tag 39 missing or invalid"
+    ));
+    gatewayOrderRepository.save(order);
+
+    mockMvc.perform(post("/fep-internal/v1/orders/{clOrdId}/status", INTERNAL_PRESERVE_MALFORMED_CL_ORD_ID)
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-internal-preserve-malformed-diagnostics")
+            .header(CommonHeaders.X_CL_ORD_ID, INTERNAL_PRESERVE_MALFORMED_CL_ORD_ID)
+            .content("""
+                {
+                  "status": "MALFORMED"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.ordStatus").value("MALFORMED"))
+        .andExpect(jsonPath("$.data.message").value("FIX ExecutionReport parse failed; manual review required"))
+        .andExpect(jsonPath("$.data.parseError").value("PARSE_ERROR:Tag 39 missing or invalid"));
+
+    GatewayOrder persisted = gatewayOrderRepository.findByClOrdId(INTERNAL_PRESERVE_MALFORMED_CL_ORD_ID).orElseThrow();
+    assertThat(persisted.getMessage()).isEqualTo("FIX ExecutionReport parse failed; manual review required");
+    assertThat(persisted.getParseError()).isEqualTo("PARSE_ERROR:Tag 39 missing or invalid");
+  }
+
+  @Test
+  void shouldDefaultMalformedDiagnosticsWhenInternalStatusMovesToMalformedWithoutDiagnostics() throws Exception {
+    GatewayOrder order = GatewayOrder.received(
+        INTERNAL_DEFAULT_MALFORMED_CL_ORD_ID,
+        "005930",
+        "BUY",
+        BigDecimal.TEN,
+        "LIMIT",
+        72000L,
+        "FIX"
+    );
+    order.applyExecution(new GatewayExecutionOutcome(
+        "FEP-KRX-" + INTERNAL_DEFAULT_MALFORMED_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        10L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        "exchange acknowledgement pending",
+        null,
+        null
+    ));
+    gatewayOrderRepository.save(order);
+
+    mockMvc.perform(post("/fep-internal/v1/orders/{clOrdId}/status", INTERNAL_DEFAULT_MALFORMED_CL_ORD_ID)
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-contract-internal-default-malformed-diagnostics")
+            .header(CommonHeaders.X_CL_ORD_ID, INTERNAL_DEFAULT_MALFORMED_CL_ORD_ID)
+            .content("""
+                {
+                  "status": "MALFORMED"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.ordStatus").value("MALFORMED"))
+        .andExpect(jsonPath("$.data.message").value("FIX ExecutionReport parse failed; manual review required"))
+        .andExpect(jsonPath("$.data.parseError").value("PARSE_ERROR:UNKNOWN"));
+
+    GatewayOrder persisted = gatewayOrderRepository.findByClOrdId(INTERNAL_DEFAULT_MALFORMED_CL_ORD_ID).orElseThrow();
+    assertThat(persisted.getMessage()).isEqualTo("FIX ExecutionReport parse failed; manual review required");
+    assertThat(persisted.getParseError()).isEqualTo("PARSE_ERROR:UNKNOWN");
+  }
+
+  @Test
   void shouldExposeRejectedStatusDiagnosticsOnStatusQuery() throws Exception {
-    gatewayOrderRepository.save(GatewayOrder.received(
+    GatewayOrder order = GatewayOrder.received(
         INTERNAL_REJECTED_CL_ORD_ID,
         "005930",
         "BUY",
@@ -587,7 +815,21 @@ class FepGatewayOrderContractTest {
         "LIMIT",
         72000L,
         "FIX"
+    );
+    String existingFepOrderId = "FEP-KRX-" + INTERNAL_REJECTED_CL_ORD_ID;
+    order.applyExecution(new GatewayExecutionOutcome(
+        existingFepOrderId,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        10L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        "awaiting external status",
+        null,
+        null
     ));
+    gatewayOrderRepository.save(order);
 
     mockMvc.perform(post("/fep-internal/v1/orders/{clOrdId}/status", INTERNAL_REJECTED_CL_ORD_ID)
             .contentType(APPLICATION_JSON)
@@ -604,6 +846,9 @@ class FepGatewayOrderContractTest {
         .andExpect(jsonPath("$.data.ordStatus").value("REJECTED"))
         .andExpect(jsonPath("$.data.execType").value("REJECTED"))
         .andExpect(jsonPath("$.data.rejectReason").value("INSUFFICIENT_FUNDS"));
+
+    GatewayOrder persisted = gatewayOrderRepository.findByClOrdId(INTERNAL_REJECTED_CL_ORD_ID).orElseThrow();
+    assertThat(persisted.getFepOrderId()).isEqualTo(existingFepOrderId);
 
     mockMvc.perform(get("/fep/v1/orders/{clOrdId}/status", INTERNAL_REJECTED_CL_ORD_ID)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
