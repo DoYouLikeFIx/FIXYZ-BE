@@ -9,9 +9,11 @@ import com.fix.channel.service.AccountPositionService;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
-import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,9 +36,10 @@ public class AccountController {
   }
 
   @GetMapping("/{accountId}/positions")
+  @Operation(summary = "Get account position")
   public ApiResponse<AccountPositionResponse> getPosition(
       @PathVariable Long accountId,
-      @Valid @ModelAttribute AccountPositionQueryRequest request,
+      @Validated @ParameterObject @ModelAttribute AccountPositionQueryRequest request,
       HttpServletRequest httpServletRequest
   ) {
     Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
@@ -46,9 +49,10 @@ public class AccountController {
   }
 
   @GetMapping("/{accountId}/orders")
+  @Operation(summary = "Get account order history")
   public ApiResponse<AccountOrderHistoryResponse> getOrderHistory(
       @PathVariable Long accountId,
-      @Valid @ModelAttribute AccountOrderHistoryQueryRequest request,
+      @Validated @ParameterObject @ModelAttribute AccountOrderHistoryQueryRequest request,
       HttpServletRequest httpServletRequest
   ) {
     Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
