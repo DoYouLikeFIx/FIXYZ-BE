@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
@@ -62,6 +63,9 @@ class CorebankExternalErrorFlowIntegrationTest {
   @Autowired
   private CircuitBreakerRegistry circuitBreakerRegistry;
 
+  @Autowired
+  private JdbcTemplate jdbcTemplate;
+
   @DynamicPropertySource
   static void registerProperties(DynamicPropertyRegistry registry) {
     registry.add("fep.gateway.base-url", WIRE_MOCK_SERVER::baseUrl);
@@ -76,8 +80,51 @@ class CorebankExternalErrorFlowIntegrationTest {
   void setUp() {
     WIRE_MOCK_SERVER.resetAll();
     orderRepository.deleteAll();
+    jdbcTemplate.update("UPDATE accounts SET status = 'ACTIVE' WHERE id = 1");
     circuitBreakerRegistry.circuitBreaker("fep-submit").reset();
     circuitBreakerRegistry.circuitBreaker("fep-status").reset();
+  }
+
+  @Test
+  void shouldBlockOrderSubmissionWhenAccountIsFrozenBeforeCallingFep() throws Exception {
+    jdbcTemplate.update("UPDATE accounts SET status = 'FROZEN' WHERE id = 1");
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-status-frozen")
+            .param("accountId", "1")
+            .param("clOrdId", "123e4567-e89b-42d3-a456-426614174290")
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-status-frozen"))
+        .andExpect(jsonPath("$.code").value("ORD-012"))
+        .andExpect(jsonPath("$.path").value("/internal/v1/orders"));
+
+    WIRE_MOCK_SERVER.verify(0, postRequestedFor(urlEqualTo("/fep/v1/orders")));
+  }
+
+  @Test
+  void shouldBlockOrderSubmissionWhenAccountIsClosedBeforeCallingFep() throws Exception {
+    jdbcTemplate.update("UPDATE accounts SET status = 'CLOSED' WHERE id = 1");
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-status-closed")
+            .param("accountId", "1")
+            .param("clOrdId", "123e4567-e89b-42d3-a456-426614174291")
+            .param("symbol", "005930")
+            .param("side", "SELL")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-status-closed"))
+        .andExpect(jsonPath("$.code").value("ORD-012"))
+        .andExpect(jsonPath("$.path").value("/internal/v1/orders"));
+
+    WIRE_MOCK_SERVER.verify(0, postRequestedFor(urlEqualTo("/fep/v1/orders")));
   }
 
   @Test

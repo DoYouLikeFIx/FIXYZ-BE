@@ -111,6 +111,7 @@ dependencies {
   implementation 'org.flywaydb:flyway-core'
   implementation 'org.flywaydb:flyway-mysql'
   implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.15'
+  implementation 'org.apache.httpcomponents.client5:httpclient5'
 
   runtimeOnly 'com.mysql:mysql-connector-j'
   runtimeOnly 'com.h2database:h2'

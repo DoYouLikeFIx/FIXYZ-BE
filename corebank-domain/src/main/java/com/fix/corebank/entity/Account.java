@@ -102,4 +102,8 @@ public class Account extends BaseTimeEntity {
   public BigDecimal getDailySellLimit() {
     return dailySellLimit;
   }
+
+  public void updateStatus(String status) {
+    this.status = status;
+  }
 }

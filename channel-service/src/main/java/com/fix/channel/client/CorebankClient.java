@@ -2,6 +2,8 @@ package com.fix.channel.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.vo.AdminAccountStatusTransitionCommand;
+import com.fix.channel.vo.AdminAccountStatusTransitionResult;
 import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
@@ -13,15 +15,15 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.web.CommonHeaders;
-import java.net.SocketTimeoutException;
 import java.math.BigDecimal;
+import java.net.SocketTimeoutException;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -36,6 +38,7 @@ public class CorebankClient {
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
   private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
   private static final String COREBANK_ACCOUNT_ORDERS_PATH = "/internal/v1/accounts/{accountId}/orders";
+  private static final String COREBANK_ACCOUNT_STATUS_PATH = "/internal/v1/accounts/{accountId}/status";
 
   private final RestClient restClient;
   private final String internalSecret;
@@ -49,7 +52,7 @@ public class CorebankClient {
   ) {
     this(
         restClientBuilder
-            .requestFactory(new SimpleClientHttpRequestFactory())
+            .requestFactory(new HttpComponentsClientHttpRequestFactory())
             .baseUrl(corebankBaseUrl)
             .build(),
         internalSecret
@@ -153,6 +156,54 @@ public class CorebankClient {
           defaultInt(responseBody.totalPages(), 0),
           defaultInt(responseBody.number(), command.getPage()),
           defaultInt(responseBody.size(), command.getSize())
+      );
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public AdminAccountStatusTransitionResult transitionAccountStatus(
+      AdminAccountStatusTransitionCommand command,
+      String correlationId
+  ) {
+    try {
+      CorebankApiResponse<CorebankAccountStatusTransitionResponse> response = restClient.patch()
+          .uri(COREBANK_ACCOUNT_STATUS_PATH, command.getAccountId())
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(new CorebankAccountStatusTransitionRequest(
+              command.getMemberId(),
+              command.getStatus(),
+              command.getReason(),
+              command.getActor(),
+              command.getContext()
+          ))
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankAccountStatusTransitionResponse responseBody = extractBody(response);
+      String previousStatus = responseBody.previousStatus();
+      String newStatus = responseBody.newStatus();
+      if (previousStatus == null || newStatus == null) {
+        throw new BusinessException(
+            ErrorCode.INTERNAL_ERROR,
+            "corebank response missing previousStatus or newStatus"
+        );
+      }
+
+      return AdminAccountStatusTransitionResult.of(
+          defaultLong(responseBody.accountId(), command.getAccountId()),
+          defaultLong(responseBody.memberId(), command.getMemberId()),
+          previousStatus,
+          newStatus,
+          responseBody.changed(),
+          responseBody.eventId(),
+          firstNonNull(responseBody.reason(), command.getReason()),
+          firstNonNull(responseBody.actor(), command.getActor()),
+          firstNonNull(responseBody.context(), command.getContext()),
+          responseBody.asOf()
       );
     } catch (RestClientException ex) {
       throw translateFailure(ex);
@@ -343,6 +394,31 @@ public class CorebankClient {
       String status,
       String clOrdId,
       Instant createdAt
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankAccountStatusTransitionRequest(
+      Long memberId,
+      String status,
+      String reason,
+      String actor,
+      String context
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankAccountStatusTransitionResponse(
+      Long accountId,
+      Long memberId,
+      String previousStatus,
+      String newStatus,
+      boolean changed,
+      Long eventId,
+      String reason,
+      String actor,
+      String context,
+      Instant asOf
   ) {
   }
 

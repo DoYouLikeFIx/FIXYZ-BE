@@ -23,14 +23,20 @@ import com.fix.corebank.entity.LedgerEntryRef;
 import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.AccountRepository;
+import com.fix.corebank.repository.AccountStatusEventRepository;
 import com.fix.corebank.repository.ExecutionRepository;
 import com.fix.corebank.repository.JournalEntryRepository;
 import com.fix.corebank.repository.LedgerEntryRefRepository;
 import com.fix.corebank.repository.LedgerEntryRepository;
 import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
+import com.fix.corebank.entity.AccountStatusEvent;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
+import com.fix.corebank.vo.AccountStatusQueryCommand;
+import com.fix.corebank.vo.AccountStatusResult;
+import com.fix.corebank.vo.AccountStatusTransitionCommand;
+import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
@@ -71,6 +77,9 @@ class CorebankOrderServiceTest {
   private OrderRepository orderRepository;
 
   @Mock
+  private AccountStatusEventRepository accountStatusEventRepository;
+
+  @Mock
   private PositionRepository positionRepository;
 
   @Mock
@@ -94,6 +103,7 @@ class CorebankOrderServiceTest {
     fepClient = new StubFepClient();
     corebankOrderPersistenceService = new CorebankOrderPersistenceService(
         accountRepository,
+        accountStatusEventRepository,
         orderRepository,
         positionRepository,
         executionRepository,
@@ -191,6 +201,115 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldReturnActiveAccountStatusWhenOwnershipMatches() {
+    Account account = withUpdatedAt(persistedAccount(), Instant.parse("2026-03-01T10:00:00Z"));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+
+    AccountStatusResult result = corebankOrderService.getAccountStatus(
+        AccountStatusQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID)
+    );
+
+    assertThat(result.getAccountId()).isEqualTo(ACCOUNT_ID);
+    assertThat(result.getMemberId()).isEqualTo(OWNER_MEMBER_ID);
+    assertThat(result.getAccountNumber()).isEqualTo("ACC-1001");
+    assertThat(result.getStatus()).isEqualTo("ACTIVE");
+    assertThat(result.isOrderEligible()).isTrue();
+    assertThat(result.getDenialCode()).isNull();
+    assertThat(result.getAsOf()).isEqualTo(Instant.parse("2026-03-01T10:00:00Z"));
+  }
+
+  @Test
+  void shouldReturnOrd012WhenAccountStatusBlocksOrderEligibility() {
+    Account frozenAccount = Account.of(
+        "ACC-1002",
+        OWNER_MEMBER_ID,
+        "FROZEN",
+        "KRW",
+        new BigDecimal("100000000.0000"),
+        new BigDecimal("500.0000")
+    );
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(withId(frozenAccount, ACCOUNT_ID)));
+
+    AccountStatusResult result = corebankOrderService.getAccountStatus(
+        AccountStatusQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID)
+    );
+
+    assertThat(result.getStatus()).isEqualTo("FROZEN");
+    assertThat(result.isOrderEligible()).isFalse();
+    assertThat(result.getDenialCode()).isEqualTo("ORD-012");
+  }
+
+  @Test
+  void shouldRejectAccountStatusLookupWhenOwnershipMismatches() {
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));
+
+    assertThatThrownBy(() -> corebankOrderService.getAccountStatus(
+        AccountStatusQueryCommand.of(ACCOUNT_ID, OTHER_MEMBER_ID)
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP));
+  }
+
+  @Test
+  void shouldTransitionAccountStatusAndEmitEvent() {
+    Account account = withUpdatedAt(persistedAccountWithStatus("ACTIVE"), Instant.parse("2026-03-01T10:02:00Z"));
+    withId(account, ACCOUNT_ID);
+
+    when(accountRepository.findByIdForUpdate(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(accountStatusEventRepository.save(any(AccountStatusEvent.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7001L));
+
+    AccountStatusTransitionResult result = corebankOrderService.transitionAccountStatus(
+        AccountStatusTransitionCommand.of(
+            ACCOUNT_ID,
+            OWNER_MEMBER_ID,
+            "FROZEN",
+            "risk-control",
+            "ops-admin",
+            "ticket=FIX-43",
+            "trace-status-transition"
+        )
+    );
+
+    assertThat(result.getPreviousStatus()).isEqualTo("ACTIVE");
+    assertThat(result.getNewStatus()).isEqualTo("FROZEN");
+    assertThat(result.isChanged()).isTrue();
+    assertThat(result.getEventId()).isEqualTo(7001L);
+    assertThat(result.getReason()).isEqualTo("risk-control");
+    assertThat(result.getActor()).isEqualTo("ops-admin");
+    assertThat(account.getStatus()).isEqualTo("FROZEN");
+    verify(accountRepository, times(1)).flush();
+    verify(accountStatusEventRepository, times(1)).save(any(AccountStatusEvent.class));
+  }
+
+  @Test
+  void shouldNotEmitEventWhenStatusTransitionIsNoop() {
+    Account account = withUpdatedAt(persistedAccountWithStatus("ACTIVE"), Instant.parse("2026-03-01T10:02:00Z"));
+    withId(account, ACCOUNT_ID);
+    when(accountRepository.findByIdForUpdate(ACCOUNT_ID)).thenReturn(Optional.of(account));
+
+    AccountStatusTransitionResult result = corebankOrderService.transitionAccountStatus(
+        AccountStatusTransitionCommand.of(
+            ACCOUNT_ID,
+            OWNER_MEMBER_ID,
+            "ACTIVE",
+            "manual-check",
+            "ops-admin",
+            null,
+            "trace-status-noop"
+        )
+    );
+
+    assertThat(result.getPreviousStatus()).isEqualTo("ACTIVE");
+    assertThat(result.getNewStatus()).isEqualTo("ACTIVE");
+    assertThat(result.isChanged()).isFalse();
+    assertThat(result.getEventId()).isNull();
+    verify(accountRepository, times(0)).flush();
+    verify(accountStatusEventRepository, times(0)).save(any(AccountStatusEvent.class));
+  }
+
+  @Test
   void shouldReturnOrderHistoryWhenOwnershipMatches() {
     Instant newest = Instant.parse("2026-03-01T10:02:00Z");
     Instant older = Instant.parse("2026-03-01T10:01:00Z");
@@ -250,6 +369,50 @@ class CorebankOrderServiceTest {
         .isInstanceOf(BusinessException.class)
         .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
             .isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP));
+  }
+
+  @Test
+  void shouldRejectOrderCreationWhenAccountIsFrozen() {
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccountWithStatus("FROZEN")));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED);
+          assertThat(businessException.getMessage()).contains("FROZEN");
+        });
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectOrderCreationWhenAccountIsClosed() {
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccountWithStatus("CLOSED")));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED);
+          assertThat(businessException.getMessage()).contains("CLOSED");
+        });
+    assertThat(fepClient.submitCalls()).isZero();
   }
 
   @Test
@@ -750,6 +913,10 @@ class CorebankOrderServiceTest {
         String.class,
         String.class
     );
+    Method transitionAccountStatus = CorebankOrderPersistenceService.class.getMethod(
+        "transitionAccountStatus",
+        AccountStatusTransitionCommand.class
+    );
 
     assertThat(createOrder.getAnnotation(Transactional.class)).isNull();
     assertThat(requeryOrder.getAnnotation(Transactional.class)).isNull();
@@ -757,17 +924,23 @@ class CorebankOrderServiceTest {
     assertThat(getRequiredOrder.getAnnotation(Transactional.class)).isNotNull();
     assertThat(getRequiredOrder.getAnnotation(Transactional.class).readOnly()).isTrue();
     assertThat(updateOrderState.getAnnotation(Transactional.class)).isNotNull();
+    assertThat(transitionAccountStatus.getAnnotation(Transactional.class)).isNotNull();
   }
 
   private Account persistedAccount() {
-    Account account = Account.of(
+    Account account = persistedAccountWithStatus("ACTIVE");
+    return withId(account, ACCOUNT_ID);
+  }
+
+  private Account persistedAccountWithStatus(String status) {
+    return Account.of(
         "ACC-1001",
         OWNER_MEMBER_ID,
+        status,
         "KRW",
         new BigDecimal("100000000.0000"),
         new BigDecimal("500.0000")
     );
-    return withId(account, ACCOUNT_ID);
   }
 
   private Order persistedOrder(Order order, Long id) {

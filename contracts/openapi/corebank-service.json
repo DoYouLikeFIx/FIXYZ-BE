@@ -109,6 +109,92 @@
         }
       }
     },
+    "/internal/v1/accounts/{accountId}/status": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "accountStatus",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalAccountStatusRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalAccountStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "transitionAccountStatus",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalAccountStatusTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalAccountStatusTransitionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/ping": {
       "get": {
         "tags": [
@@ -478,6 +564,98 @@
           }
         }
       },
+      "InternalAccountStatusTransitionRequest": {
+        "required": [
+          "actor",
+          "memberId",
+          "reason",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "minLength": 1,
+            "pattern": "ACTIVE|FROZEN|CLOSED",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "actor": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "context": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseInternalAccountStatusTransitionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalAccountStatusTransitionResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalAccountStatusTransitionResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "previousStatus": {
+            "type": "string"
+          },
+          "newStatus": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "eventId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "InternalPortfolioRequest": {
         "required": [
           "accountId",
@@ -534,6 +712,65 @@
           },
           "todaySellQuantity": {
             "type": "number"
+          }
+        }
+      },
+      "InternalAccountStatusRequest": {
+        "required": [
+          "memberId"
+        ],
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseInternalAccountStatusResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalAccountStatusResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalAccountStatusResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "orderEligible": {
+            "type": "boolean"
+          },
+          "denialCode": {
+            "type": "string"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

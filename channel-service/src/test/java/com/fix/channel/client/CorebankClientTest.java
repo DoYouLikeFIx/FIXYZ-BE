@@ -4,10 +4,14 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.patch;
+import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fix.channel.vo.AdminAccountStatusTransitionCommand;
+import com.fix.channel.vo.AdminAccountStatusTransitionResult;
 import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
@@ -232,11 +236,88 @@ class CorebankClientTest {
         .isEqualTo(ErrorCode.CORE_DEPENDENCY_UNAVAILABLE);
   }
 
+  @Test
+  void shouldMapAccountStatusTransitionResponse() {
+    wireMockServer.stubFor(patch(urlPathEqualTo("/internal/v1/accounts/1/status"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "previousStatus": "ACTIVE",
+                    "newStatus": "FROZEN",
+                    "changed": true,
+                    "eventId": 9001,
+                    "reason": "risk-control",
+                    "actor": "ops-admin",
+                    "context": "ticket=FIX-43",
+                    "asOf": "2026-03-10T00:00:00Z"
+                  }
+                }
+                """)));
+
+    AdminAccountStatusTransitionResult result = corebankClient.transitionAccountStatus(
+        statusTransitionCommand("FROZEN"),
+        "trace-status-transition"
+    );
+
+    assertThat(result.getAccountId()).isEqualTo(1L);
+    assertThat(result.getMemberId()).isEqualTo(301L);
+    assertThat(result.getPreviousStatus()).isEqualTo("ACTIVE");
+    assertThat(result.getNewStatus()).isEqualTo("FROZEN");
+    assertThat(result.isChanged()).isTrue();
+    assertThat(result.getEventId()).isEqualTo(9001L);
+    assertThat(result.getReason()).isEqualTo("risk-control");
+    assertThat(result.getActor()).isEqualTo("ops-admin");
+    assertThat(result.getContext()).isEqualTo("ticket=FIX-43");
+    assertThat(result.getAsOf()).isEqualTo(Instant.parse("2026-03-10T00:00:00Z"));
+
+    wireMockServer.verify(patchRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/status"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-status-transition")));
+  }
+
+  @Test
+  void shouldMapStatusTransition403ToOwnershipError() {
+    wireMockServer.stubFor(patch(urlPathEqualTo("/internal/v1/accounts/1/status"))
+        .willReturn(aResponse()
+            .withStatus(403)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "AUTH-005",
+                  "message": "forbidden account ownership",
+                  "path": "/internal/v1/accounts/1/status",
+                  "correlationId": "trace-core-auth-005",
+                  "timestamp": "2026-03-10T00:00:00Z"
+                }
+                """)));
+
+    assertThatThrownBy(() -> corebankClient.transitionAccountStatus(
+        statusTransitionCommand("FROZEN"),
+        "trace-channel-auth-005"
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP);
+          assertThat(businessException.getMessage()).isEqualTo("forbidden account ownership");
+        });
+  }
+
   private AccountPositionQueryCommand command() {
     return AccountPositionQueryCommand.of(ACCOUNT_ID, MEMBER_ID, SYMBOL);
   }
 
   private AccountOrderHistoryQueryCommand historyCommand() {
     return AccountOrderHistoryQueryCommand.of(ACCOUNT_ID, MEMBER_ID, PAGE, SIZE);
+  }
+
+  private AdminAccountStatusTransitionCommand statusTransitionCommand(String status) {
+    return AdminAccountStatusTransitionCommand.of(ACCOUNT_ID, MEMBER_ID, status, "risk-control", "ops-admin", "ticket=FIX-43");
   }
 }
