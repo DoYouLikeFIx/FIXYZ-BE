@@ -2,11 +2,17 @@ package com.fix.channel.service;
 
 import java.time.Instant;
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(
+    value = "order.session.expiry-reconciliation.enabled",
+    havingValue = "true",
+    matchIfMissing = true
+)
 public class OrderSessionExpiryScheduler {
 
   private final OrderSessionPersistenceService orderSessionPersistenceService;
