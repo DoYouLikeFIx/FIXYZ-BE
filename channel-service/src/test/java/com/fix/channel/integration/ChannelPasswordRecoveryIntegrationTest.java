@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.Member;
 import com.fix.channel.entity.PasswordResetToken;
+import com.fix.channel.entity.PasswordResetTokenTerminalReason;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.PasswordResetTokenRepository;
 import com.fix.channel.service.PasswordRecoveryMailDispatcher;
@@ -189,6 +190,12 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
     List<PasswordResetToken> tokens = passwordResetTokenRepository.findAll();
     assertThat(tokens).hasSize(2);
     assertThat(tokens.stream().filter(token -> Byte.valueOf((byte) 1).equals(token.getActiveSlot()))).hasSize(1);
+    PasswordResetToken supersededToken = tokens.stream()
+        .filter(token -> token.getTokenHash() != null && token.getConsumedAt() == null && token.getActiveSlot() == null)
+        .findFirst()
+        .orElseThrow();
+    assertThat(supersededToken.getTerminalReason()).isEqualTo(PasswordResetTokenTerminalReason.SUPERSEDED);
+    assertThat(supersededToken.getTerminalizedAt()).isNotNull();
 
     mockMvc.perform(post("/api/v1/auth/password/reset")
             .with(csrf())
@@ -243,6 +250,8 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
     assertThat(tokens).hasSize(1);
     assertThat(tokens.getFirst().getTokenHash()).isNotEqualTo(rawToken);
     assertThat(tokens.getFirst().getConsumedAt()).isNotNull();
+    assertThat(tokens.getFirst().getTerminalReason()).isEqualTo(PasswordResetTokenTerminalReason.CONSUMED);
+    assertThat(tokens.getFirst().getTerminalizedAt()).isEqualTo(tokens.getFirst().getConsumedAt());
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))

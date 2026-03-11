@@ -3,6 +3,8 @@ package com.fix.channel.entity;
 import com.fix.common.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -47,6 +49,13 @@ public class PasswordResetToken extends BaseTimeEntity {
   @Column(name = "consumed_at")
   private Instant consumedAt;
 
+  @Enumerated(EnumType.STRING)
+  @Column(name = "terminal_reason", length = 16)
+  private PasswordResetTokenTerminalReason terminalReason;
+
+  @Column(name = "terminalized_at")
+  private Instant terminalizedAt;
+
   @Column(name = "request_ip", length = 45)
   private String requestIp;
 
@@ -64,6 +73,8 @@ public class PasswordResetToken extends BaseTimeEntity {
       Instant issuedAt,
       Instant expiresAt,
       Instant consumedAt,
+      PasswordResetTokenTerminalReason terminalReason,
+      Instant terminalizedAt,
       String requestIp,
       String requestUserAgentHash
   ) {
@@ -74,6 +85,8 @@ public class PasswordResetToken extends BaseTimeEntity {
     this.issuedAt = issuedAt;
     this.expiresAt = expiresAt;
     this.consumedAt = consumedAt;
+    this.terminalReason = terminalReason;
+    this.terminalizedAt = terminalizedAt;
     this.requestIp = requestIp;
     this.requestUserAgentHash = requestUserAgentHash;
   }
@@ -94,6 +107,8 @@ public class PasswordResetToken extends BaseTimeEntity {
         ACTIVE_SLOT,
         issuedAt,
         expiresAt,
+        null,
+        null,
         null,
         requestIp,
         requestUserAgentHash
@@ -132,6 +147,14 @@ public class PasswordResetToken extends BaseTimeEntity {
     return consumedAt;
   }
 
+  public PasswordResetTokenTerminalReason getTerminalReason() {
+    return terminalReason;
+  }
+
+  public Instant getTerminalizedAt() {
+    return terminalizedAt;
+  }
+
   public String getRequestIp() {
     return requestIp;
   }
@@ -148,20 +171,36 @@ public class PasswordResetToken extends BaseTimeEntity {
     return Byte.valueOf(ACTIVE_SLOT).equals(activeSlot);
   }
 
-  public boolean isExpiredAt(Instant referenceTime) {
-    return expiresAt.isBefore(referenceTime) || expiresAt.equals(referenceTime);
+  public boolean isTerminal() {
+    return activeSlot == null && terminalReason != null && terminalizedAt != null;
   }
 
-  public void deactivate() {
-    this.activeSlot = null;
+  public boolean isExpiredAt(Instant referenceTime) {
+    return expiresAt.isBefore(referenceTime) || expiresAt.equals(referenceTime);
   }
 
   public void expireAt(Instant expiresAt) {
     this.expiresAt = expiresAt;
   }
 
+  public void supersede(Instant terminalizedAt) {
+    this.consumedAt = null;
+    terminalize(PasswordResetTokenTerminalReason.SUPERSEDED, terminalizedAt);
+  }
+
   public void consume(Instant consumedAt) {
     this.consumedAt = consumedAt;
+    terminalize(PasswordResetTokenTerminalReason.CONSUMED, consumedAt);
+  }
+
+  public void expire(Instant terminalizedAt) {
+    this.consumedAt = null;
+    terminalize(PasswordResetTokenTerminalReason.EXPIRED, terminalizedAt);
+  }
+
+  private void terminalize(PasswordResetTokenTerminalReason terminalReason, Instant terminalizedAt) {
     this.activeSlot = null;
+    this.terminalReason = terminalReason;
+    this.terminalizedAt = terminalizedAt;
   }
 }

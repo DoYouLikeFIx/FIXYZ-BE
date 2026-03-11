@@ -11,6 +11,7 @@ public class PasswordRecoveryProperties {
   private final Reset reset = new Reset();
   private final Token token = new Token();
   private final Timing timing = new Timing();
+  private final Cleanup cleanup = new Cleanup();
 
   public Forgot getForgot() {
     return forgot;
@@ -30,6 +31,10 @@ public class PasswordRecoveryProperties {
 
   public Timing getTiming() {
     return timing;
+  }
+
+  public Cleanup getCleanup() {
+    return cleanup;
   }
 
   public static class Forgot {
@@ -184,6 +189,63 @@ public class PasswordRecoveryProperties {
 
     public Delay getReset() {
       return reset;
+    }
+  }
+
+  public static class Cleanup {
+    private Duration cadence = Duration.ofMinutes(15);
+    private Duration retention = Duration.ofDays(30);
+    private int batchSize = 500;
+    private int maxBatchesPerRun = 8;
+    private int maxRunSeconds = 20;
+    private long backlogAlertThreshold = 10_000L;
+
+    public Duration getCadence() {
+      return cadence;
+    }
+
+    public void setCadence(Duration cadence) {
+      this.cadence = cadence;
+    }
+
+    public Duration getRetention() {
+      return retention;
+    }
+
+    public void setRetention(Duration retention) {
+      this.retention = retention;
+    }
+
+    public int getBatchSize() {
+      return batchSize;
+    }
+
+    public void setBatchSize(int batchSize) {
+      this.batchSize = batchSize;
+    }
+
+    public int getMaxBatchesPerRun() {
+      return maxBatchesPerRun;
+    }
+
+    public void setMaxBatchesPerRun(int maxBatchesPerRun) {
+      this.maxBatchesPerRun = maxBatchesPerRun;
+    }
+
+    public int getMaxRunSeconds() {
+      return maxRunSeconds;
+    }
+
+    public void setMaxRunSeconds(int maxRunSeconds) {
+      this.maxRunSeconds = maxRunSeconds;
+    }
+
+    public long getBacklogAlertThreshold() {
+      return backlogAlertThreshold;
+    }
+
+    public void setBacklogAlertThreshold(long backlogAlertThreshold) {
+      this.backlogAlertThreshold = backlogAlertThreshold;
     }
   }
 

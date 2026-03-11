@@ -237,13 +237,13 @@ public class PasswordRecoveryService {
   }
 
   private void issueResetToken(Member member, String clientIp, String userAgent, String correlationId) {
+    Instant issuedAt = Instant.now();
     passwordResetTokenRepository.findActiveByMemberIdForUpdate(member.getId())
-        .forEach(PasswordResetToken::deactivate);
+        .forEach(token -> token.supersede(issuedAt));
     passwordResetTokenRepository.flush();
 
     String rawToken = tokenService.generateRawResetToken();
     PasswordRecoveryTokenService.TokenHash currentHash = tokenService.candidateCurrentHash(rawToken);
-    Instant issuedAt = Instant.now();
     Instant expiresAt = issuedAt.plus(properties.getReset().getTokenTtl());
 
     passwordResetTokenRepository.save(PasswordResetToken.issueActive(
