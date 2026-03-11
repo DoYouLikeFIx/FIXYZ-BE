@@ -488,7 +488,12 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     assertThat(sessionCookie).isNotNull();
     assertThat(sessionCookie.getValue()).isNotBlank();
 
-    return new AuthSession(sessionCookie.getValue(), fetchCsrfToken(sessionCookie.getValue()));
+    String csrfToken = fetchCsrfToken(sessionCookie.getValue());
+
+    // Keep assertions focused on order-session side effects, not auth bootstrap noise.
+    auditLogRepository.deleteAll();
+
+    return new AuthSession(sessionCookie.getValue(), csrfToken);
   }
 
   private String fetchCsrfToken(String sessionId) throws Exception {
