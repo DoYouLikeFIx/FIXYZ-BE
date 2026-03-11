@@ -2,6 +2,7 @@ package com.fix.channel.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -15,7 +16,6 @@ import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
-import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -103,7 +103,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     String createdExpiresAt = created.path("data").path("expiresAt").asText();
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
+            .with(authenticatedUser(authSession))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId())
             .param("orderSessionId", orderSessionId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
@@ -145,10 +146,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(authSession))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174264", "ORD-REF-CHANGED"))
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
-            .header("X-CSRF-TOKEN", authSession.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("ORD_001"))
         .andExpect(jsonPath("$.message").value("clOrdId replay payload mismatch"))
@@ -170,7 +171,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     String orderSessionId = created.path("data").path("orderSessionId").asText();
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(new Cookie("SESSION", intruder.sessionId()))
+            .with(authenticatedUser(intruder))
+            .sessionAttr("AUTH_MEMBER_ID", intruder.memberId())
             .param("orderSessionId", orderSessionId))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
@@ -193,10 +195,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(intruder))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174262", "ORD-REF-003B"))
-            .cookie(new Cookie("SESSION", intruder.sessionId()))
-            .header("X-CSRF-TOKEN", intruder.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", intruder.memberId()))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
@@ -216,7 +218,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
+            .with(authenticatedUser(authSession))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId())
             .param("orderSessionId", orderSessionId))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
@@ -241,10 +244,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(authSession))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174263", "ORD-REF-004B"))
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
-            .header("X-CSRF-TOKEN", authSession.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
         .andExpect(jsonPath("$.message").value("Order session not found."))
@@ -265,10 +268,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(authSession))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174269", "ORD-REF-CHANGED"))
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
-            .header("X-CSRF-TOKEN", authSession.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
         .andExpect(jsonPath("$.message").value("Order session not found."))
@@ -292,7 +295,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(new Cookie("SESSION", intruder.sessionId()))
+            .with(authenticatedUser(intruder))
+            .sessionAttr("AUTH_MEMBER_ID", intruder.memberId())
             .param("orderSessionId", orderSessionId))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
@@ -318,10 +322,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(intruder))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174271", "ORD-REF-004E"))
-            .cookie(new Cookie("SESSION", intruder.sessionId()))
-            .header("X-CSRF-TOKEN", intruder.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", intruder.memberId()))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
@@ -346,7 +350,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     AuthSession authSession = login("validation.user@fixyz.com", "Abcd1234!");
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(new Cookie("SESSION", authSession.sessionId())))
+            .with(authenticatedUser(authSession))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_001"))
         .andExpect(jsonPath("$.message").value("exactly one of orderSessionId or clOrdId is required"));
@@ -361,7 +366,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     AuthSession authSession = login("dual.user@fixyz.com", "Abcd1234!");
 
     mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
+            .with(authenticatedUser(authSession))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId())
             .param("orderSessionId", "123e4567-e89b-42d3-a456-426614174266")
             .param("clOrdId", "123e4567-e89b-42d3-a456-426614174267"))
         .andExpect(status().isBadRequest())
@@ -380,10 +386,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(authSession))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174268", oversizedOrderRef))
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
-            .header("X-CSRF-TOKEN", authSession.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_001"))
         .andExpect(jsonPath("$.message").value("size must be between 1 and 64"));
@@ -403,10 +409,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(authSession))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174299", "ORD-REF-RL-10"))
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
-            .header("X-CSRF-TOKEN", authSession.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("RATE_001"))
         .andExpect(jsonPath("$.message").value("rate limit exceeded"))
@@ -441,10 +447,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(authSession))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174399", "ORD-REF-RL-OVER"))
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
-            .header("X-CSRF-TOKEN", authSession.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("RATE_001"));
   }
@@ -461,10 +467,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   ) throws Exception {
     MvcResult result = mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf().asHeader())
+            .with(authenticatedUser(authSession))
             .contentType(MediaType.APPLICATION_JSON)
             .content(orderSessionPayload(clOrdId, orderRef))
-            .cookie(new Cookie("SESSION", authSession.sessionId()))
-            .header("X-CSRF-TOKEN", authSession.csrfToken()))
+            .sessionAttr("AUTH_MEMBER_ID", authSession.memberId()))
         .andExpect(expectedStatus)
         .andExpect(jsonPath("$.success").value(true))
         .andReturn();
@@ -477,33 +483,16 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   private AuthSession login(String email, String password) throws Exception {
-    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
-            .with(csrf())
-            .param("email", email)
-            .param("password", password))
-        .andExpect(status().isOk())
-        .andReturn();
-
-    Cookie sessionCookie = loginResult.getResponse().getCookie("SESSION");
-    assertThat(sessionCookie).isNotNull();
-    assertThat(sessionCookie.getValue()).isNotBlank();
-    String csrfToken = fetchCsrfToken(sessionCookie.getValue());
-    return new AuthSession(sessionCookie.getValue(), csrfToken);
+    Member member = memberRepository.findByEmail(email)
+        .orElseThrow(() -> new AssertionError("member not found for email " + email));
+    return new AuthSession(member.getId(), email);
   }
 
-  private String fetchCsrfToken(String sessionId) throws Exception {
-    MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf")
-            .cookie(new Cookie("SESSION", sessionId)))
-        .andExpect(status().isOk())
-        .andReturn();
-
-    JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
-    String csrfToken = root.path("data").path("token").asText();
-    assertThat(csrfToken).isNotBlank();
-    return csrfToken;
+  private org.springframework.test.web.servlet.request.RequestPostProcessor authenticatedUser(AuthSession authSession) {
+    return user(authSession.email()).roles("USER");
   }
 
-  private record AuthSession(String sessionId, String csrfToken) {
+  private record AuthSession(Long memberId, String email) {
   }
 
   private record OrderSessionPayload(String clOrdId, String orderRef) {
