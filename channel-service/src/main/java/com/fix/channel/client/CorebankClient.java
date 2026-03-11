@@ -2,13 +2,17 @@ package com.fix.channel.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.vo.AccountPositionQueryCommand;
+import com.fix.channel.vo.AccountPositionResult;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.web.CommonHeaders;
+import java.net.SocketTimeoutException;
 import java.math.BigDecimal;
+import java.time.Instant;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -20,11 +24,13 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 
 @Component
 public class CorebankClient {
 
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
+  private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
 
   private final RestClient restClient;
   private final String internalSecret;
@@ -76,7 +82,47 @@ public class CorebankClient {
     }
   }
 
-  private CorebankOrderResponse extractBody(CorebankApiResponse<CorebankOrderResponse> response) {
+  public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command, String correlationId) {
+    try {
+      CorebankApiResponse<CorebankAccountPositionResponse> response = restClient.get()
+          .uri(uriBuilder -> uriBuilder
+              .path(COREBANK_ACCOUNT_POSITION_PATH)
+              .queryParam("memberId", command.getMemberId())
+              .queryParam("symbol", command.getSymbol())
+              .build(command.getAccountId()))
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankAccountPositionResponse responseBody = extractBody(response);
+      BigDecimal quantity = defaultDecimal(responseBody.quantity(), BigDecimal.ZERO);
+      BigDecimal availableQuantity = defaultDecimal(
+          firstNonNull(responseBody.availableQuantity(), responseBody.availableQty()),
+          quantity
+      );
+      BigDecimal balance = defaultDecimal(
+          firstNonNull(responseBody.balance(), responseBody.availableBalance()),
+          BigDecimal.ZERO
+      );
+
+      return AccountPositionResult.of(
+          firstNonNull(responseBody.accountId(), command.getAccountId()),
+          firstNonNull(responseBody.memberId(), command.getMemberId()),
+          defaultIfBlank(responseBody.symbol(), command.getSymbol()),
+          quantity,
+          availableQuantity,
+          balance,
+          responseBody.currency(),
+          responseBody.asOf()
+      );
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  private <T> T extractBody(CorebankApiResponse<T> response) {
     if (response == null || !response.success() || response.data() == null) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "empty corebank response");
     }
@@ -97,15 +143,50 @@ public class CorebankClient {
                 restClientResponseException,
                 errorResponse.metadata()
             ))
-            .orElseGet(() -> new BusinessException(
-                ErrorCode.INTERNAL_ERROR,
-                defaultIfBlank(errorResponse.message(), ErrorCode.INTERNAL_ERROR.defaultMessage()),
-                restClientResponseException,
-                errorResponse.metadata()
-            ));
+            .orElseGet(() -> {
+              ErrorCode errorCode = resolveDependencyErrorCode(restClientResponseException);
+              return new BusinessException(errorCode, errorCode.defaultMessage(), restClientResponseException);
+            });
       }
+      ErrorCode errorCode = resolveDependencyErrorCode(restClientResponseException);
+      return new BusinessException(errorCode, errorCode.defaultMessage(), restClientResponseException);
+    }
+    if (throwable instanceof ResourceAccessException resourceAccessException) {
+      ErrorCode errorCode = isTimeout(resourceAccessException)
+          ? ErrorCode.CORE_DEPENDENCY_TIMEOUT
+          : ErrorCode.CORE_DEPENDENCY_UNAVAILABLE;
+      return new BusinessException(errorCode, errorCode.defaultMessage(), resourceAccessException);
+    }
+    if (throwable instanceof RestClientException restClientException) {
+      return new BusinessException(
+          ErrorCode.CORE_DEPENDENCY_UNAVAILABLE,
+          ErrorCode.CORE_DEPENDENCY_UNAVAILABLE.defaultMessage(),
+          restClientException
+      );
     }
     return new BusinessException(ErrorCode.INTERNAL_ERROR, ErrorCode.INTERNAL_ERROR.defaultMessage(), throwable);
+  }
+
+  private ErrorCode resolveDependencyErrorCode(RestClientResponseException exception) {
+    int statusCode = exception.getStatusCode().value();
+    if (statusCode == 504) {
+      return ErrorCode.CORE_DEPENDENCY_TIMEOUT;
+    }
+    if (statusCode == 503) {
+      return ErrorCode.CORE_DEPENDENCY_UNAVAILABLE;
+    }
+    return ErrorCode.INTERNAL_ERROR;
+  }
+
+  private boolean isTimeout(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof SocketTimeoutException) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
   }
 
   private CorebankApiErrorResponse parseError(String responseBody) {
@@ -137,6 +218,14 @@ public class CorebankClient {
     return value;
   }
 
+  private <T> T firstNonNull(T value, T fallback) {
+    return value != null ? value : fallback;
+  }
+
+  private BigDecimal defaultDecimal(BigDecimal value, BigDecimal defaultValue) {
+    return value != null ? value : defaultValue;
+  }
+
   @JsonIgnoreProperties(ignoreUnknown = true)
   private record CorebankApiResponse<T>(
       boolean success,
@@ -151,6 +240,21 @@ public class CorebankClient {
       String status,
       boolean idempotent,
       BigDecimal orderQuantity
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankAccountPositionResponse(
+      Long accountId,
+      Long memberId,
+      String symbol,
+      BigDecimal quantity,
+      BigDecimal availableQuantity,
+      BigDecimal availableQty,
+      BigDecimal balance,
+      BigDecimal availableBalance,
+      String currency,
+      Instant asOf
   ) {
   }
 

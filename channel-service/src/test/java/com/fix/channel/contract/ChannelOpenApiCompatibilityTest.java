@@ -23,9 +23,12 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode loginResponse = contract.path("components").path("schemas").path("ApiResponseAuthLoginResponse");
     JsonNode orderResponse = contract.path("components").path("schemas").path("ApiResponseOrderResponse");
     JsonNode sessionResponse = contract.path("components").path("schemas").path("ApiResponseOrderSessionResponse");
+    JsonNode accountPositionResponse = contract.path("components").path("schemas")
+        .path("ApiResponseAccountPositionResponse");
+    JsonNode accountPositionSchema = contract.path("components").path("schemas").path("AccountPositionResponse");
 
     assertThat(fieldNames(paths))
-        .contains("/api/v1/auth/login", "/api/v1/orders", "/api/v1/orders/sessions");
+        .contains("/api/v1/auth/login", "/api/v1/orders", "/api/v1/orders/sessions", "/api/v1/accounts/{accountId}/positions");
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
         .contains(
@@ -44,6 +47,10 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(sessionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(fieldNames(accountPositionSchema.path("properties")))
+        .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
   }
 
   private Path openApiContract() {

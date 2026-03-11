@@ -1,7 +1,9 @@
 package com.fix.channel.controller;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -131,5 +133,141 @@ class ChannelErrorContractTest {
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-timeout")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldForwardAuthMemberIdAndExposeBalanceAliasesForAccountPosition() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "005930",
+                    "quantity": 120.0000,
+                    "availableQuantity": 120.0000,
+                    "availableQty": 120.0000,
+                    "balance": 1000000.0000,
+                    "availableBalance": 1000000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z"
+                  }
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-position")
+            .param("symbol", "005930"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-position"))
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.memberId").value(301L))
+        .andExpect(jsonPath("$.data.symbol").value("005930"))
+        .andExpect(jsonPath("$.data.availableQuantity").value(120.0))
+        .andExpect(jsonPath("$.data.availableQty").value(120.0))
+        .andExpect(jsonPath("$.data.balance").value(1000000.0))
+        .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
+        .andExpect(jsonPath("$.data.currency").value("KRW"))
+        .andExpect(jsonPath("$.data.asOf").value("2026-03-10T00:00:00Z"));
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-position")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldReturnAuthRequiredWhenSessionDoesNotContainMemberId() throws Exception {
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .param("symbol", "005930"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
+        .andExpect(jsonPath("$.message").value("authentication required"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldExposeOwnershipErrorForAccountPositionBoundary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(403)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "AUTH-005",
+                  "message": "forbidden account ownership",
+                  "path": "/internal/v1/accounts/1/positions",
+                  "correlationId": "trace-core-ownership",
+                  "timestamp": "2026-03-10T00:00:00Z"
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-ownership")
+            .param("symbol", "005930"))
+        .andExpect(status().isForbidden())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-ownership"))
+        .andExpect(jsonPath("$.code").value("AUTH-005"))
+        .andExpect(jsonPath("$.message").value("forbidden account ownership"))
+        .andExpect(jsonPath("$.path").value("/api/v1/accounts/1/positions"))
+        .andExpect(jsonPath("$.correlationId").value("trace-channel-ownership"))
+        .andExpect(jsonPath("$.timestamp").isNotEmpty());
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldNormalizeDependencyTimeoutToCore901AtAccountPositionBoundary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(504)
+            .withHeader("Content-Type", "text/plain")
+            .withBody("upstream timeout")));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-core-timeout")
+            .param("symbol", "005930"))
+        .andExpect(status().isGatewayTimeout())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-core-timeout"))
+        .andExpect(jsonPath("$.code").value("CORE-901"))
+        .andExpect(jsonPath("$.message").value("Core dependency timeout"))
+        .andExpect(jsonPath("$.path").value("/api/v1/accounts/1/positions"))
+        .andExpect(jsonPath("$.correlationId").value("trace-channel-core-timeout"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldNormalizeDependencyUnavailableToCore902AtAccountPositionBoundary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(503)
+            .withHeader("Content-Type", "text/plain")
+            .withBody("service unavailable")));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-core-unavailable")
+            .param("symbol", "005930"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-core-unavailable"))
+        .andExpect(jsonPath("$.code").value("CORE-902"))
+        .andExpect(jsonPath("$.message").value("Core dependency unavailable"))
+        .andExpect(jsonPath("$.path").value("/api/v1/accounts/1/positions"))
+        .andExpect(jsonPath("$.correlationId").value("trace-channel-core-unavailable"));
   }
 }

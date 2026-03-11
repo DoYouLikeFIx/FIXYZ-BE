@@ -23,13 +23,22 @@ class CorebankOpenApiCompatibilityTest {
     JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode orderResponse = contract.path("components").path("schemas").path("ApiResponseInternalOrderResponse");
     JsonNode portfolioResponse = contract.path("components").path("schemas").path("ApiResponseInternalPortfolioResponse");
+    JsonNode accountPositionResponse = contract.path("components").path("schemas")
+        .path("ApiResponseInternalAccountPositionResponse");
+    JsonNode accountPositionSchema = contract.path("components").path("schemas")
+        .path("InternalAccountPositionResponse");
     JsonNode internalOrderSchema = contract.path("components").path("schemas").path("InternalOrderResponse");
     JsonNode requeryOperation = paths.path("/internal/v1/orders/{clOrdId}/requery").path("get");
     JsonNode requeryParameters = requeryOperation.path("parameters");
     JsonNode attemptCountParameter = parameterByName(requeryParameters, "attemptCount");
 
     assertThat(fieldNames(paths))
-        .contains("/internal/v1/orders", "/internal/v1/orders/{clOrdId}/requery", "/internal/v1/portfolio");
+        .contains(
+            "/internal/v1/orders",
+            "/internal/v1/orders/{clOrdId}/requery",
+            "/internal/v1/portfolio",
+            "/internal/v1/accounts/{accountId}/positions"
+        );
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
         .contains(
@@ -46,6 +55,10 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(portfolioResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(fieldNames(accountPositionSchema.path("properties")))
+        .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
     assertThat(fieldNames(internalOrderSchema.path("properties")))
         .contains("message", "retriable", "escalationRequired", "attemptCount", "maxRetryCount", "externalSyncStatus");
     assertThat(requeryParameters.isArray()).isTrue();
