@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS ledger_entry_refs (
   version BIGINT
 );
 
-CREATE INDEX IF NOT EXISTS idx_orders_account_id ON orders(account_id);
-CREATE INDEX IF NOT EXISTS idx_orders_cl_ord_id ON orders(cl_ord_id);
-CREATE INDEX IF NOT EXISTS idx_positions_account_symbol ON positions(account_id, symbol);
-CREATE INDEX IF NOT EXISTS idx_executions_account_symbol ON executions(account_id, symbol);
+CREATE INDEX idx_orders_account_id ON orders(account_id);
+CREATE INDEX idx_orders_cl_ord_id ON orders(cl_ord_id);
+CREATE INDEX idx_positions_account_symbol ON positions(account_id, symbol);
+CREATE INDEX idx_executions_account_symbol ON executions(account_id, symbol);
