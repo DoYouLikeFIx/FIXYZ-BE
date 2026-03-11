@@ -309,14 +309,14 @@ public class FepGatewayControlService {
             ? (existingTransactTime != null ? existingTransactTime : now)
             : null;
         yield new GatewayExecutionOutcome(
-            preservedExecutedQty > 0 ? order.getFepOrderId() : null,
+            order.getFepOrderId(),
             preservedExecutedQty > 0 ? FepExecType.PARTIAL_FILL : null,
             status,
             preservedExecutedQty > 0 ? preservedExecutedQty : null,
             preservedExecutedQty > 0 ? preservedExecutedPrice : null,
             preservedExecutedQty > 0 ? totalQty - preservedExecutedQty : null,
             preservedTransactTime,
-            firstNonBlank(requestedMessage, defaultStatusMessage(status)),
+            resolveUnresolvedMessage(status, order, requestedMessage),
             null,
             null
         );
@@ -347,16 +347,13 @@ public class FepGatewayControlService {
             preservedExecutedQty > 0 ? preservedExecutedPrice : null,
             preservedExecutedQty > 0 ? totalQty - preservedExecutedQty : null,
             preservedTransactTime,
-            firstNonBlank(
-                requestedMessage,
-                "FIX ExecutionReport parse failed; manual review required"
-            ),
+            resolveMalformedMessage(order, requestedMessage),
             null,
-            firstNonBlank(requestedParseError, "PARSE_ERROR:UNKNOWN")
+            resolveMalformedParseError(order, requestedParseError)
         );
       }
       case REJECTED -> new GatewayExecutionOutcome(
-          null,
+          order.getFepOrderId(),
           FepExecType.REJECTED,
           FepOrdStatus.REJECTED,
           null,
@@ -487,6 +484,49 @@ public class FepGatewayControlService {
 
   private String normalizeBlank(String value) {
     return value == null || value.isBlank() ? null : value;
+  }
+
+  private String resolveUnresolvedMessage(FepOrdStatus status, GatewayOrder order, String requestedMessage) {
+    return firstNonBlank(
+        requestedMessage,
+        shouldPreserveMessage(status, order) ? order.getMessage() : null,
+        defaultStatusMessage(status)
+    );
+  }
+
+  private String resolveMalformedMessage(GatewayOrder order, String requestedMessage) {
+    return firstNonBlank(
+        requestedMessage,
+        currentOrderStatus(order) == FepOrdStatus.MALFORMED ? order.getMessage() : null,
+        "FIX ExecutionReport parse failed; manual review required"
+    );
+  }
+
+  private String resolveMalformedParseError(GatewayOrder order, String requestedParseError) {
+    return firstNonBlank(
+        requestedParseError,
+        currentOrderStatus(order) == FepOrdStatus.MALFORMED ? order.getParseError() : null,
+        "PARSE_ERROR:UNKNOWN"
+    );
+  }
+
+  private boolean shouldPreserveMessage(FepOrdStatus targetStatus, GatewayOrder order) {
+    if (targetStatus != FepOrdStatus.PENDING && targetStatus != FepOrdStatus.UNKNOWN) {
+      return false;
+    }
+    return currentOrderStatus(order) == targetStatus;
+  }
+
+  private FepOrdStatus currentOrderStatus(GatewayOrder order) {
+    String currentStatus = order.getStatus();
+    if (currentStatus == null || currentStatus.isBlank()) {
+      return null;
+    }
+    try {
+      return FepOrdStatus.valueOf(currentStatus.trim().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException ignored) {
+      return null;
+    }
   }
 
   private String defaultStatusMessage(FepOrdStatus status) {

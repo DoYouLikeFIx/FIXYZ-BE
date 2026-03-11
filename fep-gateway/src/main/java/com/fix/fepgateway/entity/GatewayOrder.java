@@ -344,8 +344,7 @@ public class GatewayOrder extends BaseTimeEntity {
     boolean hasExecutionData = normalizedExecutedQty > 0;
     boolean hasPendingExecutionDetails = hasExecutionData
         || executedPrice != null
-        || transactTime != null
-        || (fepOrderId != null && !fepOrderId.isBlank());
+        || transactTime != null;
     boolean hasPendingRemainingQty = leavesQty != null && leavesQty < totalQty();
 
     return switch (resolvedStatus) {
