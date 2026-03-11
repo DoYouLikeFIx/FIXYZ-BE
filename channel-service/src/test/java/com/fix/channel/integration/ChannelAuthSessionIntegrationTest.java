@@ -1,6 +1,7 @@
 package com.fix.channel.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -70,6 +71,8 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     memberRepository.deleteAll();
     auditLogRepository.deleteAll();
     securityEventRepository.deleteAll();
+    doReturn(1001L).when(corebankProvisioningClient)
+        .provisionDefaultAccount(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
       return null;
@@ -326,7 +329,8 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(jsonPath("$.data.email").value("session.user@fixyz.com"))
         .andExpect(jsonPath("$.data.name").value("Session User"))
         .andExpect(jsonPath("$.data.role").value("ROLE_USER"))
-        .andExpect(jsonPath("$.data.totpEnrolled").value(false));
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false))
+        .andExpect(jsonPath("$.data.accountId").value("1001"));
   }
 
   @Test

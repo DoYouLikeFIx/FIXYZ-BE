@@ -9,7 +9,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fix.channel.vo.AccountPositionQueryCommand;
+import com.fix.channel.vo.AccountPositionsQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
+import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryResult;
 import com.fix.common.error.BusinessException;
@@ -165,6 +167,81 @@ class CorebankClientTest {
   }
 
   @Test
+  void shouldMapAccountPositionsResponse() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
+        .withQueryParam("memberId", equalTo("301"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": [
+                    {
+                      "accountId": 1,
+                      "memberId": 301,
+                      "symbol": "000660",
+                      "quantity": 40.0000,
+                      "availableQuantity": 40.0000,
+                      "balance": 500000.0000,
+                      "currency": "KRW",
+                      "asOf": "2026-03-10T00:00:00Z"
+                    }
+                  ]
+                }
+                """)));
+
+    var result = corebankClient.getAccountPositions(positionsCommand(), "trace-positions");
+
+    assertThat(result).hasSize(1);
+    assertThat(result.get(0).getSymbol()).isEqualTo("000660");
+    assertThat(result.get(0).getQuantity()).isEqualByComparingTo("40.0000");
+    assertThat(result.get(0).getAvailableQuantity()).isEqualByComparingTo("40.0000");
+    assertThat(result.get(0).getBalance()).isEqualByComparingTo("500000.0000");
+
+    wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-positions")));
+  }
+
+  @Test
+  void shouldMapAccountSummaryResponse() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/summary"))
+        .withQueryParam("memberId", equalTo("301"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "",
+                    "quantity": 0.0000,
+                    "availableQuantity": 0.0000,
+                    "balance": 750000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z"
+                  }
+                }
+                """)));
+
+    var result = corebankClient.getAccountSummary(summaryCommand(), "trace-summary");
+
+    assertThat(result.getSymbol()).isEmpty();
+    assertThat(result.getQuantity()).isEqualByComparingTo("0.0000");
+    assertThat(result.getAvailableQuantity()).isEqualByComparingTo("0.0000");
+    assertThat(result.getBalance()).isEqualByComparingTo("750000.0000");
+
+    wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/summary"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-summary")));
+  }
+
+  @Test
   void shouldMapAccountOrderHistoryResponse() {
     wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/orders"))
         .withQueryParam("memberId", equalTo("301"))
@@ -238,5 +315,13 @@ class CorebankClientTest {
 
   private AccountOrderHistoryQueryCommand historyCommand() {
     return AccountOrderHistoryQueryCommand.of(ACCOUNT_ID, MEMBER_ID, PAGE, SIZE);
+  }
+
+  private AccountPositionsQueryCommand positionsCommand() {
+    return AccountPositionsQueryCommand.of(ACCOUNT_ID, MEMBER_ID);
+  }
+
+  private AccountSummaryQueryCommand summaryCommand() {
+    return AccountSummaryQueryCommand.of(ACCOUNT_ID, MEMBER_ID);
   }
 }

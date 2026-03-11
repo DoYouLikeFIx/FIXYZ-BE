@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -59,6 +60,8 @@ class ChannelAuthFlowTest {
   @BeforeEach
   void cleanUp() {
     memberRepository.deleteAll();
+    doReturn(1001L).when(corebankProvisioningClient)
+        .provisionDefaultAccount(any(), any(), any(), any());
   }
 
   @Test
@@ -119,6 +122,7 @@ class ChannelAuthFlowTest {
     assertThat(session).isNotNull();
     assertThat(session.getAttribute("AUTH_MEMBER_ID")).isEqualTo(member.getId());
     assertThat(session.getAttribute("AUTH_MEMBER_NAME")).isEqualTo("Login User");
+    assertThat(session.getAttribute("AUTH_ACCOUNT_ID")).isEqualTo("1001");
   }
 
   @Test
