@@ -10,6 +10,8 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 @AnalyzeClasses(packages = "com.fix.channel")
 class ChannelDtoVoBoundaryArchTest {
@@ -39,10 +41,17 @@ class ChannelDtoVoBoundaryArchTest {
           .should().dependOnClassesThat().resideInAnyPackage("..dto..", "..controller..");
 
   @ArchTest
-  static final ArchRule dtoShouldNotUseRecord =
+  static final ArchRule dtoShouldUseRecord =
       classes()
           .that().resideInAnyPackage("..dto.request..", "..dto.response..")
-          .should(notBeRecord());
+          .should(beRecord());
+
+  @ArchTest
+  static final ArchRule schedulerShouldUseComponentStereotype =
+      classes()
+          .that().haveSimpleNameEndingWith("Scheduler")
+          .should().beAnnotatedWith(Component.class)
+          .andShould().notBeAnnotatedWith(Service.class);
 
   @ArchTest
   static final ArchRule globalExceptionHandlerShouldLiveInExceptionPackage =
@@ -50,12 +59,12 @@ class ChannelDtoVoBoundaryArchTest {
           .that().haveSimpleName("GlobalExceptionHandler")
           .should().resideInAPackage("..exception..");
 
-  private static ArchCondition<JavaClass> notBeRecord() {
-    return new ArchCondition<>("not be a record") {
+  private static ArchCondition<JavaClass> beRecord() {
+    return new ArchCondition<>("be a record") {
       @Override
       public void check(JavaClass item, ConditionEvents events) {
-        if (item.isRecord()) {
-          events.add(SimpleConditionEvent.violated(item, item.getName() + " must be class, not record"));
+        if (!item.isRecord()) {
+          events.add(SimpleConditionEvent.violated(item, item.getName() + " must be a record"));
         }
       }
     };
