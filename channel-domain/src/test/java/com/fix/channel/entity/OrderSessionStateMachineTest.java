@@ -1,19 +1,21 @@
 package com.fix.channel.entity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import org.junit.jupiter.api.Test;
 
 class OrderSessionStateMachineTest {
 
   @Test
-  void shouldTransitionOrderSessionFromOpenToClosed() {
-    OrderSession session = OrderSession.open(1L, "CL-CH-FSM-001", "ORD-REF-001");
+  void shouldCreatePendingNewOrderSessionAndExpireIt() {
+    OrderSession session = OrderSession.pendingNew(1L, "CL-CH-FSM-001", "ORD-REF-001");
 
-    assertEquals("OPEN", session.getStatus());
+    assertNotNull(session.getOrderSessionId());
+    assertEquals(OrderSessionStatus.PENDING_NEW, session.getStatus());
 
-    session.close();
+    session.expire();
 
-    assertEquals("CLOSED", session.getStatus());
+    assertEquals(OrderSessionStatus.EXPIRED, session.getStatus());
   }
 }
