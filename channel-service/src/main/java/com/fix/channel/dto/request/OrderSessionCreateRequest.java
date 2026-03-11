@@ -1,45 +1,22 @@
 package com.fix.channel.dto.request;
 
 import com.fix.channel.vo.OrderSessionCreateCommand;
+import com.fix.common.validation.ContractPatterns;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
-public class OrderSessionCreateRequest {
+public record OrderSessionCreateRequest(
+    @NotBlank
+    @Pattern(regexp = ContractPatterns.UUID_V4)
+    String clOrdId,
 
-  @NotNull
-  private Long memberId;
+    @NotBlank
+    @Size(min = 1, max = 64, message = "size must be between 1 and 64")
+    String orderRef
+) {
 
-  @NotBlank
-  private String clOrdId;
-
-  @NotBlank
-  private String orderRef;
-
-  public OrderSessionCreateCommand toVo() {
+  public OrderSessionCreateCommand toVo(Long memberId) {
     return OrderSessionCreateCommand.of(memberId, clOrdId, orderRef);
-  }
-
-  public Long getMemberId() {
-    return memberId;
-  }
-
-  public void setMemberId(Long memberId) {
-    this.memberId = memberId;
-  }
-
-  public String getClOrdId() {
-    return clOrdId;
-  }
-
-  public void setClOrdId(String clOrdId) {
-    this.clOrdId = clOrdId;
-  }
-
-  public String getOrderRef() {
-    return orderRef;
-  }
-
-  public void setOrderRef(String orderRef) {
-    this.orderRef = orderRef;
   }
 }

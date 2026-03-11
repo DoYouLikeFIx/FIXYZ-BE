@@ -5,42 +5,22 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
-public class AdminSecurityEventRequest {
+public record AdminSecurityEventRequest(
+    @NotNull
+    Long memberId,
 
-  @NotNull
-  private Long memberId;
+    @Min(1)
+    @Max(100)
+    Integer limit,
 
-  @Min(1)
-  @Max(100)
-  private Integer limit = 20;
+    Long cursorId
+) {
 
-  private Long cursorId;
+  public AdminSecurityEventRequest {
+    limit = limit == null ? 20 : limit;
+  }
 
   public AdminSecurityEventCommand toVo() {
     return AdminSecurityEventCommand.of(memberId, limit, cursorId);
-  }
-
-  public Long getMemberId() {
-    return memberId;
-  }
-
-  public void setMemberId(Long memberId) {
-    this.memberId = memberId;
-  }
-
-  public Integer getLimit() {
-    return limit;
-  }
-
-  public void setLimit(Integer limit) {
-    this.limit = limit;
-  }
-
-  public Long getCursorId() {
-    return cursorId;
-  }
-
-  public void setCursorId(Long cursorId) {
-    this.cursorId = cursorId;
   }
 }
