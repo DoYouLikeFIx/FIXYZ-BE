@@ -1,7 +1,6 @@
 package com.fix.channel.service;
 
 import com.fix.channel.client.CorebankProvisioningClient;
-import com.fix.channel.client.CorebankLinkedAccountProfile;
 import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
@@ -9,6 +8,7 @@ import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.session.ChannelSessionAttributes;
 import com.fix.channel.vo.AuthLoginCommand;
 import com.fix.channel.vo.AuthLoginResult;
 import com.fix.channel.vo.AuthRegisterCommand;
@@ -19,6 +19,7 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import java.time.Instant;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.List;
@@ -49,7 +50,6 @@ public class AuthService {
   private static final String ACTIVE_STATUS = "ACTIVE";
   private static final String ACCOUNT_LOCKED_EVENT_TYPE = "ACCOUNT_LOCKED";
   private static final String ACCOUNT_LOCKED_SEVERITY = "HIGH";
-  private static final String AUTH_ACCOUNT_ID = "AUTH_ACCOUNT_ID";
 
   private final MemberRepository memberRepository;
   private final AuditLogRepository auditLogRepository;
@@ -70,8 +70,6 @@ public class AuthService {
   private boolean sessionCookieSecure;
   @Value("${auth.guardrails.account-lockout.max-failed-attempts:5}")
   private int accountLockoutMaxFailedAttempts;
-  @Value("${auth.demo.auto-totp-enrolled:false}")
-  private boolean demoAutoTotpEnrolled;
 
   @Transactional
   public AuthRegisterResult register(AuthRegisterCommand command, String correlationId) {
@@ -83,9 +81,6 @@ public class AuthService {
         passwordEncoder.encode(command.getPassword()),
         command.getName().trim()
     );
-    if (demoAutoTotpEnrolled) {
-      member.enableTotpEnrollment();
-    }
     Member saved;
     try {
       saved = memberRepository.saveAndFlush(member);
@@ -96,15 +91,12 @@ public class AuthService {
       throw ex;
     }
 
-    CorebankLinkedAccountProfile linkedAccountProfile = corebankProvisioningClient.provisionDefaultAccount(
+    corebankProvisioningClient.provisionDefaultAccount(
         saved.getId(),
         saved.getMemberNo(),
         saved.getEmail(),
         correlationId
     );
-    if (linkedAccountProfile != null) {
-      saved.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
-    }
 
     auditLogRepository.save(AuditLog.of(
         saved.getId(),
@@ -206,13 +198,13 @@ public class AuthService {
     }
 
     HttpSession session = request.getSession(true);
-    session.setAttribute("AUTH_MEMBER_ID", member.getId());
-    session.setAttribute("AUTH_MEMBER_NAME", member.getName());
+    session.setAttribute(ChannelSessionAttributes.AUTH_MEMBER_ID, member.getId());
+    session.setAttribute(ChannelSessionAttributes.AUTH_MEMBER_NAME, member.getName());
+    seedOrderAuthorizationSessionContext(session, clientIp, userAgent);
     session.setAttribute(
         FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME,
         member.getEmail()
     );
-    hydrateSessionAccountId(session, member, resolveCorrelationId(request));
 
     SecurityContext context = SecurityContextHolder.createEmptyContext();
     context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
@@ -227,7 +219,7 @@ public class AuthService {
     return AuthLoginResult.of(member.getId(), member.getEmail(), member.getName());
   }
 
-  @Transactional
+  @Transactional(readOnly = true)
   public AuthSessionResult currentSession(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     if (session == null) {
@@ -242,21 +234,15 @@ public class AuthService {
     Long memberId = memberIdNumber.longValue();
     Member member = memberRepository.findById(memberId)
         .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
-    Member resolvedMember = ensureLinkedAccount(member, CorrelationIdSupport.ensureCorrelationId(request));
-    String resolvedAccountId = resolveSessionAccountId(session, resolvedMember, request);
-    if (resolvedAccountId == null && resolvedMember.getAccountId() != null) {
-      resolvedAccountId = String.valueOf(resolvedMember.getAccountId());
-    }
 
     return AuthSessionResult.of(
-        resolvedMember.getMemberNo(),
-        resolveUsername(resolvedMember.getEmail()),
-        resolvedMember.getEmail(),
-        resolvedMember.getName(),
-        resolvedMember.getRole(),
-        resolvedMember.isTotpEnabled(),
-        resolvedAccountId,
-        resolvedMember.getAccountNumber()
+        member.getMemberNo(),
+        resolveUsername(member.getEmail()),
+        member.getEmail(),
+        member.getName(),
+        member.getRole(),
+        false,
+        null
     );
   }
 
@@ -292,18 +278,16 @@ public class AuthService {
     return email.trim().toLowerCase(Locale.ROOT);
   }
 
-  private Member ensureLinkedAccount(Member member, String correlationId) {
-    if (member.getAccountId() != null && member.getAccountNumber() != null && !member.getAccountNumber().isBlank()) {
-      return member;
-    }
-
-    CorebankLinkedAccountProfile linkedAccountProfile =
-        corebankProvisioningClient.fetchDefaultAccountProfile(member.getId(), correlationId);
-    if (linkedAccountProfile == null) {
-      return member;
-    }
-    member.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
-    return member;
+  private void seedOrderAuthorizationSessionContext(
+      HttpSession session,
+      String clientIp,
+      String userAgent
+  ) {
+    session.setAttribute(ChannelSessionAttributes.AUTH_LOGIN_AUTHENTICATED_AT, Instant.now());
+    session.setAttribute(ChannelSessionAttributes.AUTH_LOGIN_IP_ADDRESS, clientIp);
+    session.setAttribute(ChannelSessionAttributes.AUTH_LOGIN_USER_AGENT, userAgent);
+    session.removeAttribute(ChannelSessionAttributes.AUTH_MFA_VERIFIED_AT);
+    session.setAttribute(ChannelSessionAttributes.AUTH_ORDER_CHALLENGE_BYPASS_ELIGIBLE, false);
   }
 
   private boolean isDuplicateMemberEmail(DataIntegrityViolationException ex) {
@@ -398,53 +382,11 @@ public class AuthService {
   }
 
   private Long extractMemberId(HttpSession session) {
-    Object memberIdAttr = session.getAttribute("AUTH_MEMBER_ID");
+    Object memberIdAttr = session.getAttribute(ChannelSessionAttributes.AUTH_MEMBER_ID);
     if (memberIdAttr instanceof Number memberIdNumber) {
       return memberIdNumber.longValue();
     }
     return null;
-  }
-
-  private String resolveSessionAccountId(HttpSession session, Member member, HttpServletRequest request) {
-    Object accountIdAttr = session.getAttribute(AUTH_ACCOUNT_ID);
-    if (accountIdAttr instanceof Number accountIdNumber) {
-      return String.valueOf(accountIdNumber.longValue());
-    }
-    if (accountIdAttr instanceof String accountIdText && !accountIdText.isBlank()) {
-      return accountIdText;
-    }
-
-    return hydrateSessionAccountId(session, member, resolveCorrelationId(request));
-  }
-
-  private String hydrateSessionAccountId(HttpSession session, Member member, String correlationId) {
-    try {
-      Member resolvedMember = ensureLinkedAccount(member, correlationId);
-      Long accountId = resolvedMember.getAccountId();
-      if (accountId == null || accountId <= 0L) {
-        CorebankLinkedAccountProfile linkedAccountProfile = corebankProvisioningClient.provisionDefaultAccount(
-            member.getId(),
-            member.getMemberNo(),
-            member.getEmail(),
-            correlationId
-        );
-        if (linkedAccountProfile != null) {
-          resolvedMember.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
-          accountId = linkedAccountProfile.accountId();
-        }
-      }
-      if (accountId == null || accountId <= 0L) {
-        session.removeAttribute(AUTH_ACCOUNT_ID);
-        return null;
-      }
-
-      String resolvedAccountId = String.valueOf(accountId);
-      session.setAttribute(AUTH_ACCOUNT_ID, resolvedAccountId);
-      return resolvedAccountId;
-    } catch (BusinessException ex) {
-      session.removeAttribute(AUTH_ACCOUNT_ID);
-      return null;
-    }
   }
 
   private String resolveUsername(String email) {

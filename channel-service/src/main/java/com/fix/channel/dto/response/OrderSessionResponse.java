@@ -1,29 +1,16 @@
 package com.fix.channel.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fix.channel.vo.OrderSessionResult;
-import java.math.BigDecimal;
 import java.time.Instant;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record OrderSessionResponse(
     String orderSessionId,
     String clOrdId,
     String status,
-    Long accountId,
-    String symbol,
-    String side,
-    String orderType,
-    BigDecimal qty,
-    BigDecimal price,
-    String executionResult,
-    BigDecimal executedQty,
-    BigDecimal leavesQty,
-    BigDecimal executedPrice,
-    String externalOrderId,
-    String failureReason,
-    Instant executedAt,
-    Instant canceledAt,
-    Instant createdAt,
-    Instant updatedAt,
+    boolean challengeRequired,
+    String authorizationReason,
     Instant expiresAt,
     Long remainingSeconds
 ) {
@@ -33,22 +20,8 @@ public record OrderSessionResponse(
         result.getOrderSessionId(),
         result.getClOrdId(),
         result.getStatus(),
-        result.getAccountId(),
-        result.getSymbol(),
-        result.getSide(),
-        result.getOrderType(),
-        result.getQty(),
-        result.getPrice(),
-        result.getExecutionResult(),
-        result.getExecutedQty(),
-        result.getLeavesQty(),
-        result.getExecutedPrice(),
-        result.getExternalOrderId(),
-        result.getFailureReason(),
-        result.getExecutedAt(),
-        result.getCanceledAt(),
-        result.getCreatedAt(),
-        result.getUpdatedAt(),
+        result.isChallengeRequired(),
+        result.getAuthorizationReason(),
         result.getExpiresAt(),
         result.getRemainingSeconds()
     );

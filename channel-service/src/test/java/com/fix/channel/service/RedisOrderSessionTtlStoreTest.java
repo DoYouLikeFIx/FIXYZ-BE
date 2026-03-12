@@ -3,9 +3,6 @@ package com.fix.channel.service;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fix.common.error.BusinessException;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.function.Consumer;
@@ -20,26 +17,11 @@ class RedisOrderSessionTtlStoreTest {
   @Test
   void shouldRejectActivationWhenRedisScriptDoesNotAcknowledgeWrite() {
     RedisOrderSessionTtlStore store =
-        new NullActivationResultRedisOrderSessionTtlStore(
-            provider(new StringRedisTemplate()),
-            Clock.fixed(Instant.parse("2026-03-12T00:00:00Z"), ZoneOffset.UTC)
-        );
+        new NullActivationResultRedisOrderSessionTtlStore(provider(new StringRedisTemplate()));
 
-    assertThatThrownBy(() -> store.activate("sess-1", Instant.parse("2026-03-12T00:10:00Z")))
+    assertThatThrownBy(() -> store.activate("sess-1", "PENDING_NEW"))
         .isInstanceOf(BusinessException.class)
         .hasMessage("order session cache activation failed");
-  }
-
-  @Test
-  void shouldRejectActivationWhenExpiryIsAlreadyInThePast() {
-    RedisOrderSessionTtlStore store = new RedisOrderSessionTtlStore(
-        provider(new StringRedisTemplate()),
-        Clock.fixed(Instant.parse("2026-03-12T00:00:00Z"), ZoneOffset.UTC)
-    );
-
-    assertThatThrownBy(() -> store.activate("sess-1", Instant.parse("2026-03-11T23:59:59Z")))
-        .isInstanceOf(BusinessException.class)
-        .hasMessage("order session expiration must be in the future");
   }
 
   private static ObjectProvider<StringRedisTemplate> provider(StringRedisTemplate template) {
@@ -100,15 +82,12 @@ class RedisOrderSessionTtlStoreTest {
 
   private static class NullActivationResultRedisOrderSessionTtlStore extends RedisOrderSessionTtlStore {
 
-    NullActivationResultRedisOrderSessionTtlStore(
-        ObjectProvider<StringRedisTemplate> redisTemplateProvider,
-        Clock clock
-    ) {
-      super(redisTemplateProvider, clock);
+    NullActivationResultRedisOrderSessionTtlStore(ObjectProvider<StringRedisTemplate> redisTemplateProvider) {
+      super(redisTemplateProvider);
     }
 
     @Override
-    protected Long executeActivation(StringRedisTemplate redisTemplate, String orderSessionId, long ttlMillis) {
+    protected Long executeActivation(StringRedisTemplate redisTemplate, String orderSessionId, String initialStatus) {
       return null;
     }
   }

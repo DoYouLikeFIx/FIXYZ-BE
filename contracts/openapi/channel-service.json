@@ -42,24 +42,54 @@
       }
     },
     "/api/v1/orders/sessions": {
-      "post": {
+      "get": {
         "tags": [
           "order-session-controller"
         ],
-        "summary": "Create or replay an order session",
-        "operationId": "create_1",
+        "summary": "Get an order session",
+        "description": "Provide exactly one of orderSessionId or clOrdId. Do not send both.",
+        "operationId": "get",
         "parameters": [
           {
-            "name": "X-ClOrdID",
-            "in": "header",
-            "description": "Client UUID v4 (FIX Tag 11)",
-            "required": true,
+            "name": "orderSessionId",
+            "in": "query",
+            "description": "Server-issued order session id. Provide exactly one of orderSessionId or clOrdId.",
+            "required": false,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "query",
+            "description": "Client order id. Provide exactly one of orderSessionId or clOrdId.",
+            "required": false,
             "schema": {
               "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
               "type": "string"
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "order-session-controller"
+        ],
+        "summary": "Create or replay an order session",
+        "operationId": "create_1",
         "requestBody": {
           "content": {
             "application/json": {
@@ -422,38 +452,6 @@
         }
       }
     },
-    "/api/v1/orders/sessions/{orderSessionId}": {
-      "get": {
-        "tags": [
-          "order-session-controller"
-        ],
-        "summary": "Get an order session",
-        "operationId": "get",
-        "parameters": [
-          {
-            "name": "orderSessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseOrderSessionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/notifications/stream": {
       "get": {
         "tags": [
@@ -577,38 +575,6 @@
         }
       }
     },
-    "/api/v1/accounts/{accountId}/summary": {
-      "get": {
-        "tags": [
-          "account-controller"
-        ],
-        "summary": "Get account summary",
-        "operationId": "getSummary",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseAccountPositionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/accounts/{accountId}/positions": {
       "get": {
         "tags": [
@@ -642,38 +608,6 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseAccountPositionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{accountId}/positions/list": {
-      "get": {
-        "tags": [
-          "account-controller"
-        ],
-        "summary": "Get owned account positions",
-        "operationId": "getPositions",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseListAccountPositionResponse"
                 }
               }
             }
@@ -845,42 +779,20 @@
       },
       "OrderSessionCreateRequest": {
         "required": [
-          "accountId",
-          "orderType",
-          "qty",
-          "side",
-          "symbol"
+          "clOrdId",
+          "orderRef"
         ],
         "type": "object",
         "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "symbol": {
+          "clOrdId": {
             "minLength": 1,
-            "pattern": "^(Q)?\\d{6}$",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
             "type": "string"
           },
-          "side": {
+          "orderRef": {
+            "maxLength": 64,
             "minLength": 1,
-            "pattern": "^(BUY|SELL)$",
             "type": "string"
-          },
-          "orderType": {
-            "minLength": 1,
-            "pattern": "^(LIMIT|MARKET)$",
-            "type": "string"
-          },
-          "qty": {
-            "minimum": 1,
-            "exclusiveMinimum": false,
-            "type": "number"
-          },
-          "price": {
-            "minimum": 1,
-            "exclusiveMinimum": false,
-            "type": "number"
           }
         }
       },
@@ -914,58 +826,11 @@
           "status": {
             "type": "string"
           },
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
+          "challengeRequired": {
+            "type": "boolean"
           },
-          "symbol": {
+          "authorizationReason": {
             "type": "string"
-          },
-          "side": {
-            "type": "string"
-          },
-          "orderType": {
-            "type": "string"
-          },
-          "qty": {
-            "type": "number"
-          },
-          "price": {
-            "type": "number"
-          },
-          "executionResult": {
-            "type": "string"
-          },
-          "executedQty": {
-            "type": "number"
-          },
-          "leavesQty": {
-            "type": "number"
-          },
-          "executedPrice": {
-            "type": "number"
-          },
-          "externalOrderId": {
-            "type": "string"
-          },
-          "failureReason": {
-            "type": "string"
-          },
-          "executedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "canceledAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
           },
           "expiresAt": {
             "type": "string",
@@ -1558,9 +1423,6 @@
           },
           "accountId": {
             "type": "string"
-          },
-          "accountNumber": {
-            "type": "string"
           }
         }
       },
@@ -1722,27 +1584,6 @@
           },
           "data": {
             "$ref": "#/components/schemas/AccountPositionResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "ApiResponseListAccountPositionResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AccountPositionResponse"
-            }
           },
           "error": {
             "$ref": "#/components/schemas/ApiErrorResponse"

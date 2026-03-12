@@ -1,40 +1,40 @@
 package com.fix.channel.entity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import org.junit.jupiter.api.Test;
 
 class OrderSessionStateMachineTest {
 
   @Test
   void shouldCreatePendingNewOrderSessionAndExpireIt() {
-    Instant expiresAt = Instant.parse("2026-03-12T00:10:00Z");
-    OrderSession session = OrderSession.pendingNew(
-        1L,
-        101L,
-        "123e4567-e89b-42d3-a456-426614174260",
-        "fingerprint",
-        "005930",
-        "BUY",
-        "LIMIT",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000),
-        expiresAt
-    );
+    OrderSession session = OrderSession.pendingNew(1L, "CL-CH-FSM-001", "ORD-REF-001");
 
     assertNotNull(session.getOrderSessionId());
     assertEquals(OrderSessionStatus.PENDING_NEW, session.getStatus());
-    assertEquals(101L, session.getAccountId());
-    assertEquals("005930", session.getSymbol());
-    assertEquals("BUY", session.getSide());
-    assertEquals("LIMIT", session.getOrderType());
-    assertEquals(expiresAt, session.getExpiresAt());
+    assertTrue(session.isChallengeRequired());
+    assertEquals(OrderSessionAuthorizationReason.STEP_UP_REQUIRED, session.getAuthorizationReason());
 
     session.expire();
 
     assertEquals(OrderSessionStatus.EXPIRED, session.getStatus());
+  }
+
+  @Test
+  void shouldCreateAutoAuthorizedOrderSession() {
+    OrderSession session = OrderSession.authed(
+        1L,
+        "CL-CH-FSM-002",
+        "ORD-REF-002",
+        OrderSessionAuthorizationReason.LOGIN_MFA_FRESH
+    );
+
+    assertNotNull(session.getOrderSessionId());
+    assertEquals(OrderSessionStatus.AUTHED, session.getStatus());
+    assertFalse(session.isChallengeRequired());
+    assertEquals(OrderSessionAuthorizationReason.LOGIN_MFA_FRESH, session.getAuthorizationReason());
   }
 }

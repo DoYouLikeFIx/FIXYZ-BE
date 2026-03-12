@@ -2,17 +2,16 @@ package com.fix.channel.service;
 
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.vo.OrderSessionAuthorizationDecision;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import com.fix.channel.vo.OrderSessionQueryCommand;
 import com.fix.channel.vo.OrderSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
-import java.time.Clock;
-import java.time.Duration;
+import org.springframework.dao.DataIntegrityViolationException;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -25,34 +24,34 @@ public class OrderSessionService {
   private final OrderSessionPersistenceService orderSessionPersistenceService;
   private final OrderSessionRateLimitService orderSessionRateLimitService;
   private final OrderSessionTtlStore orderSessionTtlStore;
-  private final Clock clock;
+  private final OrderSessionAuthorizationDecisionService orderSessionAuthorizationDecisionService;
 
   public OrderSessionResult createOrderSession(OrderSessionCreateCommand command) {
-    sessionOwnershipValidator.validateLinkedAccount(command.getMemberId(), command.getAccountId());
-
     OrderSession existingSession = orderSessionRepository.findByClOrdId(command.getClOrdId()).orElse(null);
     if (existingSession != null) {
       return replayExistingSession(existingSession, command);
     }
 
     orderSessionRateLimitService.enforceCreateRateLimit(command.getMemberId());
+    OrderSessionAuthorizationDecision authorizationDecision =
+        orderSessionAuthorizationDecisionService.evaluate(command);
 
     OrderSession savedSession;
-    Instant expiresAt = Instant.now(clock).plus(orderSessionTtlStore.ttl());
     try {
-      savedSession = orderSessionPersistenceService.createPendingNewSession(command, expiresAt);
+      savedSession = orderSessionPersistenceService.createSession(command, authorizationDecision);
     } catch (DataIntegrityViolationException ex) {
       return resolveConcurrentReplay(command, ex);
     }
 
     try {
-      orderSessionTtlStore.activate(savedSession.getOrderSessionId(), savedSession.getExpiresAt());
+      orderSessionTtlStore.activate(savedSession.getOrderSessionId(), savedSession.getStatus().name());
     } catch (RuntimeException ex) {
       cleanupFailedActivation(savedSession.getOrderSessionId(), command.getMemberId(), ex);
       throw ex;
     }
 
-    return buildResult(savedSession, requireRemainingSeconds(savedSession), true);
+    OrderSession activeSession = reloadSession(savedSession.getOrderSessionId());
+    return buildResult(activeSession, requireRemainingSeconds(activeSession), true);
   }
 
   public OrderSessionResult getOrderSession(OrderSessionQueryCommand command) {
@@ -62,16 +61,23 @@ public class OrderSessionService {
   }
 
   private OrderSession resolveSession(OrderSessionQueryCommand command) {
-    return orderSessionRepository.findByOrderSessionId(command.getOrderSessionId())
-        .orElseThrow(this::orderSessionNotFound);
+    if (command.getOrderSessionId() != null && !command.getOrderSessionId().isBlank()) {
+      return orderSessionRepository.findByOrderSessionId(command.getOrderSessionId())
+          .orElseThrow(this::orderSessionNotFound);
+    }
+    if (command.getClOrdId() != null && !command.getClOrdId().isBlank()) {
+      return orderSessionRepository.findByClOrdId(command.getClOrdId())
+          .orElseThrow(this::orderSessionNotFound);
+    }
+    throw orderSessionNotFound();
   }
 
   private Instant resolveExpiresAt(OrderSession session) {
-    Instant expiresAt = session.getExpiresAt();
-    if (expiresAt == null) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session expiration timestamp missing");
+    Instant createdAt = session.getCreatedAt();
+    if (createdAt == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session creation timestamp missing");
     }
-    return expiresAt;
+    return createdAt.plusSeconds(orderSessionTtlStore.ttlSeconds());
   }
 
   private OrderSessionResult buildResult(OrderSession session, Long remainingSeconds, boolean created) {
@@ -79,48 +85,28 @@ public class OrderSessionService {
         session.getOrderSessionId(),
         session.getClOrdId(),
         session.getStatus().name(),
-        session.getAccountId(),
-        session.getSymbol(),
-        session.getSide(),
-        session.getOrderType(),
-        session.getQty(),
-        session.getPrice(),
         resolveExpiresAt(session),
         remainingSeconds,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        session.getCreatedAt(),
-        session.getUpdatedAt(),
+        session.isChallengeRequired(),
+        session.getAuthorizationReason().name(),
         created
     );
   }
 
   private OrderSessionResult resolveConcurrentReplay(OrderSessionCreateCommand command, DataIntegrityViolationException ex) {
-    String concurrentSessionId = null;
-    RuntimeException failure = ex;
+    OrderSession concurrentSession = orderSessionRepository.findByClOrdId(command.getClOrdId())
+        .orElseThrow(() -> ex);
     try {
-      OrderSession concurrentSession = orderSessionRepository.findByClOrdId(command.getClOrdId())
-          .orElseThrow(() -> ex);
-      concurrentSessionId = concurrentSession.getOrderSessionId();
       sessionOwnershipValidator.validateOwner(concurrentSession, command.getMemberId());
       Long remainingSeconds = requireRemainingSeconds(concurrentSession);
       validateReplayPayload(concurrentSession, command);
       return buildResult(concurrentSession, remainingSeconds, false);
-    } catch (RuntimeException runtimeEx) {
-      failure = runtimeEx;
-      throw runtimeEx;
     } finally {
       safelyRefundCreateRateLimit(
           command.getMemberId(),
-          concurrentSessionId,
+          concurrentSession.getOrderSessionId(),
           "duplicate create recovery",
-          failure
+          null
       );
     }
   }
@@ -133,7 +119,7 @@ public class OrderSessionService {
   }
 
   private void validateReplayPayload(OrderSession session, OrderSessionCreateCommand command) {
-    if (!session.matchesReplayFingerprint(command.replayFingerprint())) {
+    if (!session.getOrderRef().equals(command.getOrderRef())) {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "clOrdId replay payload mismatch");
     }
   }
@@ -145,20 +131,8 @@ public class OrderSessionService {
   }
 
   private Long requireRemainingSeconds(OrderSession session) {
-    Instant expiresAt = resolveExpiresAt(session);
-    if (!expiresAt.isAfter(Instant.now(clock))) {
-      return expireAndReturnMissing(session);
-    }
-    if (!orderSessionTtlStore.isActive(session.getOrderSessionId())) {
-      return expireAndReturnMissing(session);
-    }
-    return remainingSecondsUntil(expiresAt);
-  }
-
-  private Long remainingSecondsUntil(Instant expiresAt) {
-    long remainingMillis = Duration.between(Instant.now(clock), expiresAt).toMillis();
-    long roundedSeconds = Math.max(1L, (remainingMillis + 999L) / 1000L);
-    return Math.min(orderSessionTtlStore.ttl().toSeconds(), roundedSeconds);
+    return orderSessionTtlStore.remainingSeconds(session.getOrderSessionId())
+        .orElseGet(() -> expireAndReturnMissing(session));
   }
 
   private void cleanupFailedActivation(String orderSessionId, Long memberId, RuntimeException original) {
@@ -203,5 +177,9 @@ public class OrderSessionService {
 
   private BusinessException orderSessionNotFound() {
     return new BusinessException(ErrorCode.ORDER_SESSION_NOT_FOUND, "Order session not found.");
+  }
+
+  private OrderSession reloadSession(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId).orElseThrow(this::orderSessionNotFound);
   }
 }

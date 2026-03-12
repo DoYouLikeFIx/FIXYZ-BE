@@ -6,9 +6,8 @@ import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.vo.OrderSessionAuthorizationDecision;
 import com.fix.channel.vo.OrderSessionCreateCommand;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -27,24 +26,22 @@ public class OrderSessionPersistenceService {
   private final OrderSessionRepository orderSessionRepository;
   private final AuditLogRepository auditLogRepository;
 
-  @PersistenceContext
-  private EntityManager entityManager;
-
   @Transactional
-  public OrderSession createPendingNewSession(OrderSessionCreateCommand command, Instant expiresAt) {
-    OrderSession savedSession = orderSessionRepository.saveAndFlush(OrderSession.pendingNew(
-        command.getMemberId(),
-        command.getAccountId(),
-        command.getClOrdId(),
-        command.replayFingerprint(),
-        command.getSymbol(),
-        command.getSide(),
-        command.getOrderType(),
-        command.getQty(),
-        command.getPrice(),
-        expiresAt
-    ));
-    entityManager.refresh(savedSession);
+  public OrderSession createSession(OrderSessionCreateCommand command, OrderSessionAuthorizationDecision decision) {
+    OrderSession session = decision.getInitialStatus() == OrderSessionStatus.AUTHED
+        ? OrderSession.authed(
+            command.getMemberId(),
+            command.getClOrdId(),
+            command.getOrderRef(),
+            decision.getAuthorizationReason()
+        )
+        : OrderSession.pendingNew(
+            command.getMemberId(),
+            command.getClOrdId(),
+            command.getOrderRef(),
+            decision.getAuthorizationReason()
+        );
+    OrderSession savedSession = orderSessionRepository.saveAndFlush(session);
 
     auditLogRepository.save(AuditLog.of(
         command.getMemberId(),
@@ -52,6 +49,8 @@ public class OrderSessionPersistenceService {
         ORDER_SESSION_TARGET_TYPE,
         savedSession.getOrderSessionId(),
         "clOrdId=" + savedSession.getClOrdId()
+            + ", status=" + savedSession.getStatus().name()
+            + ", authorizationReason=" + savedSession.getAuthorizationReason().name()
     ));
     return savedSession;
   }
@@ -64,10 +63,10 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
-  public List<String> expireOverdueSessionBatch(Instant referenceTime, int batchSize) {
-    List<OrderSession> sessions = orderSessionRepository.findByStatusInAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+  public List<String> expireOverdueSessionBatch(Instant cutoff, int batchSize) {
+    List<OrderSession> sessions = orderSessionRepository.findByStatusInAndCreatedAtBeforeOrderByCreatedAtAsc(
         EXPIRABLE_STATUSES,
-        referenceTime,
+        cutoff,
         PageRequest.of(0, Math.max(1, batchSize))
     );
     sessions.forEach(OrderSession::expire);

@@ -1,116 +1,157 @@
 package com.fix.channel.vo;
 
-import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 
 public class OrderSessionCreateCommand {
 
   private final Long memberId;
-  private final Long accountId;
   private final String clOrdId;
-  private final String symbol;
-  private final String side;
-  private final String orderType;
-  private final BigDecimal qty;
-  private final BigDecimal price;
+  private final String orderRef;
+  private final Instant lastMfaVerifiedAt;
+  private final Instant loginAuthenticatedAt;
+  private final boolean challengeBypassEligible;
+  private final String loginIpAddress;
+  private final String loginUserAgent;
+  private final String clientIpAddress;
+  private final String clientUserAgent;
 
   private OrderSessionCreateCommand(
       Long memberId,
-      Long accountId,
       String clOrdId,
-      String symbol,
-      String side,
-      String orderType,
-      BigDecimal qty,
-      BigDecimal price
+      String orderRef,
+      Instant lastMfaVerifiedAt,
+      Instant loginAuthenticatedAt,
+      boolean challengeBypassEligible,
+      String loginIpAddress,
+      String loginUserAgent,
+      String clientIpAddress,
+      String clientUserAgent
   ) {
     this.memberId = memberId;
-    this.accountId = accountId;
     this.clOrdId = clOrdId;
-    this.symbol = symbol;
-    this.side = side;
-    this.orderType = orderType;
-    this.qty = qty;
-    this.price = price;
+    this.orderRef = orderRef;
+    this.lastMfaVerifiedAt = lastMfaVerifiedAt;
+    this.loginAuthenticatedAt = loginAuthenticatedAt;
+    this.challengeBypassEligible = challengeBypassEligible;
+    this.loginIpAddress = loginIpAddress;
+    this.loginUserAgent = loginUserAgent;
+    this.clientIpAddress = clientIpAddress;
+    this.clientUserAgent = clientUserAgent;
+  }
+
+  public static OrderSessionCreateCommand of(Long memberId, String clOrdId, String orderRef) {
+    return new OrderSessionCreateCommand(memberId, clOrdId, orderRef, null, null, false, null, null, null, null);
   }
 
   public static OrderSessionCreateCommand of(
       Long memberId,
-      Long accountId,
       String clOrdId,
-      String symbol,
-      String side,
-      String orderType,
-      BigDecimal qty,
-      BigDecimal price
+      String orderRef,
+      Instant lastMfaVerifiedAt,
+      boolean challengeBypassEligible
   ) {
-    return new OrderSessionCreateCommand(memberId, accountId, clOrdId, symbol, side, orderType, qty, price);
+    return of(
+        memberId,
+        clOrdId,
+        orderRef,
+        lastMfaVerifiedAt,
+        null,
+        challengeBypassEligible,
+        null,
+        null,
+        null,
+        null
+    );
+  }
+
+  public static OrderSessionCreateCommand of(
+      Long memberId,
+      String clOrdId,
+      String orderRef,
+      Instant lastMfaVerifiedAt,
+      boolean challengeBypassEligible,
+      String loginIpAddress,
+      String loginUserAgent,
+      String clientIpAddress,
+      String clientUserAgent
+  ) {
+    return of(
+        memberId,
+        clOrdId,
+        orderRef,
+        lastMfaVerifiedAt,
+        null,
+        challengeBypassEligible,
+        loginIpAddress,
+        loginUserAgent,
+        clientIpAddress,
+        clientUserAgent
+    );
+  }
+
+  public static OrderSessionCreateCommand of(
+      Long memberId,
+      String clOrdId,
+      String orderRef,
+      Instant lastMfaVerifiedAt,
+      Instant loginAuthenticatedAt,
+      boolean challengeBypassEligible,
+      String loginIpAddress,
+      String loginUserAgent,
+      String clientIpAddress,
+      String clientUserAgent
+  ) {
+    return new OrderSessionCreateCommand(
+        memberId,
+        clOrdId,
+        orderRef,
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        challengeBypassEligible,
+        loginIpAddress,
+        loginUserAgent,
+        clientIpAddress,
+        clientUserAgent
+    );
   }
 
   public Long getMemberId() {
     return memberId;
   }
 
-  public Long getAccountId() {
-    return accountId;
-  }
-
   public String getClOrdId() {
     return clOrdId;
   }
 
-  public String getSymbol() {
-    return symbol;
+  public String getOrderRef() {
+    return orderRef;
   }
 
-  public String getSide() {
-    return side;
+  public Instant getLastMfaVerifiedAt() {
+    return lastMfaVerifiedAt;
   }
 
-  public String getOrderType() {
-    return orderType;
+  public Instant getLoginAuthenticatedAt() {
+    return loginAuthenticatedAt;
   }
 
-  public BigDecimal getQty() {
-    return qty;
+  public boolean isChallengeBypassEligible() {
+    return challengeBypassEligible;
   }
 
-  public BigDecimal getPrice() {
-    return price;
+  public String getLoginIpAddress() {
+    return loginIpAddress;
   }
 
-  public String replayFingerprint() {
-    return sha256Hex(String.join(
-        "|",
-        String.valueOf(accountId),
-        symbol,
-        side,
-        orderType,
-        normalizeDecimal(qty),
-        normalizeDecimal(price)
-    ));
+  public String getLoginUserAgent() {
+    return loginUserAgent;
   }
 
-  private String normalizeDecimal(BigDecimal value) {
-    if (value == null) {
-      return "null";
-    }
-    return value.stripTrailingZeros().toPlainString();
+  public String getClientIpAddress() {
+    return clientIpAddress;
   }
 
-  private String sha256Hex(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-      StringBuilder builder = new StringBuilder(hash.length * 2);
-      for (byte current : hash) {
-        builder.append(String.format("%02x", current));
-      }
-      return builder.toString();
-    } catch (NoSuchAlgorithmException ex) {
-      throw new IllegalStateException("SHA-256 not available", ex);
-    }
+  public String getClientUserAgent() {
+    return clientUserAgent;
   }
 }

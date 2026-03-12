@@ -17,9 +17,11 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
 
   long deleteByOrderSessionId(String orderSessionId);
 
-  List<OrderSession> findByStatusInAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+  long countByMemberIdAndCreatedAtAfter(Long memberId, Instant cutoff);
+
+  List<OrderSession> findByStatusInAndCreatedAtBeforeOrderByCreatedAtAsc(
       Collection<OrderSessionStatus> statuses,
-      Instant referenceTime,
+      Instant cutoff,
       Pageable pageable
   );
 }

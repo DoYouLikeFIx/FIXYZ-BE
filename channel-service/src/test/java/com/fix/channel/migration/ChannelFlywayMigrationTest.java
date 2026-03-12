@@ -3,18 +3,18 @@ package com.fix.channel.migration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import db.migration.V8__backfill_order_session_uuid_contract;
-import db.migration.V10__add_order_session_expires_at_contract;
-import db.migration.V11__add_order_session_prepare_contract_columns;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
-import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.flywaydb.core.api.configuration.Configuration;
 import org.flywaydb.core.api.migration.Context;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.context.TestPropertySource;
 
 @SpringBootTest
@@ -46,21 +46,6 @@ class ChannelFlywayMigrationTest {
             + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'ORDER_SESSION_ID'",
         Integer.class
     );
-    Integer orderSessionExpiresAtColumnCount = jdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
-            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXPIRES_AT'",
-        Integer.class
-    );
-    Integer orderSessionAccountIdColumnCount = jdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
-            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'ACCOUNT_ID'",
-        Integer.class
-    );
-    Integer orderSessionSymbolColumnCount = jdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
-            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'SYMBOL'",
-        Integer.class
-    );
     Integer membersTableCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MEMBERS'",
         Integer.class
@@ -72,12 +57,6 @@ class ChannelFlywayMigrationTest {
     assertThat(orderSessionsTableCount).isEqualTo(1);
     assertThat(orderSessionIdColumnCount).isNotNull();
     assertThat(orderSessionIdColumnCount).isEqualTo(1);
-    assertThat(orderSessionExpiresAtColumnCount).isNotNull();
-    assertThat(orderSessionExpiresAtColumnCount).isEqualTo(1);
-    assertThat(orderSessionAccountIdColumnCount).isNotNull();
-    assertThat(orderSessionAccountIdColumnCount).isEqualTo(1);
-    assertThat(orderSessionSymbolColumnCount).isNotNull();
-    assertThat(orderSessionSymbolColumnCount).isEqualTo(1);
     assertThat(membersTableCount).isNotNull();
     assertThat(membersTableCount).isEqualTo(1);
   }
@@ -132,117 +111,125 @@ class ChannelFlywayMigrationTest {
   }
 
   @Test
-  void shouldBackfillLegacyOrderSessionExpiryAndRemainIdempotent() throws Exception {
-    String jdbcUrl = "jdbc:h2:mem:channel_migration_expiry;MODE=MySQL;DB_CLOSE_DELAY=-1";
+  void shouldBackfillAuthorizedMetadataForLegacyAuthorizedAndOnlyPostAuthExpiredSessions() throws Exception {
+    String jdbcUrl = "jdbc:h2:mem:channel_migration_auth_metadata;MODE=MySQL;DB_CLOSE_DELAY=-1";
 
     try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
          Statement statement = connection.createStatement()) {
       statement.execute("""
           CREATE TABLE order_sessions (
             id BIGINT AUTO_INCREMENT PRIMARY KEY,
-            order_session_id CHAR(36) NOT NULL,
             member_id BIGINT NOT NULL,
             cl_ord_id VARCHAR(64) NOT NULL UNIQUE,
             order_ref VARCHAR(64) NOT NULL,
             status VARCHAR(32) NOT NULL,
-            created_at TIMESTAMP NOT NULL,
-            updated_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             version BIGINT
           )
           """);
       statement.execute("""
-          INSERT INTO order_sessions(order_session_id, member_id, cl_ord_id, order_ref, status, created_at, updated_at, version)
-          VALUES (
-            '123e4567-e89b-42d3-a456-426614174260',
-            301,
-            '123e4567-e89b-42d3-a456-426614174261',
-            'ORD-REF-LEGACY',
-            'PENDING_NEW',
-            TIMESTAMP '2026-03-12 00:00:00',
-            TIMESTAMP '2026-03-12 00:00:00',
-            0
-          )
+          INSERT INTO order_sessions(member_id, cl_ord_id, order_ref, status, created_at, updated_at, version)
+          VALUES
+            (301, '123e4567-e89b-42d3-a456-426614174360', 'ORD-REF-AUTHED', 'AUTHED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+            (302, '123e4567-e89b-42d3-a456-426614174361', 'ORD-REF-EXECUTING', 'EXECUTING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2),
+            (303, '123e4567-e89b-42d3-a456-426614174362', 'ORD-REF-REQUERYING', 'REQUERYING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 3),
+            (304, '123e4567-e89b-42d3-a456-426614174363', 'ORD-REF-ESCALATED', 'ESCALATED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 4),
+            (305, '123e4567-e89b-42d3-a456-426614174364', 'ORD-REF-COMPLETED', 'COMPLETED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 5),
+            (306, '123e4567-e89b-42d3-a456-426614174365', 'ORD-REF-FAILED', 'FAILED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 6),
+            (307, '123e4567-e89b-42d3-a456-426614174366', 'ORD-REF-CANCELED', 'CANCELED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 7),
+            (308, '123e4567-e89b-42d3-a456-426614174367', 'ORD-REF-AUTHED-EXPIRED', 'EXPIRED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2),
+            (309, '123e4567-e89b-42d3-a456-426614174368', 'ORD-REF-PENDING-EXPIRED', 'EXPIRED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1),
+            (310, '123e4567-e89b-42d3-a456-426614174369', 'ORD-REF-PENDING', 'PENDING_NEW', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
           """);
-
-      Context context = new TestFlywayContext(connection);
-      V10__add_order_session_expires_at_contract migration = new V10__add_order_session_expires_at_contract();
-
-      migration.migrate(context);
-      migration.migrate(context);
     }
 
-    JdbcTemplate expiryJdbcTemplate = new JdbcTemplate(
-        new org.springframework.jdbc.datasource.DriverManagerDataSource(jdbcUrl, "sa", "")
+    DriverManagerDataSource dataSource = new DriverManagerDataSource(jdbcUrl, "sa", "");
+    ResourceDatabasePopulator populator = new ResourceDatabasePopulator(
+        new ClassPathResource("db/migration/V9__add_order_session_authorization_metadata.sql")
     );
+    populator.execute(dataSource);
 
-    LocalDateTime expiresAt = expiryJdbcTemplate.queryForObject(
-        "SELECT expires_at "
-            + "FROM order_sessions WHERE cl_ord_id = '123e4567-e89b-42d3-a456-426614174261'",
-        LocalDateTime.class
-    );
-    Integer expiryIndexCount = expiryJdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
-            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND INDEX_NAME = 'IDX_ORDER_SESSIONS_STATUS_EXPIRES_AT'",
-        Integer.class
-    );
+    JdbcTemplate authMetadataJdbcTemplate = new JdbcTemplate(dataSource);
 
-    assertThat(expiresAt).isNotNull();
-    assertThat(expiresAt).isEqualTo(LocalDateTime.parse("2026-03-12T00:10:00"));
-    assertThat(expiryIndexCount).isEqualTo(1);
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174360",
+        false,
+        "OTP_VERIFIED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174361",
+        false,
+        "OTP_VERIFIED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174362",
+        false,
+        "OTP_VERIFIED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174363",
+        false,
+        "OTP_VERIFIED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174364",
+        false,
+        "OTP_VERIFIED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174365",
+        false,
+        "OTP_VERIFIED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174366",
+        false,
+        "OTP_VERIFIED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174367",
+        false,
+        "OTP_VERIFIED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174368",
+        true,
+        "STEP_UP_REQUIRED"
+    );
+    assertAuthorizationMetadata(
+        authMetadataJdbcTemplate,
+        "123e4567-e89b-42d3-a456-426614174369",
+        true,
+        "STEP_UP_REQUIRED"
+    );
   }
 
-  @Test
-  void shouldAddPrepareContractColumnsAndRemainIdempotent() throws Exception {
-    String jdbcUrl = "jdbc:h2:mem:channel_migration_prepare_contract;MODE=MySQL;DB_CLOSE_DELAY=-1";
-
-    try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
-         Statement statement = connection.createStatement()) {
-      statement.execute("""
-          CREATE TABLE order_sessions (
-            id BIGINT AUTO_INCREMENT PRIMARY KEY,
-            order_session_id CHAR(36) NOT NULL,
-            member_id BIGINT NOT NULL,
-            cl_ord_id VARCHAR(64) NOT NULL UNIQUE,
-            order_ref VARCHAR(64) NOT NULL,
-            status VARCHAR(32) NOT NULL,
-            expires_at TIMESTAMP NOT NULL,
-            created_at TIMESTAMP NOT NULL,
-            updated_at TIMESTAMP NOT NULL,
-            version BIGINT
-          )
-          """);
-
-      Context context = new TestFlywayContext(connection);
-      V11__add_order_session_prepare_contract_columns migration =
-          new V11__add_order_session_prepare_contract_columns();
-
-      migration.migrate(context);
-      migration.migrate(context);
-    }
-
-    JdbcTemplate prepareContractJdbcTemplate = new JdbcTemplate(
-        new org.springframework.jdbc.datasource.DriverManagerDataSource(jdbcUrl, "sa", "")
-    );
-
-    Integer accountIdColumnCount = prepareContractJdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
-            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'ACCOUNT_ID'",
-        Integer.class
-    );
-    Integer symbolColumnCount = prepareContractJdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
-            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'SYMBOL'",
-        Integer.class
-    );
-    Integer qtyColumnCount = prepareContractJdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
-            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'QTY'",
-        Integer.class
-    );
-
-    assertThat(accountIdColumnCount).isEqualTo(1);
-    assertThat(symbolColumnCount).isEqualTo(1);
-    assertThat(qtyColumnCount).isEqualTo(1);
+  private void assertAuthorizationMetadata(
+      JdbcTemplate jdbcTemplate,
+      String clOrdId,
+      boolean challengeRequired,
+      String authorizationReason
+  ) {
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT challenge_required FROM order_sessions WHERE cl_ord_id = ?",
+        Boolean.class,
+        clOrdId
+    )).isEqualTo(challengeRequired);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT authorization_reason FROM order_sessions WHERE cl_ord_id = ?",
+        String.class,
+        clOrdId
+    )).isEqualTo(authorizationReason);
   }
 
   private record TestFlywayContext(Connection connection) implements Context {

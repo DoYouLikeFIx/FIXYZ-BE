@@ -3,20 +3,20 @@ package com.fix.channel.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fix.channel.entity.Member;
+import com.fix.channel.entity.OrderSessionAuthorizationReason;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
+import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
-import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.vo.OrderSessionAuthorizationDecision;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import com.fix.channel.vo.OrderSessionQueryCommand;
 import com.fix.common.error.BusinessException;
-import com.fix.common.error.ErrorCode;
-import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,13 +52,13 @@ class OrderSessionServiceTest {
   private OrderSessionService orderSessionService;
 
   @Autowired
-  private MemberRepository memberRepository;
-
-  @Autowired
   private OrderSessionRepository orderSessionRepository;
 
   @Autowired
   private AuditLogRepository auditLogRepository;
+
+  @Autowired
+  private SecurityEventRepository securityEventRepository;
 
   @Autowired
   private InMemoryOrderSessionTtlStore orderSessionTtlStore;
@@ -69,81 +69,174 @@ class OrderSessionServiceTest {
   @Autowired
   private RecordingOrderSessionRateLimitService orderSessionRateLimitService;
 
-  private Member ownerMember;
-  private Member otherMember;
-
   @BeforeEach
   void setUp() {
     auditLogRepository.deleteAll();
     orderSessionRepository.deleteAll();
-    memberRepository.deleteAll();
+    securityEventRepository.deleteAll();
     orderSessionTtlStore.reset();
     orderSessionPersistenceService.reset();
     orderSessionRateLimitService.reset();
-    ownerMember = saveLinkedMember("M-ORD-SVC-001", "svc-owner@fixyz.com", "Service Owner", 101L, "12345678901234");
-    otherMember = saveLinkedMember("M-ORD-SVC-002", "svc-other@fixyz.com", "Service Other", 202L, "43210987654321");
   }
 
   @Test
   void shouldCreatePendingNewSessionWithTtlMetadata() {
-    var result = orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174260",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    ));
+    var result = orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174260", "ORD-REF-001")
+    );
 
     assertThat(result.isCreated()).isTrue();
     assertThat(result.getOrderSessionId()).isNotBlank();
     assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
-    assertThat(result.getAccountId()).isEqualTo(101L);
-    assertThat(result.getSymbol()).isEqualTo("005930");
-    assertThat(result.getSide()).isEqualTo("BUY");
-    assertThat(result.getOrderType()).isEqualTo("LIMIT");
-    assertThat(result.getQty()).isEqualByComparingTo("10");
-    assertThat(result.getPrice()).isEqualByComparingTo("72000");
-    assertThat(result.getRemainingSeconds()).isBetween(1L, 600L);
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
+    assertThat(result.getRemainingSeconds()).isEqualTo(600L);
     assertThat(result.getExpiresAt()).isNotNull();
-    assertThat(result.getCreatedAt()).isNotNull();
-    assertThat(result.getUpdatedAt()).isNotNull();
     assertThat(auditLogRepository.count()).isEqualTo(1L);
+  }
+
+  @Test
+  void shouldCreateAutoAuthorizedSessionWhenFreshLoginMfaProofExists() {
+    Instant loginAuthenticatedAt = Instant.now().minusSeconds(30);
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.plusSeconds(5);
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268",
+        "ORD-REF-007A",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    assertThat(result.isCreated()).isTrue();
+    assertThat(result.getStatus()).isEqualTo("AUTHED");
+    assertThat(result.isChallengeRequired()).isFalse();
+    assertThat(result.getAuthorizationReason()).isEqualTo("LOGIN_MFA_FRESH");
     assertThat(orderSessionRepository.findByOrderSessionId(result.getOrderSessionId()))
         .hasValueSatisfying(session -> {
-          assertThat(session.getExpiresAt()).isEqualTo(result.getExpiresAt());
-          assertThat(session.getAccountId()).isEqualTo(101L);
-          assertThat(session.getSymbol()).isEqualTo("005930");
+          assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED);
+          assertThat(session.isChallengeRequired()).isFalse();
+          assertThat(session.getAuthorizationReason()).isEqualTo(OrderSessionAuthorizationReason.LOGIN_MFA_FRESH);
         });
   }
 
   @Test
-  void shouldRejectCreateWhenLinkedAccountDoesNotBelongToMember() {
-    assertThatThrownBy(() -> orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
-        ownerMember.getId(),
-        otherMember.getAccountId(),
-        "123e4567-e89b-42d3-a456-426614174299",
-        "005930",
-        "BUY",
-        "LIMIT",
-        BigDecimal.ONE,
-        BigDecimal.valueOf(70000)
-    )))
-        .isInstanceOf(BusinessException.class)
-        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-            .isEqualTo(ErrorCode.CHANNEL_OWNERSHIP_MISMATCH));
+  void shouldRequireChallengeWhenMfaProofPredatesCurrentLogin() {
+    Instant loginAuthenticatedAt = Instant.now();
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.minusSeconds(1);
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268AA",
+        "ORD-REF-007AA",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
+  }
+
+  @Test
+  void shouldRequireChallengeWhenTrustedSessionContinuityChanges() {
+    Instant loginAuthenticatedAt = Instant.now().minusSeconds(30);
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.plusSeconds(5);
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268B",
+        "ORD-REF-007B",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "10.0.0.2",
+        "test-agent"
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
+  }
+
+  @Test
+  void shouldRequireChallengeAfterRecentOrderSessionActivity() {
+    Instant loginAuthenticatedAt = Instant.now().minusSeconds(30);
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.plusSeconds(5);
+    var first = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268C",
+        "ORD-REF-007C",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    var second = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268D",
+        "ORD-REF-007D",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    assertThat(first.getStatus()).isEqualTo("AUTHED");
+    assertThat(second.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(second.isChallengeRequired()).isTrue();
+    assertThat(second.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
+  }
+
+  @Test
+  void shouldRequireChallengeWhenRecentSecurityEventExists() {
+    securityEventRepository.saveAndFlush(SecurityEvent.of(301L, "OTP_VERIFY_FAILED", "127.0.0.1", "test-agent", "MEDIUM"));
+
+    Instant loginAuthenticatedAt = Instant.now().minusSeconds(30);
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.plusSeconds(5);
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268E",
+        "ORD-REF-007E",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
   }
 
   @Test
   void shouldReturnReplayForExistingActiveSession() {
-    var created = orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174261",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    ));
+    var created = orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174261", "ORD-REF-002")
+    );
 
-    var replayed = orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174261",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    ));
+    var replayed = orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174261", "ORD-REF-002")
+    );
 
     assertThat(replayed.isCreated()).isFalse();
     assertThat(replayed.getOrderSessionId()).isEqualTo(created.getOrderSessionId());
@@ -153,17 +246,13 @@ class OrderSessionServiceTest {
 
   @Test
   void shouldRejectReplayWhenRequestPayloadDiffers() {
-    orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174262",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    ));
+    orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174262", "ORD-REF-003")
+    );
 
-    assertThatThrownBy(() -> orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174262",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72100)
-    )))
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174262", "ORD-REF-CHANGED")
+    ))
         .isInstanceOf(BusinessException.class)
         .hasMessage("clOrdId replay payload mismatch");
   }
@@ -172,11 +261,9 @@ class OrderSessionServiceTest {
   void shouldCleanupPersistedSessionWhenTtlActivationFails() {
     orderSessionTtlStore.failNextActivation();
 
-    assertThatThrownBy(() -> orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174263",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    )))
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174263", "ORD-REF-004")
+    ))
         .isInstanceOf(BusinessException.class)
         .hasMessage("order session cache unavailable");
 
@@ -188,11 +275,9 @@ class OrderSessionServiceTest {
   void shouldReturnNotFoundWhenFreshCreateLosesTtlBeforeResponseBuild() {
     orderSessionTtlStore.dropTtlOnNextActivation();
 
-    assertThatThrownBy(() -> orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174266",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    )))
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174266", "ORD-REF-004B")
+    ))
         .isInstanceOf(BusinessException.class)
         .hasMessage("Order session not found.");
 
@@ -202,34 +287,13 @@ class OrderSessionServiceTest {
 
   @Test
   void shouldExpireSessionWhenLookupFindsNoLiveTtl() {
-    var created = orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174264",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    ));
+    var created = orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174264", "ORD-REF-005")
+    );
     orderSessionTtlStore.clear(created.getOrderSessionId());
 
     assertThatThrownBy(() -> orderSessionService.getOrderSession(
-        OrderSessionQueryCommand.of(ownerMember.getId(), created.getOrderSessionId())
-    ))
-        .isInstanceOf(BusinessException.class)
-        .hasMessage("Order session not found.");
-
-    assertThat(orderSessionRepository.findByOrderSessionId(created.getOrderSessionId()))
-        .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.EXPIRED));
-  }
-
-  @Test
-  void shouldExpireSessionWhenAuthoritativeExpiryHasPassed() {
-    var created = orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174268",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    ));
-    orderSessionTtlStore.forceExpiry(created.getOrderSessionId(), Instant.now().minusSeconds(1));
-
-    assertThatThrownBy(() -> orderSessionService.getOrderSession(
-        OrderSessionQueryCommand.of(ownerMember.getId(), created.getOrderSessionId())
+        OrderSessionQueryCommand.of(301L, created.getOrderSessionId(), null)
     ))
         .isInstanceOf(BusinessException.class)
         .hasMessage("Order session not found.");
@@ -240,18 +304,14 @@ class OrderSessionServiceTest {
 
   @Test
   void shouldTreatExpiredReplayAsNotFoundBeforePayloadValidation() {
-    var created = orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174265",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    ));
+    var created = orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174265", "ORD-REF-006")
+    );
     orderSessionTtlStore.clear(created.getOrderSessionId());
 
-    assertThatThrownBy(() -> orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174265",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72100)
-    )))
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174265", "ORD-REF-CHANGED")
+    ))
         .isInstanceOf(BusinessException.class)
         .hasMessage("Order session not found.");
   }
@@ -260,54 +320,16 @@ class OrderSessionServiceTest {
   void shouldRecoverConcurrentDuplicateExceptionAndRefundRateLimit() {
     orderSessionPersistenceService.failNextCreateWithDuplicateAfterInsert();
 
-    var replayed = orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174267",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    ));
+    var replayed = orderSessionService.createOrderSession(
+        OrderSessionCreateCommand.of(301L, "123e4567-e89b-42d3-a456-426614174267", "ORD-REF-007")
+    );
 
     assertThat(replayed.isCreated()).isFalse();
     assertThat(replayed.getOrderSessionId()).isNotBlank();
     assertThat(replayed.getStatus()).isEqualTo("PENDING_NEW");
-    assertThat(orderSessionRateLimitService.enforcementCount(ownerMember.getId())).isEqualTo(1);
-    assertThat(orderSessionRateLimitService.refundCount(ownerMember.getId())).isEqualTo(1);
+    assertThat(orderSessionRateLimitService.enforcementCount(301L)).isEqualTo(1);
+    assertThat(orderSessionRateLimitService.refundCount(301L)).isEqualTo(1);
     assertThat(auditLogRepository.count()).isEqualTo(1L);
-  }
-
-  @Test
-  void shouldRefundRateLimitWhenDuplicateRecoveryCannotLoadConcurrentSession() {
-    orderSessionPersistenceService.failNextCreateWithDuplicateWithoutInsert();
-
-    assertThatThrownBy(() -> orderSessionService.createOrderSession(ownerLimitCommand(
-        "123e4567-e89b-42d3-a456-426614174269",
-        BigDecimal.TEN,
-        BigDecimal.valueOf(72000)
-    )))
-        .isInstanceOf(DataIntegrityViolationException.class)
-        .hasMessage("simulated duplicate create race without persisted session");
-
-    assertThat(orderSessionRateLimitService.enforcementCount(ownerMember.getId())).isEqualTo(1);
-    assertThat(orderSessionRateLimitService.refundCount(ownerMember.getId())).isEqualTo(1);
-    assertThat(auditLogRepository.count()).isZero();
-  }
-
-  private Member saveLinkedMember(String memberNo, String email, String name, Long accountId, String accountNumber) {
-    Member member = Member.registerUser(memberNo, email, "{noop}", name);
-    member.updateLinkedAccount(accountId, accountNumber);
-    return memberRepository.saveAndFlush(member);
-  }
-
-  private OrderSessionCreateCommand ownerLimitCommand(String clOrdId, BigDecimal qty, BigDecimal price) {
-    return OrderSessionCreateCommand.of(
-        ownerMember.getId(),
-        ownerMember.getAccountId(),
-        clOrdId,
-        "005930",
-        "BUY",
-        "LIMIT",
-        qty,
-        price
-    );
   }
 
   @TestConfiguration
@@ -344,40 +366,39 @@ class OrderSessionServiceTest {
 
   static class InMemoryOrderSessionTtlStore implements OrderSessionTtlStore {
 
-    private static final Duration TTL = Duration.ofMinutes(10);
+    private static final long TTL_SECONDS = 600L;
 
-    private final Map<String, Instant> activeSessions = new ConcurrentHashMap<>();
+    private final Map<String, Long> remainingSeconds = new ConcurrentHashMap<>();
     private volatile boolean failNextActivation;
     private volatile boolean dropTtlOnNextActivation;
 
     @Override
-    public void activate(String orderSessionId, Instant expiresAt) {
+    public void activate(String orderSessionId, String initialStatus) {
       if (failNextActivation) {
         failNextActivation = false;
-        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session cache unavailable");
+        throw new BusinessException(com.fix.common.error.ErrorCode.INTERNAL_ERROR, "order session cache unavailable");
       }
       if (dropTtlOnNextActivation) {
         dropTtlOnNextActivation = false;
-        activeSessions.remove(orderSessionId);
+        remainingSeconds.remove(orderSessionId);
         return;
       }
-      activeSessions.put(orderSessionId, expiresAt);
+      remainingSeconds.put(orderSessionId, TTL_SECONDS);
     }
 
     @Override
-    public boolean isActive(String orderSessionId) {
-      Instant expiresAt = activeSessions.get(orderSessionId);
-      return expiresAt != null && expiresAt.isAfter(Instant.now());
+    public Optional<Long> remainingSeconds(String orderSessionId) {
+      return Optional.ofNullable(remainingSeconds.get(orderSessionId));
     }
 
     @Override
     public void clear(String orderSessionId) {
-      activeSessions.remove(orderSessionId);
+      remainingSeconds.remove(orderSessionId);
     }
 
     @Override
-    public Duration ttl() {
-      return TTL;
+    public long ttlSeconds() {
+      return TTL_SECONDS;
     }
 
     void failNextActivation() {
@@ -388,12 +409,8 @@ class OrderSessionServiceTest {
       this.dropTtlOnNextActivation = true;
     }
 
-    void forceExpiry(String orderSessionId, Instant expiresAt) {
-      activeSessions.put(orderSessionId, expiresAt);
-    }
-
     void reset() {
-      activeSessions.clear();
+      remainingSeconds.clear();
       failNextActivation = false;
       dropTtlOnNextActivation = false;
     }
@@ -402,7 +419,6 @@ class OrderSessionServiceTest {
   static class FaultInjectingOrderSessionPersistenceService extends OrderSessionPersistenceService {
 
     private volatile boolean failNextCreateWithDuplicateAfterInsert;
-    private volatile boolean failNextCreateWithDuplicateWithoutInsert;
     private final TransactionTemplate requiresNewTransactionTemplate;
     private final InMemoryOrderSessionTtlStore orderSessionTtlStore;
 
@@ -419,35 +435,27 @@ class OrderSessionServiceTest {
     }
 
     @Override
-    public OrderSession createPendingNewSession(OrderSessionCreateCommand command, Instant expiresAt) {
-      if (failNextCreateWithDuplicateWithoutInsert) {
-        failNextCreateWithDuplicateWithoutInsert = false;
-        throw new DataIntegrityViolationException("simulated duplicate create race without persisted session");
-      }
+    public OrderSession createSession(OrderSessionCreateCommand command, OrderSessionAuthorizationDecision decision) {
       if (failNextCreateWithDuplicateAfterInsert) {
         failNextCreateWithDuplicateAfterInsert = false;
-        OrderSession concurrentSession =
-            requiresNewTransactionTemplate.execute(status -> super.createPendingNewSession(command, expiresAt));
+        OrderSession concurrentSession = requiresNewTransactionTemplate.execute(
+            status -> super.createSession(command, decision)
+        );
         if (concurrentSession == null) {
           throw new IllegalStateException("simulated duplicate create race did not persist a session");
         }
-        orderSessionTtlStore.activate(concurrentSession.getOrderSessionId(), concurrentSession.getExpiresAt());
+        orderSessionTtlStore.activate(concurrentSession.getOrderSessionId(), concurrentSession.getStatus().name());
         throw new DataIntegrityViolationException("simulated duplicate create race");
       }
-      return super.createPendingNewSession(command, expiresAt);
+      return super.createSession(command, decision);
     }
 
     void failNextCreateWithDuplicateAfterInsert() {
       this.failNextCreateWithDuplicateAfterInsert = true;
     }
 
-    void failNextCreateWithDuplicateWithoutInsert() {
-      this.failNextCreateWithDuplicateWithoutInsert = true;
-    }
-
     void reset() {
       failNextCreateWithDuplicateAfterInsert = false;
-      failNextCreateWithDuplicateWithoutInsert = false;
     }
   }
 

@@ -1,4 +1,5 @@
 package com.fix.channel.entity;
+
 import com.fix.common.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -8,8 +9,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -27,92 +26,76 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "member_id", nullable = false)
   private Long memberId;
 
-  @Column(name = "account_id")
-  private Long accountId;
-
   @Column(name = "cl_ord_id", nullable = false, unique = true, length = 64)
   private String clOrdId;
 
-  // Legacy order_ref column now stores a deterministic replay fingerprint.
   @Column(name = "order_ref", nullable = false, length = 64)
-  private String replayFingerprint;
-
-  @Column(name = "symbol", length = 16)
-  private String symbol;
-
-  @Column(name = "side", length = 16)
-  private String side;
-
-  @Column(name = "order_type", length = 16)
-  private String orderType;
-
-  @Column(name = "qty", precision = 19, scale = 4)
-  private BigDecimal qty;
-
-  @Column(name = "price", precision = 19, scale = 4)
-  private BigDecimal price;
+  private String orderRef;
 
   @Enumerated(EnumType.STRING)
   @Column(name = "status", nullable = false, length = 32)
   private OrderSessionStatus status;
 
-  @Column(name = "expires_at", nullable = false)
-  private Instant expiresAt;
+  @Column(name = "challenge_required", nullable = false)
+  private boolean challengeRequired;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "authorization_reason", nullable = false, length = 64)
+  private OrderSessionAuthorizationReason authorizationReason;
 
   protected OrderSession() {
   }
 
   private OrderSession(
       Long memberId,
-      Long accountId,
       String clOrdId,
-      String replayFingerprint,
-      String symbol,
-      String side,
-      String orderType,
-      BigDecimal qty,
-      BigDecimal price,
+      String orderRef,
       OrderSessionStatus status,
-      Instant expiresAt
+      boolean challengeRequired,
+      OrderSessionAuthorizationReason authorizationReason
   ) {
     this.orderSessionId = UUID.randomUUID().toString();
     this.memberId = memberId;
-    this.accountId = accountId;
     this.clOrdId = clOrdId;
-    this.replayFingerprint = replayFingerprint;
-    this.symbol = symbol;
-    this.side = side;
-    this.orderType = orderType;
-    this.qty = qty;
-    this.price = price;
+    this.orderRef = orderRef;
     this.status = status;
-    this.expiresAt = expiresAt;
+    this.challengeRequired = challengeRequired;
+    this.authorizationReason = Objects.requireNonNull(authorizationReason, "authorizationReason");
+  }
+
+  public static OrderSession pendingNew(Long memberId, String clOrdId, String orderRef) {
+    return pendingNew(memberId, clOrdId, orderRef, OrderSessionAuthorizationReason.STEP_UP_REQUIRED);
   }
 
   public static OrderSession pendingNew(
       Long memberId,
-      Long accountId,
       String clOrdId,
-      String replayFingerprint,
-      String symbol,
-      String side,
-      String orderType,
-      BigDecimal qty,
-      BigDecimal price,
-      Instant expiresAt
+      String orderRef,
+      OrderSessionAuthorizationReason authorizationReason
   ) {
     return new OrderSession(
         memberId,
-        accountId,
         clOrdId,
-        replayFingerprint,
-        symbol,
-        side,
-        orderType,
-        qty,
-        price,
+        orderRef,
         OrderSessionStatus.PENDING_NEW,
-        expiresAt
+        true,
+        authorizationReason
+    );
+  }
+
+  public static OrderSession authed(
+      Long memberId,
+      String clOrdId,
+      String orderRef,
+      OrderSessionAuthorizationReason authorizationReason
+  ) {
+    return new OrderSession(
+        memberId,
+        clOrdId,
+        orderRef,
+        OrderSessionStatus.AUTHED,
+        false,
+        authorizationReason
     );
   }
 
@@ -128,52 +111,34 @@ public class OrderSession extends BaseTimeEntity {
     return memberId;
   }
 
-  public Long getAccountId() {
-    return accountId;
-  }
-
   public String getClOrdId() {
     return clOrdId;
   }
 
-  public String getReplayFingerprint() {
-    return replayFingerprint;
-  }
-
-  public String getSymbol() {
-    return symbol;
-  }
-
-  public String getSide() {
-    return side;
-  }
-
-  public String getOrderType() {
-    return orderType;
-  }
-
-  public BigDecimal getQty() {
-    return qty;
-  }
-
-  public BigDecimal getPrice() {
-    return price;
+  public String getOrderRef() {
+    return orderRef;
   }
 
   public OrderSessionStatus getStatus() {
     return status;
   }
 
-  public Instant getExpiresAt() {
-    return expiresAt;
+  public boolean isChallengeRequired() {
+    return challengeRequired;
+  }
+
+  public OrderSessionAuthorizationReason getAuthorizationReason() {
+    return authorizationReason;
   }
 
   public boolean ownedBy(Long memberId) {
     return Objects.equals(this.memberId, memberId);
   }
 
-  public boolean matchesReplayFingerprint(String candidateFingerprint) {
-    return Objects.equals(this.replayFingerprint, candidateFingerprint);
+  public void authorize(OrderSessionAuthorizationReason authorizationReason) {
+    this.status = OrderSessionStatus.AUTHED;
+    this.challengeRequired = false;
+    this.authorizationReason = Objects.requireNonNull(authorizationReason, "authorizationReason");
   }
 
   public void expire() {

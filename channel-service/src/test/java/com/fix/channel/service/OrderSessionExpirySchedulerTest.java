@@ -2,10 +2,7 @@ package com.fix.channel.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,12 +18,7 @@ class OrderSessionExpirySchedulerTest {
   void setUp() {
     persistenceService = new RecordingPersistenceService();
     ttlStore = new RecordingTtlStore();
-    scheduler = new OrderSessionExpiryScheduler(
-        persistenceService,
-        ttlStore,
-        Clock.fixed(Instant.parse("2026-03-12T00:00:00Z"), ZoneOffset.UTC),
-        2
-    );
+    scheduler = new OrderSessionExpiryScheduler(persistenceService, ttlStore, 2);
   }
 
   @Test
@@ -38,28 +30,14 @@ class OrderSessionExpirySchedulerTest {
 
     scheduler.expireOverdueSessions();
 
-    assertThat(persistenceService.referenceTime).isEqualTo(Instant.parse("2026-03-12T00:00:00Z"));
-    assertThat(persistenceService.requestedBatchSizes).containsExactly(2, 2);
-    assertThat(ttlStore.clearedSessionIds).containsExactly("sess-1", "sess-2", "sess-3");
-  }
-
-  @Test
-  void shouldContinueWhenRedisCleanupFailsForSingleSession() {
-    persistenceService.expiredSessionIdBatches = List.of(
-        List.of("sess-1", "sess-2"),
-        List.of("sess-3")
-    );
-    ttlStore.failOnClear("sess-2");
-
-    scheduler.expireOverdueSessions();
-
+    assertThat(persistenceService.cutoff).isNotNull();
     assertThat(persistenceService.requestedBatchSizes).containsExactly(2, 2);
     assertThat(ttlStore.clearedSessionIds).containsExactly("sess-1", "sess-2", "sess-3");
   }
 
   private static class RecordingPersistenceService extends OrderSessionPersistenceService {
 
-    private Instant referenceTime;
+    private Instant cutoff;
     private List<List<String>> expiredSessionIdBatches = List.of();
     private final List<Integer> requestedBatchSizes = new ArrayList<>();
 
@@ -68,8 +46,8 @@ class OrderSessionExpirySchedulerTest {
     }
 
     @Override
-    public List<String> expireOverdueSessionBatch(Instant referenceTime, int batchSize) {
-      this.referenceTime = referenceTime;
+    public List<String> expireOverdueSessionBatch(Instant cutoff, int batchSize) {
+      this.cutoff = cutoff;
       requestedBatchSizes.add(batchSize);
       if (expiredSessionIdBatches.isEmpty()) {
         return List.of();
@@ -83,32 +61,24 @@ class OrderSessionExpirySchedulerTest {
   private static class RecordingTtlStore implements OrderSessionTtlStore {
 
     private final List<String> clearedSessionIds = new ArrayList<>();
-    private String failingSessionId;
 
     @Override
-    public void activate(String orderSessionId, Instant expiresAt) {
+    public void activate(String orderSessionId, String initialStatus) {
     }
 
     @Override
-    public boolean isActive(String orderSessionId) {
-      return false;
+    public java.util.Optional<Long> remainingSeconds(String orderSessionId) {
+      return java.util.Optional.empty();
     }
 
     @Override
     public void clear(String orderSessionId) {
       clearedSessionIds.add(orderSessionId);
-      if (orderSessionId.equals(failingSessionId)) {
-        throw new IllegalStateException("simulated redis clear failure");
-      }
     }
 
     @Override
-    public Duration ttl() {
-      return Duration.ofMinutes(10);
-    }
-
-    void failOnClear(String orderSessionId) {
-      failingSessionId = orderSessionId;
+    public long ttlSeconds() {
+      return 600L;
     }
   }
 }
