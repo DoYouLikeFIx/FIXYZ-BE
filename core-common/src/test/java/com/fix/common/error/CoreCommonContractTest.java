@@ -2,9 +2,9 @@ package com.fix.common.error;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +53,20 @@ class CoreCommonContractTest {
     assertEquals("FEP-002", error.getCode());
     assertEquals("error.fep.timeout", error.getUserMessageKey());
     assertEquals("TIMEOUT", error.getOperatorCode());
+  }
+
+  @Test
+  void shouldExposeAdditionalErrorPropertiesWhenPresent() {
+    ApiErrorResponse error = ApiErrorResponse.from(
+        ErrorCode.AUTH_TOTP_ENROLLMENT_REQUIRED,
+        "",
+        "/api/v1/auth/otp/verify",
+        "corr-3",
+        new ErrorMetadata(null, null, java.util.Map.of("enrollUrl", "/settings/totp/enroll"))
+    );
+
+    assertEquals("/settings/totp/enroll", error.getAdditionalProperties().get("enrollUrl"));
+    assertTrue(error.getAdditionalProperties().containsKey("enrollUrl"));
   }
 
   @Test
