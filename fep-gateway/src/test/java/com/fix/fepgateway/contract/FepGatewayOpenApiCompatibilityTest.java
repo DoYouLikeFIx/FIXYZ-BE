@@ -96,6 +96,17 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(cancelOperation.path("requestBody").path("required").asBoolean()).isTrue();
     assertThat(replayOperation.path("requestBody").path("required").asBoolean()).isTrue();
     assertThat(internalStatusOperation.path("requestBody").path("required").asBoolean()).isTrue();
+    assertThat(fieldNames(apiErrorSchema.path("properties")))
+        .contains(
+            "code",
+            "message",
+            "path",
+            "correlationId",
+            "userMessageKey",
+            "operatorCode",
+            "details",
+            "timestamp"
+        );
 
     assertThat(fieldNames(submitSchema.path("properties"))).containsAll(BASELINE_SUBMIT_FIELDS);
     assertThat(requiredFields(submitSchema))

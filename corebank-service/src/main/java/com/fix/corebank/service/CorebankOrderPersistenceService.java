@@ -10,6 +10,8 @@ import com.fix.corebank.entity.LedgerEntry;
 import com.fix.corebank.entity.LedgerEntryRef;
 import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
+import com.fix.corebank.exception.order.DailySellLimitExceededException;
+import com.fix.corebank.exception.order.InsufficientPositionException;
 import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.AccountStatusEventRepository;
 import com.fix.corebank.repository.ExecutionRepository;
@@ -22,13 +24,15 @@ import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -48,6 +52,10 @@ public class CorebankOrderPersistenceService {
   private final JournalEntryRepository journalEntryRepository;
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
+  private Clock limitWindowClock = Clock.systemUTC();
+
+  @Value("${corebank.order.limit-window-zone:UTC}")
+  private String limitWindowZone = "UTC";
 
   @Transactional(readOnly = true)
   public Optional<OrderSnapshot> findOrder(String clOrdId) {
@@ -97,24 +105,36 @@ public class CorebankOrderPersistenceService {
     ensureOrderEligibleAccountStatus(account);
 
     String side = normalizeSide(command.getSide());
-    positionRepository.findByAccountIdAndSymbolForUpdate(command.getAccountId(), command.getSymbol())
+    Position position = positionRepository.findByAccountIdAndSymbolForUpdate(command.getAccountId(), command.getSymbol())
         .orElseGet(() -> positionRepository.saveAndFlush(
             Position.of(command.getAccountId(), command.getSymbol(), BigDecimal.ZERO, BigDecimal.ZERO)
         ));
+    BigDecimal availableQty = resolveAvailableQuantity(position);
 
     BigDecimal todaySellQty = executionRepository.sumSellQuantityByAccountAndSymbolBetween(
         command.getAccountId(),
         command.getSymbol(),
-        startOfUtcDay(),
-        startOfNextUtcDay()
+        startOfLimitWindowDay(),
+        startOfNextLimitWindowDay()
     );
 
     if ("SELL".equals(side)) {
+      if (command.getQuantity().compareTo(availableQty) > 0) {
+        throw new InsufficientPositionException(
+            command.getAccountId(),
+            command.getSymbol(),
+            availableQty,
+            command.getQuantity()
+        );
+      }
       BigDecimal afterSell = todaySellQty.add(command.getQuantity());
       if (afterSell.compareTo(account.getDailySellLimit()) > 0) {
-        throw new BusinessException(
-            ErrorCode.ORD_INVALID_REQUEST,
-            "daily sell limit exceeded for account " + account.getAccountNo()
+        throw new DailySellLimitExceededException(
+            command.getAccountId(),
+            command.getSymbol(),
+            command.getQuantity(),
+            todaySellQty,
+            account.getDailySellLimit()
         );
       }
     }
@@ -212,6 +232,13 @@ public class CorebankOrderPersistenceService {
     ledgerEntryRefRepository.save(LedgerEntryRef.of(ledgerEntry.getId(), "CL_ORD_ID", order.getClOrdId()));
   }
 
+  private BigDecimal resolveAvailableQuantity(Position position) {
+    if (position.getQty() == null) {
+      return BigDecimal.ZERO;
+    }
+    return position.getQty();
+  }
+
   private String normalizeSide(String side) {
     if (side == null) {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "side is required");
@@ -242,12 +269,18 @@ public class CorebankOrderPersistenceService {
     }
   }
 
-  private Instant startOfUtcDay() {
-    return LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
+  private Instant startOfLimitWindowDay() {
+    ZoneId zoneId = resolveLimitWindowZone();
+    return LocalDate.now(limitWindowClock.withZone(zoneId)).atStartOfDay(zoneId).toInstant();
   }
 
-  private Instant startOfNextUtcDay() {
-    return LocalDate.now(ZoneOffset.UTC).plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+  private Instant startOfNextLimitWindowDay() {
+    ZoneId zoneId = resolveLimitWindowZone();
+    return LocalDate.now(limitWindowClock.withZone(zoneId)).plusDays(1).atStartOfDay(zoneId).toInstant();
+  }
+
+  private ZoneId resolveLimitWindowZone() {
+    return ZoneId.of(limitWindowZone);
   }
 
   public record PendingOrderSubmission(

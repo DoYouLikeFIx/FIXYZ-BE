@@ -11,6 +11,10 @@ import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
@@ -24,9 +28,17 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  private static final Set<String> BLOCKED_DETAIL_KEYS = Set.of(
+      "accountid",
+      "memberid",
+      "memberno",
+      "accountnumber",
+      "email"
+  );
+
   @ExceptionHandler(FixException.class)
   public ResponseEntity<ApiErrorResponse> handleFixException(FixException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, null);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), null, request, null);
   }
 
   @ExceptionHandler(BusinessException.class)
@@ -35,12 +47,19 @@ public class GlobalExceptionHandler {
     if (ex instanceof RetryAfterBusinessException retryAfterBusinessException) {
       retryAfterSeconds = retryAfterBusinessException.getRetryAfterSeconds();
     }
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, retryAfterSeconds);
+    return build(
+        ex.getErrorCode(),
+        ex.getMessage(),
+        ex.getMetadata(),
+        sanitizeDetailsForResponse(ex.getDetails()),
+        request,
+        retryAfterSeconds
+    );
   }
 
   @ExceptionHandler(SystemException.class)
   public ResponseEntity<ApiErrorResponse> handleSystemException(SystemException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, null);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), null, request, null);
   }
 
   @ExceptionHandler({
@@ -65,13 +84,14 @@ public class GlobalExceptionHandler {
   }
 
   private ResponseEntity<ApiErrorResponse> build(ErrorCode errorCode, String message, HttpServletRequest request) {
-    return build(errorCode, message, null, request, null);
+    return build(errorCode, message, null, null, request, null);
   }
 
   private ResponseEntity<ApiErrorResponse> build(
       ErrorCode errorCode,
       String message,
       ErrorMetadata metadata,
+      Map<String, Object> details,
       HttpServletRequest request,
       Long retryAfterSeconds
   ) {
@@ -81,7 +101,8 @@ public class GlobalExceptionHandler {
         message,
         request.getRequestURI(),
         correlationId,
-        metadata
+        metadata,
+        details
     );
 
     ResponseEntity.BodyBuilder builder = ResponseEntity
@@ -92,6 +113,21 @@ public class GlobalExceptionHandler {
     }
 
     return builder.body(response);
+  }
+
+  private Map<String, Object> sanitizeDetailsForResponse(Map<String, Object> details) {
+    if (details == null || details.isEmpty()) {
+      return null;
+    }
+    Map<String, Object> sanitized = new LinkedHashMap<>();
+    for (Map.Entry<String, Object> entry : details.entrySet()) {
+      String key = entry.getKey();
+      if (key == null || BLOCKED_DETAIL_KEYS.contains(key.toLowerCase(Locale.ROOT))) {
+        continue;
+      }
+      sanitized.put(key, entry.getValue());
+    }
+    return sanitized.isEmpty() ? null : sanitized;
   }
 
   private String resolveValidationMessage(Exception ex) {

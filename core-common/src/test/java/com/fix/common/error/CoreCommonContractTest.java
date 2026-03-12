@@ -2,10 +2,11 @@ package com.fix.common.error;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CoreCommonContractTest {
@@ -70,6 +71,27 @@ class CoreCommonContractTest {
   }
 
   @Test
+  void shouldIncludeStructuredErrorDetailsWhenPresent() {
+    ApiErrorResponse error = ApiErrorResponse.from(
+        ErrorCode.ORD_INVALID_REQUEST,
+        "Daily sell limit exceeded",
+        "/internal/v1/orders",
+        "corr-3",
+        new ErrorMetadata("error.order.daily_limit_exceeded", "DAILY_LIMIT_EXCEEDED"),
+        Map.of(
+            "requestedQty", "50.0000",
+            "remainingLimit", "30.0000"
+        )
+    );
+
+    assertNotNull(error.getDetails());
+    assertEquals("50.0000", error.getDetails().get("requestedQty"));
+    assertEquals("30.0000", error.getDetails().get("remainingLimit"));
+    assertEquals("error.order.daily_limit_exceeded", error.getUserMessageKey());
+    assertEquals("DAILY_LIMIT_EXCEEDED", error.getOperatorCode());
+  }
+
+  @Test
   void shouldResolveStory22AndStory26ContractErrorCodes() {
     assertEquals(
         ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
@@ -86,6 +108,14 @@ class CoreCommonContractTest {
     assertEquals(
         ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED,
         ErrorCode.fromCode("ORD-012").orElseThrow()
+    );
+    assertEquals(
+        ErrorCode.ORD_DAILY_SELL_LIMIT_EXCEEDED,
+        ErrorCode.fromCode("ORD-002").orElseThrow()
+    );
+    assertEquals(
+        ErrorCode.ORD_INSUFFICIENT_POSITION,
+        ErrorCode.fromCode("ORD-003").orElseThrow()
     );
   }
 }

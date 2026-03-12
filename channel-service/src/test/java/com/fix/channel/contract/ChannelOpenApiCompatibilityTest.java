@@ -81,6 +81,7 @@ class ChannelOpenApiCompatibilityTest {
             "correlationId",
             "userMessageKey",
             "operatorCode",
+            "details",
             "timestamp"
         );
     assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();

@@ -16,6 +16,8 @@ public class ApiErrorResponse {
   private final String correlationId;
   private final String userMessageKey;
   private final String operatorCode;
+  @Schema(type = "object", additionalProperties = Schema.AdditionalPropertiesValue.TRUE)
+  private final Map<String, Object> details;
   private final Map<String, Object> additionalProperties;
   private final Instant timestamp;
 
@@ -26,6 +28,7 @@ public class ApiErrorResponse {
       String correlationId,
       String userMessageKey,
       String operatorCode,
+      Map<String, Object> details,
       Map<String, Object> additionalProperties,
       Instant timestamp
   ) {
@@ -35,6 +38,7 @@ public class ApiErrorResponse {
     this.correlationId = correlationId;
     this.userMessageKey = userMessageKey;
     this.operatorCode = operatorCode;
+    this.details = details == null || details.isEmpty() ? null : Map.copyOf(details);
     this.additionalProperties = additionalProperties == null ? Map.of() : Map.copyOf(additionalProperties);
     this.timestamp = timestamp;
   }
@@ -54,6 +58,17 @@ public class ApiErrorResponse {
       String correlationId,
       ErrorMetadata metadata
   ) {
+    return from(errorCode, message, path, correlationId, metadata, null);
+  }
+
+  public static ApiErrorResponse from(
+      ErrorCode errorCode,
+      String message,
+      String path,
+      String correlationId,
+      ErrorMetadata metadata,
+      Map<String, Object> details
+  ) {
     String resolvedMessage = (message == null || message.isBlank()) ? errorCode.defaultMessage() : message;
     return new ApiErrorResponse(
         errorCode.code(),
@@ -62,6 +77,7 @@ public class ApiErrorResponse {
         correlationId,
         metadata != null ? metadata.userMessageKey() : null,
         metadata != null ? metadata.operatorCode() : null,
+        details,
         metadata != null ? metadata.additionalProperties() : Map.of(),
         Instant.now()
     );
@@ -89,6 +105,10 @@ public class ApiErrorResponse {
 
   public String getOperatorCode() {
     return operatorCode;
+  }
+
+  public Map<String, Object> getDetails() {
+    return details;
   }
 
   @JsonAnyGetter
