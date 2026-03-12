@@ -24,13 +24,15 @@ import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -50,6 +52,10 @@ public class CorebankOrderPersistenceService {
   private final JournalEntryRepository journalEntryRepository;
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
+  private Clock limitWindowClock = Clock.systemUTC();
+
+  @Value("${corebank.order.limit-window-zone:UTC}")
+  private String limitWindowZone = "UTC";
 
   @Transactional(readOnly = true)
   public Optional<OrderSnapshot> findOrder(String clOrdId) {
@@ -264,11 +270,17 @@ public class CorebankOrderPersistenceService {
   }
 
   private Instant startOfUtcDay() {
-    return LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
+    ZoneId zoneId = resolveLimitWindowZone();
+    return LocalDate.now(limitWindowClock.withZone(zoneId)).atStartOfDay(zoneId).toInstant();
   }
 
   private Instant startOfNextUtcDay() {
-    return LocalDate.now(ZoneOffset.UTC).plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+    ZoneId zoneId = resolveLimitWindowZone();
+    return LocalDate.now(limitWindowClock.withZone(zoneId)).plusDays(1).atStartOfDay(zoneId).toInstant();
+  }
+
+  private ZoneId resolveLimitWindowZone() {
+    return ZoneId.of(limitWindowZone);
   }
 
   public record PendingOrderSubmission(

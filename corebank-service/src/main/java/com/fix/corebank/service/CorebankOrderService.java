@@ -34,9 +34,10 @@ import com.fix.corebank.vo.InternalOrderResult;
 import com.fix.corebank.vo.PortfolioQueryCommand;
 import com.fix.corebank.vo.PortfolioResult;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -58,6 +59,11 @@ public class CorebankOrderService {
 
   @Value("${recovery.max-retry-count:5}")
   private int maxRetryCount = 5;
+
+  private Clock limitWindowClock = Clock.systemUTC();
+
+  @Value("${corebank.order.limit-window-zone:UTC}")
+  private String limitWindowZone = "UTC";
 
   @Transactional(readOnly = true)
   public PortfolioResult getPortfolio(PortfolioQueryCommand command) {
@@ -429,11 +435,17 @@ public class CorebankOrderService {
   }
 
   private Instant startOfUtcDay() {
-    return LocalDate.now(ZoneOffset.UTC).atStartOfDay().toInstant(ZoneOffset.UTC);
+    ZoneId zoneId = resolveLimitWindowZone();
+    return LocalDate.now(limitWindowClock.withZone(zoneId)).atStartOfDay(zoneId).toInstant();
   }
 
   private Instant startOfNextUtcDay() {
-    return LocalDate.now(ZoneOffset.UTC).plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+    ZoneId zoneId = resolveLimitWindowZone();
+    return LocalDate.now(limitWindowClock.withZone(zoneId)).plusDays(1).atStartOfDay(zoneId).toInstant();
+  }
+
+  private ZoneId resolveLimitWindowZone() {
+    return ZoneId.of(limitWindowZone);
   }
 
   private Instant resolveAsOf(Account account, Optional<Position> positionOptional) {
