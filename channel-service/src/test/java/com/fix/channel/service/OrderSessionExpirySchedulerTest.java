@@ -43,6 +43,20 @@ class OrderSessionExpirySchedulerTest {
     assertThat(ttlStore.clearedSessionIds).containsExactly("sess-1", "sess-2", "sess-3");
   }
 
+  @Test
+  void shouldContinueWhenRedisCleanupFailsForSingleSession() {
+    persistenceService.expiredSessionIdBatches = List.of(
+        List.of("sess-1", "sess-2"),
+        List.of("sess-3")
+    );
+    ttlStore.failOnClear("sess-2");
+
+    scheduler.expireOverdueSessions();
+
+    assertThat(persistenceService.requestedBatchSizes).containsExactly(2, 2);
+    assertThat(ttlStore.clearedSessionIds).containsExactly("sess-1", "sess-2", "sess-3");
+  }
+
   private static class RecordingPersistenceService extends OrderSessionPersistenceService {
 
     private Instant referenceTime;
@@ -69,6 +83,7 @@ class OrderSessionExpirySchedulerTest {
   private static class RecordingTtlStore implements OrderSessionTtlStore {
 
     private final List<String> clearedSessionIds = new ArrayList<>();
+    private String failingSessionId;
 
     @Override
     public void activate(String orderSessionId, Instant expiresAt) {
@@ -82,11 +97,18 @@ class OrderSessionExpirySchedulerTest {
     @Override
     public void clear(String orderSessionId) {
       clearedSessionIds.add(orderSessionId);
+      if (orderSessionId.equals(failingSessionId)) {
+        throw new IllegalStateException("simulated redis clear failure");
+      }
     }
 
     @Override
     public Duration ttl() {
       return Duration.ofMinutes(10);
+    }
+
+    void failOnClear(String orderSessionId) {
+      failingSessionId = orderSessionId;
     }
   }
 }

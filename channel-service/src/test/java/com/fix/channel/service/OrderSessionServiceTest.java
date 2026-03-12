@@ -274,6 +274,23 @@ class OrderSessionServiceTest {
     assertThat(auditLogRepository.count()).isEqualTo(1L);
   }
 
+  @Test
+  void shouldRefundRateLimitWhenDuplicateRecoveryCannotLoadConcurrentSession() {
+    orderSessionPersistenceService.failNextCreateWithDuplicateWithoutInsert();
+
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(ownerLimitCommand(
+        "123e4567-e89b-42d3-a456-426614174269",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    )))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessage("simulated duplicate create race without persisted session");
+
+    assertThat(orderSessionRateLimitService.enforcementCount(ownerMember.getId())).isEqualTo(1);
+    assertThat(orderSessionRateLimitService.refundCount(ownerMember.getId())).isEqualTo(1);
+    assertThat(auditLogRepository.count()).isZero();
+  }
+
   private Member saveLinkedMember(String memberNo, String email, String name, Long accountId, String accountNumber) {
     Member member = Member.registerUser(memberNo, email, "{noop}", name);
     member.updateLinkedAccount(accountId, accountNumber);
@@ -385,6 +402,7 @@ class OrderSessionServiceTest {
   static class FaultInjectingOrderSessionPersistenceService extends OrderSessionPersistenceService {
 
     private volatile boolean failNextCreateWithDuplicateAfterInsert;
+    private volatile boolean failNextCreateWithDuplicateWithoutInsert;
     private final TransactionTemplate requiresNewTransactionTemplate;
     private final InMemoryOrderSessionTtlStore orderSessionTtlStore;
 
@@ -402,6 +420,10 @@ class OrderSessionServiceTest {
 
     @Override
     public OrderSession createPendingNewSession(OrderSessionCreateCommand command, Instant expiresAt) {
+      if (failNextCreateWithDuplicateWithoutInsert) {
+        failNextCreateWithDuplicateWithoutInsert = false;
+        throw new DataIntegrityViolationException("simulated duplicate create race without persisted session");
+      }
       if (failNextCreateWithDuplicateAfterInsert) {
         failNextCreateWithDuplicateAfterInsert = false;
         OrderSession concurrentSession =
@@ -419,8 +441,13 @@ class OrderSessionServiceTest {
       this.failNextCreateWithDuplicateAfterInsert = true;
     }
 
+    void failNextCreateWithDuplicateWithoutInsert() {
+      this.failNextCreateWithDuplicateWithoutInsert = true;
+    }
+
     void reset() {
       failNextCreateWithDuplicateAfterInsert = false;
+      failNextCreateWithDuplicateWithoutInsert = false;
     }
   }
 
