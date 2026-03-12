@@ -19,7 +19,7 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
 
   long countByMemberIdAndCreatedAtAfter(Long memberId, Instant cutoff);
 
-  List<OrderSession> findByStatusInAndCreatedAtBeforeOrderByCreatedAtAsc(
+  List<OrderSession> findByStatusInAndExpiresAtBeforeOrderByExpiresAtAsc(
       Collection<OrderSessionStatus> statuses,
       Instant cutoff,
       Pageable pageable
