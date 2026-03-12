@@ -114,8 +114,8 @@ public class CorebankOrderPersistenceService {
     BigDecimal todaySellQty = executionRepository.sumSellQuantityByAccountAndSymbolBetween(
         command.getAccountId(),
         command.getSymbol(),
-        startOfUtcDay(),
-        startOfNextUtcDay()
+        startOfLimitWindowDay(),
+        startOfNextLimitWindowDay()
     );
 
     if ("SELL".equals(side)) {
@@ -269,12 +269,12 @@ public class CorebankOrderPersistenceService {
     }
   }
 
-  private Instant startOfUtcDay() {
+  private Instant startOfLimitWindowDay() {
     ZoneId zoneId = resolveLimitWindowZone();
     return LocalDate.now(limitWindowClock.withZone(zoneId)).atStartOfDay(zoneId).toInstant();
   }
 
-  private Instant startOfNextUtcDay() {
+  private Instant startOfNextLimitWindowDay() {
     ZoneId zoneId = resolveLimitWindowZone();
     return LocalDate.now(limitWindowClock.withZone(zoneId)).plusDays(1).atStartOfDay(zoneId).toInstant();
   }

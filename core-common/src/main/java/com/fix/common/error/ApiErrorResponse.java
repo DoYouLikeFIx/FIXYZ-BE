@@ -1,6 +1,7 @@
 package com.fix.common.error;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.Map;
 
@@ -13,6 +14,7 @@ public class ApiErrorResponse {
   private final String correlationId;
   private final String userMessageKey;
   private final String operatorCode;
+  @Schema(type = "object", additionalProperties = Schema.AdditionalPropertiesValue.TRUE)
   private final Map<String, Object> details;
   private final Instant timestamp;
 

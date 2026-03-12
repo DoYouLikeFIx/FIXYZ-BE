@@ -215,9 +215,7 @@
           },
           "details": {
             "type": "object",
-            "additionalProperties": {
-              "type": "object"
-            }
+            "additionalProperties": true
           },
           "timestamp": {
             "type": "string",
