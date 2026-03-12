@@ -52,6 +52,8 @@ management:
         enabled: true
 
 auth:
+  demo:
+    auto-totp-enrolled: ${AUTH_DEMO_AUTO_TOTP_ENROLLED:false}
   guardrails:
     ip-rate-limit:
       max-failed-attempts: ${AUTH_IP_RATE_LIMIT_MAX_FAILED_ATTEMPTS:5}

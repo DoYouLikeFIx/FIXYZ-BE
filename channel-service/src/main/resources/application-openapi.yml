@@ -27,3 +27,7 @@ springdoc:
     version: OPENAPI_3_0
   swagger-ui:
     path: /swagger-ui/index.html
+
+auth:
+  demo:
+    auto-totp-enrolled: true
