@@ -826,6 +826,12 @@
           "status": {
             "type": "string"
           },
+          "challengeRequired": {
+            "type": "boolean"
+          },
+          "authorizationReason": {
+            "type": "string"
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time"
