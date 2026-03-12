@@ -262,6 +262,45 @@
         }
       }
     },
+    "/internal/v1/accounts/{accountId}/summary": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "accountSummary",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalAccountStatusRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalAccountPositionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/accounts/{accountId}/positions": {
       "get": {
         "tags": [
@@ -301,6 +340,45 @@
         }
       }
     },
+    "/internal/v1/accounts/{accountId}/positions/list": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "accountPositions",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalAccountStatusRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListInternalAccountPositionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/accounts/{accountId}/orders": {
       "get": {
         "tags": [
@@ -333,6 +411,36 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseInternalAccountOrderHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/accounts/default": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "defaultAccountStatus",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalAccountStatusRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalAccountStatusResponse"
                 }
               }
             }
@@ -727,6 +835,62 @@
           }
         }
       },
+      "ApiResponseInternalAccountPositionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalAccountPositionResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalAccountPositionResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "availableQuantity": {
+            "type": "number"
+          },
+          "availableQty": {
+            "type": "number"
+          },
+          "balance": {
+            "type": "number"
+          },
+          "availableBalance": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ApiResponseInternalAccountStatusResponse": {
         "type": "object",
         "properties": {
@@ -791,57 +955,22 @@
           }
         }
       },
-      "ApiResponseInternalAccountPositionResponse": {
+      "ApiResponseListInternalAccountPositionResponse": {
         "type": "object",
         "properties": {
           "success": {
             "type": "boolean"
           },
           "data": {
-            "$ref": "#/components/schemas/InternalAccountPositionResponse"
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InternalAccountPositionResponse"
+            }
           },
           "error": {
             "$ref": "#/components/schemas/ApiErrorResponse"
           },
           "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountPositionResponse": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "symbol": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number"
-          },
-          "availableQuantity": {
-            "type": "number"
-          },
-          "availableQty": {
-            "type": "number"
-          },
-          "balance": {
-            "type": "number"
-          },
-          "availableBalance": {
-            "type": "number"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "asOf": {
             "type": "string",
             "format": "date-time"
           }
