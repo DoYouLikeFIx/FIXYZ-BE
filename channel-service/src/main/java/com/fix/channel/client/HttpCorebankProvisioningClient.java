@@ -19,8 +19,8 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
 
   public HttpCorebankProvisioningClient(
       RestClient.Builder restClientBuilder,
-      @Value("${corebank.internal.base-url:http://localhost:8081}") String corebankBaseUrl,
-      @Value("${corebank.internal.secret:${INTERNAL_SECRET:local-internal-secret}}") String internalSecret
+      @Value("${corebank.internal.base-url:${corebank.base-url:http://localhost:8081}}") String corebankBaseUrl,
+      @Value("${corebank.internal.secret:${internal.secret:${INTERNAL_SECRET:local-internal-secret}}}") String internalSecret
   ) {
     this.restClient = restClientBuilder
         .baseUrl(corebankBaseUrl)
