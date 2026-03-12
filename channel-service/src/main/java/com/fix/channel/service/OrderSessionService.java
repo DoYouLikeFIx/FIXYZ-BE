@@ -73,6 +73,9 @@ public class OrderSessionService {
   }
 
   private Instant resolveExpiresAt(OrderSession session) {
+    if (session.getExpiresAt() != null) {
+      return session.getExpiresAt();
+    }
     Instant createdAt = session.getCreatedAt();
     if (createdAt == null) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session creation timestamp missing");

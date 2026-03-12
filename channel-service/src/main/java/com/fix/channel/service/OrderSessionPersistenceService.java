@@ -64,7 +64,7 @@ public class OrderSessionPersistenceService {
 
   @Transactional
   public List<String> expireOverdueSessionBatch(Instant cutoff, int batchSize) {
-    List<OrderSession> sessions = orderSessionRepository.findByStatusInAndCreatedAtBeforeOrderByCreatedAtAsc(
+    List<OrderSession> sessions = orderSessionRepository.findByStatusInAndExpiresAtBeforeOrderByExpiresAtAsc(
         EXPIRABLE_STATUSES,
         cutoff,
         PageRequest.of(0, Math.max(1, batchSize))
