@@ -17,10 +17,6 @@ public record OrderSessionCreateRequest(
     String orderRef
 ) {
 
-  public OrderSessionCreateCommand toVo(Long memberId) {
-    return OrderSessionCreateCommand.of(memberId, clOrdId, orderRef);
-  }
-
   public OrderSessionCreateCommand toVo(
       Long memberId,
       Instant lastMfaVerifiedAt,
