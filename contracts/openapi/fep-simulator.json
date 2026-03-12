@@ -217,7 +217,8 @@
             "type": "string",
             "format": "date-time"
           }
-        }
+        },
+        "additionalProperties": true
       },
       "ApiResponseSimulatorRuleResponse": {
         "type": "object",

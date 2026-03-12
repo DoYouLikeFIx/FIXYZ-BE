@@ -862,7 +862,8 @@
             "type": "string",
             "format": "date-time"
           }
-        }
+        },
+        "additionalProperties": true
       },
       "ApiResponseOrderResponse": {
         "type": "object",

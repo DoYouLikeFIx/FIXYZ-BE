@@ -527,7 +527,8 @@
             "type": "string",
             "format": "date-time"
           }
-        }
+        },
+        "additionalProperties": true
       },
       "ApiResponseInternalPortfolioProvisioningResponse": {
         "type": "object",

@@ -523,7 +523,8 @@
             "type": "string",
             "format": "date-time"
           }
-        }
+        },
+        "additionalProperties": true
       },
       "ApiResponseFepOrderResponse": {
         "type": "object",
