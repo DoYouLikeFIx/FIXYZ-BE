@@ -8,6 +8,7 @@ import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
@@ -22,12 +23,12 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(BusinessException.class)
   public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), ex.getDetails(), request);
   }
 
   @ExceptionHandler(SystemException.class)
   public ResponseEntity<ApiErrorResponse> handleSystemException(SystemException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), null, request);
   }
 
   @ExceptionHandler({
@@ -53,17 +54,25 @@ public class GlobalExceptionHandler {
   }
 
   private ResponseEntity<ApiErrorResponse> build(ErrorCode errorCode, String message, HttpServletRequest request) {
-    return build(errorCode, message, null, request);
+    return build(errorCode, message, null, null, request);
   }
 
   private ResponseEntity<ApiErrorResponse> build(
       ErrorCode errorCode,
       String message,
       com.fix.common.error.ErrorMetadata metadata,
+      Map<String, Object> details,
       HttpServletRequest request
   ) {
     String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
-    ApiErrorResponse response = ApiErrorResponse.from(errorCode, message, request.getRequestURI(), correlationId, metadata);
+    ApiErrorResponse response = ApiErrorResponse.from(
+        errorCode,
+        message,
+        request.getRequestURI(),
+        correlationId,
+        metadata,
+        details
+    );
 
     return ResponseEntity
         .status(errorCode.httpStatus())

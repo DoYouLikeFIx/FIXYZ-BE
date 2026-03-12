@@ -11,6 +11,7 @@ import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
@@ -25,7 +26,7 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(FixException.class)
   public ResponseEntity<ApiErrorResponse> handleFixException(FixException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, null);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), null, request, null);
   }
 
   @ExceptionHandler(BusinessException.class)
@@ -34,12 +35,12 @@ public class GlobalExceptionHandler {
     if (ex instanceof RetryAfterBusinessException retryAfterBusinessException) {
       retryAfterSeconds = retryAfterBusinessException.getRetryAfterSeconds();
     }
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, retryAfterSeconds);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), ex.getDetails(), request, retryAfterSeconds);
   }
 
   @ExceptionHandler(SystemException.class)
   public ResponseEntity<ApiErrorResponse> handleSystemException(SystemException ex, HttpServletRequest request) {
-    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), request, null);
+    return build(ex.getErrorCode(), ex.getMessage(), ex.getMetadata(), null, request, null);
   }
 
   @ExceptionHandler({
@@ -63,13 +64,14 @@ public class GlobalExceptionHandler {
   }
 
   private ResponseEntity<ApiErrorResponse> build(ErrorCode errorCode, String message, HttpServletRequest request) {
-    return build(errorCode, message, null, request, null);
+    return build(errorCode, message, null, null, request, null);
   }
 
   private ResponseEntity<ApiErrorResponse> build(
       ErrorCode errorCode,
       String message,
       ErrorMetadata metadata,
+      Map<String, Object> details,
       HttpServletRequest request,
       Long retryAfterSeconds
   ) {
@@ -79,7 +81,8 @@ public class GlobalExceptionHandler {
         message,
         request.getRequestURI(),
         correlationId,
-        metadata
+        metadata,
+        details
     );
 
     ResponseEntity.BodyBuilder builder = ResponseEntity

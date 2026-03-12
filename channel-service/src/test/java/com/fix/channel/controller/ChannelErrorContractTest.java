@@ -109,6 +109,10 @@ class ChannelErrorContractTest {
                   "correlationId": "trace-core-timeout",
                   "userMessageKey": "error.fep.timeout",
                   "operatorCode": "TIMEOUT",
+                  "details": {
+                    "symbol": "005930",
+                    "requestedQty": 2
+                  },
                   "timestamp": "2026-03-10T00:00:00Z"
                 }
                 """)));
@@ -129,6 +133,8 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.path").value("/api/v1/orders"))
         .andExpect(jsonPath("$.userMessageKey").value("error.fep.timeout"))
         .andExpect(jsonPath("$.operatorCode").value("TIMEOUT"))
+        .andExpect(jsonPath("$.details.symbol").value("005930"))
+        .andExpect(jsonPath("$.details.requestedQty").value(2))
         .andExpect(jsonPath("$.correlationId").value("trace-channel-timeout"))
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
 
