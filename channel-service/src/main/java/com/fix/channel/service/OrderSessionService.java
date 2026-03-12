@@ -2,6 +2,7 @@ package com.fix.channel.service;
 
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.vo.OrderSessionAuthorizationDecision;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import com.fix.channel.vo.OrderSessionQueryCommand;
 import com.fix.channel.vo.OrderSessionResult;
@@ -23,6 +24,7 @@ public class OrderSessionService {
   private final OrderSessionPersistenceService orderSessionPersistenceService;
   private final OrderSessionRateLimitService orderSessionRateLimitService;
   private final OrderSessionTtlStore orderSessionTtlStore;
+  private final OrderSessionAuthorizationDecisionService orderSessionAuthorizationDecisionService;
 
   public OrderSessionResult createOrderSession(OrderSessionCreateCommand command) {
     OrderSession existingSession = orderSessionRepository.findByClOrdId(command.getClOrdId()).orElse(null);
@@ -31,16 +33,18 @@ public class OrderSessionService {
     }
 
     orderSessionRateLimitService.enforceCreateRateLimit(command.getMemberId());
+    OrderSessionAuthorizationDecision authorizationDecision =
+        orderSessionAuthorizationDecisionService.evaluate(command);
 
     OrderSession savedSession;
     try {
-      savedSession = orderSessionPersistenceService.createPendingNewSession(command);
+      savedSession = orderSessionPersistenceService.createSession(command, authorizationDecision);
     } catch (DataIntegrityViolationException ex) {
       return resolveConcurrentReplay(command, ex);
     }
 
     try {
-      orderSessionTtlStore.activate(savedSession.getOrderSessionId());
+      orderSessionTtlStore.activate(savedSession.getOrderSessionId(), savedSession.getStatus().name());
     } catch (RuntimeException ex) {
       cleanupFailedActivation(savedSession.getOrderSessionId(), command.getMemberId(), ex);
       throw ex;
@@ -83,6 +87,8 @@ public class OrderSessionService {
         session.getStatus().name(),
         resolveExpiresAt(session),
         remainingSeconds,
+        session.isChallengeRequired(),
+        session.getAuthorizationReason().name(),
         created
     );
   }

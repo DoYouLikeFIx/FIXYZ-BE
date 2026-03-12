@@ -4,7 +4,7 @@ import java.util.Optional;
 
 public interface OrderSessionTtlStore {
 
-  void activate(String orderSessionId);
+  void activate(String orderSessionId, String initialStatus);
 
   Optional<Long> remainingSeconds(String orderSessionId);
 

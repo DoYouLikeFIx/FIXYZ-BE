@@ -6,6 +6,7 @@ import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.vo.OrderSessionAuthorizationDecision;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import java.time.Instant;
 import java.util.List;
@@ -26,12 +27,21 @@ public class OrderSessionPersistenceService {
   private final AuditLogRepository auditLogRepository;
 
   @Transactional
-  public OrderSession createPendingNewSession(OrderSessionCreateCommand command) {
-    OrderSession savedSession = orderSessionRepository.saveAndFlush(OrderSession.pendingNew(
-        command.getMemberId(),
-        command.getClOrdId(),
-        command.getOrderRef()
-    ));
+  public OrderSession createSession(OrderSessionCreateCommand command, OrderSessionAuthorizationDecision decision) {
+    OrderSession session = decision.getInitialStatus() == OrderSessionStatus.AUTHED
+        ? OrderSession.authed(
+            command.getMemberId(),
+            command.getClOrdId(),
+            command.getOrderRef(),
+            decision.getAuthorizationReason()
+        )
+        : OrderSession.pendingNew(
+            command.getMemberId(),
+            command.getClOrdId(),
+            command.getOrderRef(),
+            decision.getAuthorizationReason()
+        );
+    OrderSession savedSession = orderSessionRepository.saveAndFlush(session);
 
     auditLogRepository.save(AuditLog.of(
         command.getMemberId(),
@@ -39,6 +49,8 @@ public class OrderSessionPersistenceService {
         ORDER_SESSION_TARGET_TYPE,
         savedSession.getOrderSessionId(),
         "clOrdId=" + savedSession.getClOrdId()
+            + ", status=" + savedSession.getStatus().name()
+            + ", authorizationReason=" + savedSession.getAuthorizationReason().name()
     ));
     return savedSession;
   }

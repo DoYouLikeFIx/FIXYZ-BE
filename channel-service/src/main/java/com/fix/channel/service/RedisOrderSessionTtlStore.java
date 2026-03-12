@@ -19,16 +19,15 @@ public class RedisOrderSessionTtlStore implements OrderSessionTtlStore {
   private static final Duration ORDER_SESSION_TTL = Duration.ofMinutes(10);
   private static final String ORDER_SESSION_KEY_PREFIX = "ch:order-session:";
   private static final String OTP_ATTEMPTS_KEY_PREFIX = "ch:otp-attempts:";
-  private static final String INITIAL_STATUS = "PENDING_NEW";
   private static final String INITIAL_OTP_ATTEMPTS = "3";
   private static final DefaultRedisScript<Long> ACTIVATE_SESSION_SCRIPT = createActivateSessionScript();
 
   private final ObjectProvider<StringRedisTemplate> redisTemplateProvider;
 
   @Override
-  public void activate(String orderSessionId) {
+  public void activate(String orderSessionId, String initialStatus) {
     StringRedisTemplate redisTemplate = requireRedis();
-    Long activated = executeActivation(redisTemplate, orderSessionId);
+    Long activated = executeActivation(redisTemplate, orderSessionId, initialStatus);
     if (activated == null || activated != 1L) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session cache activation failed");
     }
@@ -71,12 +70,12 @@ public class RedisOrderSessionTtlStore implements OrderSessionTtlStore {
     return OTP_ATTEMPTS_KEY_PREFIX + orderSessionId;
   }
 
-  protected Long executeActivation(StringRedisTemplate redisTemplate, String orderSessionId) {
+  protected Long executeActivation(StringRedisTemplate redisTemplate, String orderSessionId, String initialStatus) {
     return redisTemplate.execute(
         ACTIVATE_SESSION_SCRIPT,
         List.of(orderSessionKey(orderSessionId), otpAttemptsKey(orderSessionId)),
         String.valueOf(ORDER_SESSION_TTL.toMillis()),
-        INITIAL_STATUS,
+        initialStatus,
         INITIAL_OTP_ATTEMPTS
     );
   }

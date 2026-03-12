@@ -8,6 +8,7 @@ import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.session.ChannelSessionAttributes;
 import com.fix.channel.vo.AuthLoginCommand;
 import com.fix.channel.vo.AuthLoginResult;
 import com.fix.channel.vo.AuthRegisterCommand;
@@ -18,6 +19,7 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import java.time.Instant;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.List;
@@ -196,8 +198,9 @@ public class AuthService {
     }
 
     HttpSession session = request.getSession(true);
-    session.setAttribute("AUTH_MEMBER_ID", member.getId());
-    session.setAttribute("AUTH_MEMBER_NAME", member.getName());
+    session.setAttribute(ChannelSessionAttributes.AUTH_MEMBER_ID, member.getId());
+    session.setAttribute(ChannelSessionAttributes.AUTH_MEMBER_NAME, member.getName());
+    seedOrderAuthorizationSessionContext(session, clientIp, userAgent);
     session.setAttribute(
         FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME,
         member.getEmail()
@@ -273,6 +276,18 @@ public class AuthService {
 
   private String normalizeEmail(String email) {
     return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private void seedOrderAuthorizationSessionContext(
+      HttpSession session,
+      String clientIp,
+      String userAgent
+  ) {
+    session.setAttribute(ChannelSessionAttributes.AUTH_LOGIN_AUTHENTICATED_AT, Instant.now());
+    session.setAttribute(ChannelSessionAttributes.AUTH_LOGIN_IP_ADDRESS, clientIp);
+    session.setAttribute(ChannelSessionAttributes.AUTH_LOGIN_USER_AGENT, userAgent);
+    session.removeAttribute(ChannelSessionAttributes.AUTH_MFA_VERIFIED_AT);
+    session.setAttribute(ChannelSessionAttributes.AUTH_ORDER_CHALLENGE_BYPASS_ELIGIBLE, false);
   }
 
   private boolean isDuplicateMemberEmail(DataIntegrityViolationException ex) {
@@ -367,7 +382,7 @@ public class AuthService {
   }
 
   private Long extractMemberId(HttpSession session) {
-    Object memberIdAttr = session.getAttribute("AUTH_MEMBER_ID");
+    Object memberIdAttr = session.getAttribute(ChannelSessionAttributes.AUTH_MEMBER_ID);
     if (memberIdAttr instanceof Number memberIdNumber) {
       return memberIdNumber.longValue();
     }
