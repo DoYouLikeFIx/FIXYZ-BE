@@ -32,6 +32,18 @@ public class Member extends BaseTimeEntity {
   @Column(name = "role", nullable = false, length = 20)
   private String role;
 
+  @Column(name = "account_id")
+  private Long accountId;
+
+  @Column(name = "account_number", length = 14)
+  private String accountNumber;
+
+  @Column(name = "totp_enabled", nullable = false)
+  private boolean totpEnabled;
+
+  @Column(name = "totp_enrolled_at")
+  private Instant totpEnrolledAt;
+
   @Column(name = "status", nullable = false, length = 32)
   private String status;
 
@@ -53,6 +65,10 @@ public class Member extends BaseTimeEntity {
       String passwordHash,
       String name,
       String role,
+      Long accountId,
+      String accountNumber,
+      boolean totpEnabled,
+      Instant totpEnrolledAt,
       String status,
       int failedLoginAttempts,
       Instant lockedAt,
@@ -63,6 +79,10 @@ public class Member extends BaseTimeEntity {
     this.passwordHash = passwordHash;
     this.name = name;
     this.role = role;
+    this.accountId = accountId;
+    this.accountNumber = accountNumber;
+    this.totpEnabled = totpEnabled;
+    this.totpEnrolledAt = totpEnrolledAt;
     this.status = status;
     this.failedLoginAttempts = failedLoginAttempts;
     this.lockedAt = lockedAt;
@@ -71,13 +91,41 @@ public class Member extends BaseTimeEntity {
 
   public static Member registerUser(String memberNo, String email, String passwordHash, String name) {
     Instant now = Instant.now();
-    return new Member(memberNo, email, passwordHash, name, "ROLE_USER", "ACTIVE", 0, null, now);
+    return new Member(
+        memberNo,
+        email,
+        passwordHash,
+        name,
+        "ROLE_USER",
+        null,
+        null,
+        false,
+        null,
+        "ACTIVE",
+        0,
+        null,
+        now
+    );
   }
 
   // 스캐폴딩 경로 호환을 위해 기존 팩토리를 유지한다.
   // Story 1.1 전환 완료 후 모든 호출은 registerUser(...)로 대체한다.
   public static Member of(String memberNo, String email, String status) {
-    return new Member(memberNo, email, "__LEGACY__", memberNo, "ROLE_USER", status, 0, null, Instant.now());
+    return new Member(
+        memberNo,
+        email,
+        "__LEGACY__",
+        memberNo,
+        "ROLE_USER",
+        null,
+        null,
+        false,
+        null,
+        status,
+        0,
+        null,
+        Instant.now()
+    );
   }
 
   public Long getId() {
@@ -102,6 +150,22 @@ public class Member extends BaseTimeEntity {
 
   public String getRole() {
     return role;
+  }
+
+  public Long getAccountId() {
+    return accountId;
+  }
+
+  public String getAccountNumber() {
+    return accountNumber;
+  }
+
+  public boolean isTotpEnabled() {
+    return totpEnabled;
+  }
+
+  public Instant getTotpEnrolledAt() {
+    return totpEnrolledAt;
   }
 
   public String getStatus() {
@@ -146,6 +210,16 @@ public class Member extends BaseTimeEntity {
 
   public void updateProfileName(String name) {
     this.name = name;
+  }
+
+  public void updateLinkedAccount(Long accountId, String accountNumber) {
+    this.accountId = accountId;
+    this.accountNumber = accountNumber;
+  }
+
+  public void enableTotpEnrollment() {
+    this.totpEnabled = true;
+    this.totpEnrolledAt = Instant.now();
   }
 
   public void updatePasswordHash(String passwordHash) {

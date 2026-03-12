@@ -2,9 +2,12 @@ package com.fix.channel.client;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,9 +63,12 @@ class HttpCorebankProvisioningClientTest {
         "test-secret"
     );
 
-    Long accountId = client.provisionDefaultAccount(123L, "M-123", "member123@fix.local", "corr-123");
+    CorebankLinkedAccountProfile profile =
+        client.provisionDefaultAccount(123L, "M-123", "member123@fix.local", "corr-123");
 
-    assertThat(accountId).isEqualTo(1001L);
+    assertThat(profile.accountId()).isEqualTo(1001L);
+    assertThat(profile.memberId()).isEqualTo(123L);
+    assertThat(profile.accountNumber()).isEqualTo("110123456789");
 
     wireMockServer.verify(postRequestedFor(urlEqualTo("/internal/v1/portfolio"))
         .withHeader("X-Internal-Secret", equalTo("test-secret"))
@@ -92,5 +98,54 @@ class HttpCorebankProvisioningClientTest {
         .isInstanceOf(BusinessException.class)
         .extracting(ex -> ((BusinessException) ex).getErrorCode())
         .isEqualTo(ErrorCode.CORE_PROVISIONING_UNAVAILABLE);
+  }
+
+  @Test
+  void shouldFetchDefaultLinkedAccountProfile() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/default"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1001,
+                    "memberId": 123,
+                    "accountNumber": "110123456789"
+                  }
+                }
+                """)));
+
+    HttpCorebankProvisioningClient client = new HttpCorebankProvisioningClient(
+        RestClient.builder(),
+        "http://127.0.0.1:" + wireMockServer.port(),
+        "test-secret"
+    );
+
+    CorebankLinkedAccountProfile profile = client.fetchDefaultAccountProfile(123L, "corr-lookup");
+
+    assertThat(profile.accountId()).isEqualTo(1001L);
+    assertThat(profile.memberId()).isEqualTo(123L);
+    assertThat(profile.accountNumber()).isEqualTo("110123456789");
+
+    wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/default"))
+        .withQueryParam("memberId", equalTo("123"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("corr-lookup")));
+  }
+
+  @Test
+  void shouldReturnNullWhenNoLinkedAccountProfileExists() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/default"))
+        .willReturn(aResponse().withStatus(404)));
+
+    HttpCorebankProvisioningClient client = new HttpCorebankProvisioningClient(
+        RestClient.builder(),
+        "http://127.0.0.1:" + wireMockServer.port(),
+        "test-secret"
+    );
+
+    assertThat(client.fetchDefaultAccountProfile(123L, "corr-missing")).isNull();
   }
 }

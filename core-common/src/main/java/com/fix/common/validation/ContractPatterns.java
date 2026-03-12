@@ -5,6 +5,7 @@ public final class ContractPatterns {
   public static final String UUID_V4 =
       "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$";
   public static final String SIX_DIGIT_SYMBOL = "^\\d{6}$";
+  public static final String DOMESTIC_ORDER_SYMBOL = "^(Q)?\\d{6}$";
   public static final int REPLAY_REASON_MIN_LENGTH = 30;
 
   private ContractPatterns() {

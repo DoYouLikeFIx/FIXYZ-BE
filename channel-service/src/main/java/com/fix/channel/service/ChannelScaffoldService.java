@@ -3,12 +3,9 @@ package com.fix.channel.service;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.Notification;
-import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OtpVerification;
 import com.fix.channel.entity.SecurityEvent;
-import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.NotificationRepository;
-import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.OtpVerificationRepository;
 import com.fix.channel.repository.SecurityEventRepository;
 import com.fix.channel.vo.AdminSecurityEventCommand;
@@ -18,9 +15,6 @@ import com.fix.channel.vo.CsrfBootstrapResult;
 import com.fix.channel.vo.NotificationItemVo;
 import com.fix.channel.vo.NotificationStreamCommand;
 import com.fix.channel.vo.NotificationStreamResult;
-import com.fix.channel.vo.OrderSessionCreateCommand;
-import com.fix.channel.vo.OrderSessionQueryCommand;
-import com.fix.channel.vo.OrderSessionResult;
 import com.fix.channel.vo.OtpVerifyCommand;
 import com.fix.channel.vo.OtpVerifyResult;
 import com.fix.channel.vo.SecurityEventItemVo;
@@ -44,9 +38,7 @@ public class ChannelScaffoldService {
   private static final int MAX_LIMIT = 100;
 
   private final OtpVerificationRepository otpVerificationRepository;
-  private final OrderSessionRepository orderSessionRepository;
   private final NotificationRepository notificationRepository;
-  private final AuditLogRepository auditLogRepository;
   private final SecurityEventRepository securityEventRepository;
 
   @Transactional(readOnly = true)
@@ -79,43 +71,6 @@ public class ChannelScaffoldService {
     }
 
     return OtpVerifyResult.of(matched);
-  }
-
-  @Transactional
-  public OrderSessionResult createOrderSession(OrderSessionCreateCommand command) {
-    OrderSession session = orderSessionRepository.findByClOrdId(command.getClOrdId())
-        .orElseGet(() -> orderSessionRepository.save(OrderSession.open(
-            command.getMemberId(),
-            command.getClOrdId(),
-            command.getOrderRef()
-        )));
-
-    auditLogRepository.save(AuditLog.of(
-        command.getMemberId(),
-        AuditAction.ORDER_SESSION_CREATE,
-        "ORDER_SESSION",
-        String.valueOf(session.getId()),
-        "clOrdId=" + session.getClOrdId()
-    ));
-
-    return OrderSessionResult.of(session.getId(), session.getClOrdId(), session.getStatus());
-  }
-
-  @Transactional(readOnly = true)
-  public OrderSessionResult getOrderSession(OrderSessionQueryCommand command) {
-    OrderSession session = null;
-
-    if (command.getSessionId() != null) {
-      session = orderSessionRepository.findById(command.getSessionId()).orElse(null);
-    }
-    if (session == null && command.getClOrdId() != null && !command.getClOrdId().isBlank()) {
-      session = orderSessionRepository.findByClOrdId(command.getClOrdId()).orElse(null);
-    }
-    if (session == null) {
-      throw new BusinessException(ErrorCode.CHANNEL_SESSION_NOT_FOUND, "order session not found");
-    }
-
-    return OrderSessionResult.of(session.getId(), session.getClOrdId(), session.getStatus());
   }
 
   @Transactional(readOnly = true)

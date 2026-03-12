@@ -59,10 +59,10 @@ class CorebankOpenApiCompatibilityTest {
             "/internal/v1/orders/{clOrdId}/requery",
             "/internal/v1/portfolio",
             "/internal/v1/accounts/{accountId}/positions",
-            "/internal/v1/accounts/{accountId}/status",
-            "/internal/v1/accounts/{accountId}/positions/list",
             "/internal/v1/accounts/{accountId}/summary",
+            "/internal/v1/accounts/{accountId}/positions/list",
             "/internal/v1/accounts/{accountId}/status",
+            "/internal/v1/accounts/default",
             "/internal/v1/accounts/{accountId}/orders"
         );
 

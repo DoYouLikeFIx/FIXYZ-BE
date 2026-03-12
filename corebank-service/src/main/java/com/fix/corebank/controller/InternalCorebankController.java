@@ -24,7 +24,6 @@ import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
-import java.util.List;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -39,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
 
 @RestController
 @Validated
@@ -71,6 +71,26 @@ public class InternalCorebankController {
     ));
   }
 
+  @GetMapping("/accounts/{accountId}/summary")
+  public ApiResponse<InternalAccountPositionResponse> accountSummary(
+      @PathVariable Long accountId,
+      @Valid @ModelAttribute InternalAccountSummaryRequest request
+  ) {
+    return ApiResponse.success(InternalAccountPositionResponse.from(
+        corebankOrderService.getAccountSummary(request.toVo(accountId))
+    ));
+  }
+
+  @GetMapping("/accounts/{accountId}/positions/list")
+  public ApiResponse<List<InternalAccountPositionResponse>> accountPositions(
+      @PathVariable Long accountId,
+      @Valid @ModelAttribute InternalAccountPositionsRequest request
+  ) {
+    return ApiResponse.success(corebankOrderService.getAccountPositions(request.toVo(accountId)).stream()
+        .map(InternalAccountPositionResponse::from)
+        .toList());
+  }
+
   @GetMapping("/accounts/{accountId}/status")
   public ApiResponse<InternalAccountStatusResponse> accountStatus(
       @PathVariable Long accountId,
@@ -78,6 +98,15 @@ public class InternalCorebankController {
   ) {
     return ApiResponse.success(InternalAccountStatusResponse.from(
         corebankOrderService.getAccountStatus(request.toVo(accountId))
+    ));
+  }
+
+  @GetMapping("/accounts/default")
+  public ApiResponse<InternalAccountStatusResponse> defaultAccountStatus(
+      @Valid @ModelAttribute InternalAccountStatusRequest request
+  ) {
+    return ApiResponse.success(InternalAccountStatusResponse.from(
+        corebankOrderService.getDefaultAccountStatus(request.getMemberId())
     ));
   }
 
@@ -89,28 +118,6 @@ public class InternalCorebankController {
   ) {
     return ApiResponse.success(InternalAccountStatusTransitionResponse.from(
         corebankOrderService.transitionAccountStatus(request.toVo(accountId, correlationId))
-    ));
-  }
-
-  @GetMapping("/accounts/{accountId}/positions/list")
-  public ApiResponse<List<InternalAccountPositionResponse>> accountPositions(
-      @PathVariable Long accountId,
-      @Valid @ModelAttribute InternalAccountPositionsRequest request
-  ) {
-    return ApiResponse.success(
-        corebankOrderService.getAccountPositions(request.toVo(accountId)).stream()
-            .map(InternalAccountPositionResponse::from)
-            .toList()
-    );
-  }
-
-  @GetMapping("/accounts/{accountId}/summary")
-  public ApiResponse<InternalAccountPositionResponse> accountSummary(
-      @PathVariable Long accountId,
-      @Valid @ModelAttribute InternalAccountSummaryRequest request
-  ) {
-    return ApiResponse.success(InternalAccountPositionResponse.from(
-        corebankOrderService.getAccountSummary(request.toVo(accountId))
     ));
   }
 

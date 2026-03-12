@@ -2,5 +2,7 @@ package com.fix.channel.client;
 
 public interface CorebankProvisioningClient {
 
-  Long provisionDefaultAccount(Long memberId, String memberNo, String email, String correlationId);
+  CorebankLinkedAccountProfile provisionDefaultAccount(Long memberId, String memberNo, String email, String correlationId);
+
+  CorebankLinkedAccountProfile fetchDefaultAccountProfile(Long memberId, String correlationId);
 }

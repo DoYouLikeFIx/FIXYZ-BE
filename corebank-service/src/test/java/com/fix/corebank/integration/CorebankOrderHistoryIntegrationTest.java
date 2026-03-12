@@ -86,7 +86,7 @@ class CorebankOrderHistoryIntegrationTest {
         .andExpect(jsonPath("$.data.content.length()").value(2))
         .andExpect(jsonPath("$.data.content[0].clOrdId").value("123e4567-e89b-42d3-a456-426614174302"))
         .andExpect(jsonPath("$.data.content[0].symbol").value("000660"))
-        .andExpect(jsonPath("$.data.content[0].symbolName").value("000660"))
+        .andExpect(jsonPath("$.data.content[0].symbolName").value("SK하이닉스"))
         .andExpect(jsonPath("$.data.content[0].qty").value(2.0))
         .andExpect(jsonPath("$.data.content[0].unitPrice").value(120000.0))
         .andExpect(jsonPath("$.data.content[0].totalAmount").value(240000.0))

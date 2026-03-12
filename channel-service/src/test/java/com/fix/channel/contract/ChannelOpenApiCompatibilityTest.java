@@ -21,11 +21,16 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode paths = contract.path("paths");
     JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode loginResponse = contract.path("components").path("schemas").path("ApiResponseAuthLoginResponse");
+    JsonNode authSessionResponse = contract.path("components").path("schemas")
+        .path("ApiResponseAuthSessionResponse");
+    JsonNode authSessionSchema = contract.path("components").path("schemas").path("AuthSessionResponse");
     JsonNode orderResponse = contract.path("components").path("schemas").path("ApiResponseOrderResponse");
     JsonNode sessionResponse = contract.path("components").path("schemas").path("ApiResponseOrderSessionResponse");
     JsonNode accountPositionResponse = contract.path("components").path("schemas")
         .path("ApiResponseAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas").path("AccountPositionResponse");
+    JsonNode orderSessionCreateRequestSchema = contract.path("components").path("schemas").path("OrderSessionCreateRequest");
+    JsonNode orderSessionSchema = contract.path("components").path("schemas").path("OrderSessionResponse");
     JsonNode accountPositionListResponse = contract.path("components").path("schemas")
         .path("ApiResponseListAccountPositionResponse");
     JsonNode accountOrderHistoryResponse = contract.path("components").path("schemas")
@@ -46,12 +51,14 @@ class ChannelOpenApiCompatibilityTest {
 
     assertThat(fieldNames(paths))
         .contains(
+            "/api/v1/auth/session",
             "/api/v1/auth/login",
             "/api/v1/orders",
             "/api/v1/orders/sessions",
+            "/api/v1/orders/sessions/{orderSessionId}",
             "/api/v1/accounts/{accountId}/positions",
-            "/api/v1/accounts/{accountId}/positions/list",
             "/api/v1/accounts/{accountId}/summary",
+            "/api/v1/accounts/{accountId}/positions/list",
             "/api/v1/accounts/{accountId}/orders",
             "/api/v1/admin/accounts/{accountId}/status"
         );
@@ -69,6 +76,8 @@ class ChannelOpenApiCompatibilityTest {
 
     assertThat(loginResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(authSessionResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(orderResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(sessionResponse.path("properties").path("error").path("$ref").asText())
@@ -81,8 +90,29 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(adminStatusTransitionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(fieldNames(authSessionSchema.path("properties")))
+        .contains("memberUuid", "username", "email", "name", "role", "totpEnrolled", "accountId", "accountNumber");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
+    assertThat(fieldNames(orderSessionCreateRequestSchema.path("properties")))
+        .contains("accountId", "symbol", "side", "orderType", "qty", "price");
+    assertThat(fieldNames(orderSessionSchema.path("properties")))
+        .contains(
+            "orderSessionId",
+            "clOrdId",
+            "accountId",
+            "symbol",
+            "side",
+            "orderType",
+            "qty",
+            "price",
+            "createdAt",
+            "updatedAt",
+            "expiresAt",
+            "remainingSeconds"
+        );
+    assertThat(parameterNames(paths.path("/api/v1/orders/sessions").path("post").path("parameters")))
+        .contains("X-ClOrdID");
     assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
     assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
@@ -116,6 +146,12 @@ class ChannelOpenApiCompatibilityTest {
   private Set<String> fieldNames(JsonNode node) {
     Set<String> names = new TreeSet<>();
     node.fieldNames().forEachRemaining(names::add);
+    return names;
+  }
+
+  private Set<String> parameterNames(JsonNode node) {
+    Set<String> names = new TreeSet<>();
+    node.forEach(parameter -> names.add(parameter.path("name").asText()));
     return names;
   }
 

@@ -2,23 +2,23 @@ package com.fix.channel.vo;
 
 public class OrderSessionQueryCommand {
 
-  private final Long sessionId;
-  private final String clOrdId;
+  private final Long memberId;
+  private final String orderSessionId;
 
-  private OrderSessionQueryCommand(Long sessionId, String clOrdId) {
-    this.sessionId = sessionId;
-    this.clOrdId = clOrdId;
+  private OrderSessionQueryCommand(Long memberId, String orderSessionId) {
+    this.memberId = memberId;
+    this.orderSessionId = orderSessionId;
   }
 
-  public static OrderSessionQueryCommand of(Long sessionId, String clOrdId) {
-    return new OrderSessionQueryCommand(sessionId, clOrdId);
+  public static OrderSessionQueryCommand of(Long memberId, String orderSessionId) {
+    return new OrderSessionQueryCommand(memberId, orderSessionId);
   }
 
-  public Long getSessionId() {
-    return sessionId;
+  public Long getMemberId() {
+    return memberId;
   }
 
-  public String getClOrdId() {
-    return clOrdId;
+  public String getOrderSessionId() {
+    return orderSessionId;
   }
 }

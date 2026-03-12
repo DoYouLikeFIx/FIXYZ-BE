@@ -4,21 +4,17 @@ import com.fix.channel.vo.MemberProfileUpdateCommand;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-public class MemberProfileUpdateRequest {
+public record MemberProfileUpdateRequest(
+    @NotBlank
+    @Size(min = 2, max = 100)
+    String name
+) {
 
-  @NotBlank
-  @Size(min = 2, max = 100)
-  private String name;
+  public MemberProfileUpdateRequest {
+    name = name == null ? null : name.trim();
+  }
 
   public MemberProfileUpdateCommand toVo() {
     return MemberProfileUpdateCommand.of(name);
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name == null ? null : name.trim();
   }
 }

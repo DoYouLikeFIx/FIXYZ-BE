@@ -3,6 +3,10 @@ package com.fix.channel.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doReturn;
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -15,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.client.CorebankProvisioningClient;
+import com.fix.channel.client.CorebankLinkedAccountProfile;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
@@ -71,7 +76,11 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     memberRepository.deleteAll();
     auditLogRepository.deleteAll();
     securityEventRepository.deleteAll();
-    doReturn(1001L).when(corebankProvisioningClient)
+    doAnswer(invocation -> new CorebankLinkedAccountProfile(
+        1001L,
+        invocation.getArgument(0, Long.class),
+        "110123456789"
+    )).when(corebankProvisioningClient)
         .provisionDefaultAccount(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
@@ -330,7 +339,56 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(jsonPath("$.data.name").value("Session User"))
         .andExpect(jsonPath("$.data.role").value("ROLE_USER"))
         .andExpect(jsonPath("$.data.totpEnrolled").value(false))
-        .andExpect(jsonPath("$.data.accountId").value("1001"));
+        .andExpect(jsonPath("$.data.accountId").value("1001"))
+        .andExpect(jsonPath("$.data.accountNumber").value("110123456789"));
+  }
+
+  @Test
+  void shouldExposeMemberDrivenTotpEnrollmentOnCurrentSession() throws Exception {
+    Member member = Member.registerUser(
+        "M-IT-SESSION-003",
+        "totp.session@fixyz.com",
+        passwordEncoder.encode("Abcd1234!"),
+        "Totp Session"
+    );
+    member.enableTotpEnrollment();
+    Member saved = memberRepository.save(member);
+
+    String sessionId = loginAndGetSessionId("totp.session@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(get("/api/v1/auth/session")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.memberUuid").value(saved.getMemberNo()))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(true));
+  }
+
+  @Test
+  void shouldBackfillLinkedAccountOnCurrentSessionRestore() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-SESSION-002", "linked.session@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Linked Session")
+    );
+    when(corebankProvisioningClient.fetchDefaultAccountProfile(anyLong(), anyString()))
+        .thenReturn(new CorebankLinkedAccountProfile(1001L, saved.getId(), "110123456789"));
+
+    String sessionId = loginAndGetSessionId("linked.session@fixyz.com", "Abcd1234!");
+    Member unlinked = memberRepository.findById(saved.getId()).orElseThrow();
+    unlinked.updateLinkedAccount(null, null);
+
+    Session persisted = sessionRepository.findById(sessionId);
+    assertThat(persisted).isNotNull();
+    persisted.removeAttribute("AUTH_ACCOUNT_ID");
+    saveSession(persisted);
+
+    mockMvc.perform(get("/api/v1/auth/session")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.accountId").value("1001"))
+        .andExpect(jsonPath("$.data.accountNumber").value("110123456789"));
+
+    Member updated = memberRepository.findById(saved.getId()).orElseThrow();
+    assertThat(updated.getAccountId()).isEqualTo(1001L);
+    assertThat(updated.getAccountNumber()).isEqualTo("110123456789");
   }
 
   @Test

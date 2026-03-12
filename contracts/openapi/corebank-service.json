@@ -418,6 +418,36 @@
         }
       }
     },
+    "/internal/v1/accounts/default": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "defaultAccountStatus",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalAccountStatusRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalAccountStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ping": {
       "get": {
         "tags": [

@@ -7,5 +7,8 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PositionRepository extends JpaRepository<Position, Long>, PositionCustomRepository {
+
+  List<Position> findAllByAccountIdOrderBySymbolAsc(Long accountId);
+
   List<Position> findAllByAccountIdAndQtyGreaterThanOrderBySymbolAsc(Long accountId, BigDecimal minimumQty);
 }

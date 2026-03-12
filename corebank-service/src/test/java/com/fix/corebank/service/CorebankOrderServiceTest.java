@@ -407,7 +407,7 @@ class CorebankOrderServiceTest {
     assertThat(result.getContent()).hasSize(2);
     assertThat(result.getContent().get(0).getClOrdId()).isEqualTo("123e4567-e89b-42d3-a456-426614174230");
     assertThat(result.getContent().get(0).getSymbol()).isEqualTo("005930");
-    assertThat(result.getContent().get(0).getSymbolName()).isEqualTo("005930");
+    assertThat(result.getContent().get(0).getSymbolName()).isEqualTo("삼성전자");
     assertThat(result.getContent().get(0).getQty()).isEqualByComparingTo("2.0000");
     assertThat(result.getContent().get(0).getUnitPrice()).isEqualByComparingTo("70100.0000");
     assertThat(result.getContent().get(0).getTotalAmount()).isEqualByComparingTo("140200.00000000");

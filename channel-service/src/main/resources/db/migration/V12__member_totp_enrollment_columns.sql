@@ -1,0 +1,5 @@
+ALTER TABLE members
+  ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE members
+  ADD COLUMN totp_enrolled_at TIMESTAMP NULL;
