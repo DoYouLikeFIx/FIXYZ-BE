@@ -36,19 +36,67 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "status", nullable = false, length = 32)
   private OrderSessionStatus status;
 
+  @Column(name = "challenge_required", nullable = false)
+  private boolean challengeRequired;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "authorization_reason", nullable = false, length = 64)
+  private OrderSessionAuthorizationReason authorizationReason;
+
   protected OrderSession() {
   }
 
-  private OrderSession(Long memberId, String clOrdId, String orderRef, OrderSessionStatus status) {
+  private OrderSession(
+      Long memberId,
+      String clOrdId,
+      String orderRef,
+      OrderSessionStatus status,
+      boolean challengeRequired,
+      OrderSessionAuthorizationReason authorizationReason
+  ) {
     this.orderSessionId = UUID.randomUUID().toString();
     this.memberId = memberId;
     this.clOrdId = clOrdId;
     this.orderRef = orderRef;
     this.status = status;
+    this.challengeRequired = challengeRequired;
+    this.authorizationReason = Objects.requireNonNull(authorizationReason, "authorizationReason");
   }
 
   public static OrderSession pendingNew(Long memberId, String clOrdId, String orderRef) {
-    return new OrderSession(memberId, clOrdId, orderRef, OrderSessionStatus.PENDING_NEW);
+    return pendingNew(memberId, clOrdId, orderRef, OrderSessionAuthorizationReason.STEP_UP_REQUIRED);
+  }
+
+  public static OrderSession pendingNew(
+      Long memberId,
+      String clOrdId,
+      String orderRef,
+      OrderSessionAuthorizationReason authorizationReason
+  ) {
+    return new OrderSession(
+        memberId,
+        clOrdId,
+        orderRef,
+        OrderSessionStatus.PENDING_NEW,
+        true,
+        authorizationReason
+    );
+  }
+
+  public static OrderSession authed(
+      Long memberId,
+      String clOrdId,
+      String orderRef,
+      OrderSessionAuthorizationReason authorizationReason
+  ) {
+    return new OrderSession(
+        memberId,
+        clOrdId,
+        orderRef,
+        OrderSessionStatus.AUTHED,
+        false,
+        authorizationReason
+    );
   }
 
   public Long getId() {
@@ -75,8 +123,22 @@ public class OrderSession extends BaseTimeEntity {
     return status;
   }
 
+  public boolean isChallengeRequired() {
+    return challengeRequired;
+  }
+
+  public OrderSessionAuthorizationReason getAuthorizationReason() {
+    return authorizationReason;
+  }
+
   public boolean ownedBy(Long memberId) {
     return Objects.equals(this.memberId, memberId);
+  }
+
+  public void authorize(OrderSessionAuthorizationReason authorizationReason) {
+    this.status = OrderSessionStatus.AUTHED;
+    this.challengeRequired = false;
+    this.authorizationReason = Objects.requireNonNull(authorizationReason, "authorizationReason");
   }
 
   public void expire() {
