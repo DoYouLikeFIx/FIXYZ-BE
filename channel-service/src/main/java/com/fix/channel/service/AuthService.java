@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import com.fix.channel.client.CorebankProvisioningClient;
+import com.fix.channel.client.CorebankLinkedAccountProfile;
 import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
@@ -89,12 +90,15 @@ public class AuthService {
       throw ex;
     }
 
-    corebankProvisioningClient.provisionDefaultAccount(
+    CorebankLinkedAccountProfile linkedAccountProfile = corebankProvisioningClient.provisionDefaultAccount(
         saved.getId(),
         saved.getMemberNo(),
         saved.getEmail(),
         correlationId
     );
+    if (linkedAccountProfile != null) {
+      saved.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
+    }
 
     auditLogRepository.save(AuditLog.of(
         saved.getId(),
@@ -216,7 +220,7 @@ public class AuthService {
     return AuthLoginResult.of(member.getId(), member.getEmail(), member.getName());
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public AuthSessionResult currentSession(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     if (session == null) {
@@ -231,15 +235,17 @@ public class AuthService {
     Long memberId = memberIdNumber.longValue();
     Member member = memberRepository.findById(memberId)
         .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
+    Member resolvedMember = ensureLinkedAccount(member, CorrelationIdSupport.ensureCorrelationId(request));
 
     return AuthSessionResult.of(
-        member.getMemberNo(),
-        resolveUsername(member.getEmail()),
-        member.getEmail(),
-        member.getName(),
-        member.getRole(),
+        resolvedMember.getMemberNo(),
+        resolveUsername(resolvedMember.getEmail()),
+        resolvedMember.getEmail(),
+        resolvedMember.getName(),
+        resolvedMember.getRole(),
         false,
-        null
+        resolvedMember.getAccountId() == null ? null : String.valueOf(resolvedMember.getAccountId()),
+        resolvedMember.getAccountNumber()
     );
   }
 
@@ -273,6 +279,20 @@ public class AuthService {
 
   private String normalizeEmail(String email) {
     return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private Member ensureLinkedAccount(Member member, String correlationId) {
+    if (member.getAccountId() != null && member.getAccountNumber() != null && !member.getAccountNumber().isBlank()) {
+      return member;
+    }
+
+    CorebankLinkedAccountProfile linkedAccountProfile =
+        corebankProvisioningClient.fetchDefaultAccountProfile(member.getId(), correlationId);
+    if (linkedAccountProfile == null) {
+      return member;
+    }
+    member.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
+    return member;
   }
 
   private boolean isDuplicateMemberEmail(DataIntegrityViolationException ex) {

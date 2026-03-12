@@ -1,5 +1,6 @@
 package com.fix.channel.service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -17,21 +18,24 @@ public class OrderSessionExpiryScheduler {
 
   private final OrderSessionPersistenceService orderSessionPersistenceService;
   private final OrderSessionTtlStore orderSessionTtlStore;
+  private final Clock clock;
   private final int reconciliationBatchSize;
 
   public OrderSessionExpiryScheduler(
       OrderSessionPersistenceService orderSessionPersistenceService,
       OrderSessionTtlStore orderSessionTtlStore,
+      Clock clock,
       @Value("${order.session.expiry-reconciliation.batch-size:100}") int reconciliationBatchSize
   ) {
     this.orderSessionPersistenceService = orderSessionPersistenceService;
     this.orderSessionTtlStore = orderSessionTtlStore;
+    this.clock = clock;
     this.reconciliationBatchSize = reconciliationBatchSize;
   }
 
   @Scheduled(fixedDelayString = "${order.session.expiry-reconciliation.fixed-delay-ms:60000}")
   public void expireOverdueSessions() {
-    Instant cutoff = Instant.now().minusSeconds(orderSessionTtlStore.ttlSeconds());
+    Instant cutoff = Instant.now(clock);
     int batchSize = Math.max(1, reconciliationBatchSize);
     List<String> expiredSessionIds;
     do {

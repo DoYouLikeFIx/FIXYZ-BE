@@ -7,6 +7,8 @@ import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.vo.OrderSessionCreateCommand;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -25,13 +27,24 @@ public class OrderSessionPersistenceService {
   private final OrderSessionRepository orderSessionRepository;
   private final AuditLogRepository auditLogRepository;
 
+  @PersistenceContext
+  private EntityManager entityManager;
+
   @Transactional
-  public OrderSession createPendingNewSession(OrderSessionCreateCommand command) {
+  public OrderSession createPendingNewSession(OrderSessionCreateCommand command, Instant expiresAt) {
     OrderSession savedSession = orderSessionRepository.saveAndFlush(OrderSession.pendingNew(
         command.getMemberId(),
+        command.getAccountId(),
         command.getClOrdId(),
-        command.getOrderRef()
+        command.replayFingerprint(),
+        command.getSymbol(),
+        command.getSide(),
+        command.getOrderType(),
+        command.getQty(),
+        command.getPrice(),
+        expiresAt
     ));
+    entityManager.refresh(savedSession);
 
     auditLogRepository.save(AuditLog.of(
         command.getMemberId(),
@@ -51,10 +64,10 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
-  public List<String> expireOverdueSessionBatch(Instant cutoff, int batchSize) {
-    List<OrderSession> sessions = orderSessionRepository.findByStatusInAndCreatedAtBeforeOrderByCreatedAtAsc(
+  public List<String> expireOverdueSessionBatch(Instant referenceTime, int batchSize) {
+    List<OrderSession> sessions = orderSessionRepository.findByStatusInAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
         EXPIRABLE_STATUSES,
-        cutoff,
+        referenceTime,
         PageRequest.of(0, Math.max(1, batchSize))
     );
     sessions.forEach(OrderSession::expire);

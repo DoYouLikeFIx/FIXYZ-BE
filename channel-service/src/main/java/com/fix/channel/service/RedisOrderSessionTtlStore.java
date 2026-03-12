@@ -2,9 +2,10 @@ package com.fix.channel.service;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -24,23 +25,25 @@ public class RedisOrderSessionTtlStore implements OrderSessionTtlStore {
   private static final DefaultRedisScript<Long> ACTIVATE_SESSION_SCRIPT = createActivateSessionScript();
 
   private final ObjectProvider<StringRedisTemplate> redisTemplateProvider;
+  private final Clock clock;
 
   @Override
-  public void activate(String orderSessionId) {
+  public void activate(String orderSessionId, Instant expiresAt) {
+    long ttlMillis = Duration.between(Instant.now(clock), expiresAt).toMillis();
+    if (ttlMillis <= 0) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session expiration must be in the future");
+    }
     StringRedisTemplate redisTemplate = requireRedis();
-    Long activated = executeActivation(redisTemplate, orderSessionId);
+    Long activated = executeActivation(redisTemplate, orderSessionId, ttlMillis);
     if (activated == null || activated != 1L) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session cache activation failed");
     }
   }
 
   @Override
-  public Optional<Long> remainingSeconds(String orderSessionId) {
+  public boolean isActive(String orderSessionId) {
     Long ttlSeconds = requireRedis().getExpire(orderSessionKey(orderSessionId), TimeUnit.SECONDS);
-    if (ttlSeconds == null || ttlSeconds <= 0) {
-      return Optional.empty();
-    }
-    return Optional.of(ttlSeconds);
+    return ttlSeconds != null && ttlSeconds > 0;
   }
 
   @Override
@@ -51,8 +54,8 @@ public class RedisOrderSessionTtlStore implements OrderSessionTtlStore {
   }
 
   @Override
-  public long ttlSeconds() {
-    return ORDER_SESSION_TTL.toSeconds();
+  public Duration ttl() {
+    return ORDER_SESSION_TTL;
   }
 
   private StringRedisTemplate requireRedis() {
@@ -71,11 +74,11 @@ public class RedisOrderSessionTtlStore implements OrderSessionTtlStore {
     return OTP_ATTEMPTS_KEY_PREFIX + orderSessionId;
   }
 
-  protected Long executeActivation(StringRedisTemplate redisTemplate, String orderSessionId) {
+  protected Long executeActivation(StringRedisTemplate redisTemplate, String orderSessionId, long ttlMillis) {
     return redisTemplate.execute(
         ACTIVATE_SESSION_SCRIPT,
         List.of(orderSessionKey(orderSessionId), otpAttemptsKey(orderSessionId)),
-        String.valueOf(ORDER_SESSION_TTL.toMillis()),
+        String.valueOf(ttlMillis),
         INITIAL_STATUS,
         INITIAL_OTP_ATTEMPTS
     );

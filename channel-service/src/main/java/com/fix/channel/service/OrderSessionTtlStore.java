@@ -1,14 +1,15 @@
 package com.fix.channel.service;
 
-import java.util.Optional;
+import java.time.Duration;
+import java.time.Instant;
 
 public interface OrderSessionTtlStore {
 
-  void activate(String orderSessionId);
+  void activate(String orderSessionId, Instant expiresAt);
 
-  Optional<Long> remainingSeconds(String orderSessionId);
+  boolean isActive(String orderSessionId);
 
   void clear(String orderSessionId);
 
-  long ttlSeconds();
+  Duration ttl();
 }
