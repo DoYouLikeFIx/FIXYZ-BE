@@ -37,6 +37,8 @@ public class CorebankClient {
 
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
   private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
+  private static final String COREBANK_ACCOUNT_SUMMARY_PATH = "/internal/v1/accounts/{accountId}/summary";
+  private static final String COREBANK_ACCOUNT_POSITIONS_LIST_PATH = "/internal/v1/accounts/{accountId}/positions/list";
   private static final String COREBANK_ACCOUNT_ORDERS_PATH = "/internal/v1/accounts/{accountId}/orders";
   private static final String COREBANK_ACCOUNT_STATUS_PATH = "/internal/v1/accounts/{accountId}/status";
 
@@ -104,27 +106,51 @@ public class CorebankClient {
           .body(new ParameterizedTypeReference<>() {
           });
 
-      CorebankAccountPositionResponse responseBody = extractBody(response);
-      BigDecimal quantity = defaultDecimal(responseBody.quantity(), BigDecimal.ZERO);
-      BigDecimal availableQuantity = defaultDecimal(
-          firstNonNull(responseBody.availableQuantity(), responseBody.availableQty()),
-          quantity
-      );
-      BigDecimal balance = defaultDecimal(
-          firstNonNull(responseBody.balance(), responseBody.availableBalance()),
-          BigDecimal.ZERO
-      );
+      return mapAccountPosition(extractBody(response), command.getAccountId(), command.getMemberId(), command.getSymbol());
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
 
-      return AccountPositionResult.of(
-          firstNonNull(responseBody.accountId(), command.getAccountId()),
-          firstNonNull(responseBody.memberId(), command.getMemberId()),
-          defaultIfBlank(responseBody.symbol(), command.getSymbol()),
-          quantity,
-          availableQuantity,
-          balance,
-          responseBody.currency(),
-          responseBody.asOf()
-      );
+  public AccountPositionResult getAccountSummary(Long accountId, Long memberId, String correlationId) {
+    try {
+      CorebankApiResponse<CorebankAccountPositionResponse> response = restClient.get()
+          .uri(uriBuilder -> uriBuilder
+              .path(COREBANK_ACCOUNT_SUMMARY_PATH)
+              .queryParam("memberId", memberId)
+              .build(accountId))
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      return mapAccountPosition(extractBody(response), accountId, memberId, "");
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public List<AccountPositionResult> getAccountPositions(Long accountId, Long memberId, String correlationId) {
+    try {
+      CorebankApiResponse<List<CorebankAccountPositionResponse>> response = restClient.get()
+          .uri(uriBuilder -> uriBuilder
+              .path(COREBANK_ACCOUNT_POSITIONS_LIST_PATH)
+              .queryParam("memberId", memberId)
+              .build(accountId))
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      if (response == null || !response.success() || response.data() == null) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "empty corebank response");
+      }
+
+      return response.data().stream()
+          .map(item -> mapAccountPosition(item, accountId, memberId, item.symbol()))
+          .toList();
     } catch (RestClientException ex) {
       throw translateFailure(ex);
     }
@@ -215,6 +241,34 @@ public class CorebankClient {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "empty corebank response");
     }
     return response.data();
+  }
+
+  private AccountPositionResult mapAccountPosition(
+      CorebankAccountPositionResponse responseBody,
+      Long accountId,
+      Long memberId,
+      String fallbackSymbol
+  ) {
+    BigDecimal quantity = defaultDecimal(responseBody.quantity(), BigDecimal.ZERO);
+    BigDecimal availableQuantity = defaultDecimal(
+        firstNonNull(responseBody.availableQuantity(), responseBody.availableQty()),
+        quantity
+    );
+    BigDecimal balance = defaultDecimal(
+        firstNonNull(responseBody.balance(), responseBody.availableBalance()),
+        BigDecimal.ZERO
+    );
+
+    return AccountPositionResult.of(
+        firstNonNull(responseBody.accountId(), accountId),
+        firstNonNull(responseBody.memberId(), memberId),
+        defaultIfBlank(responseBody.symbol(), fallbackSymbol),
+        quantity,
+        availableQuantity,
+        balance,
+        responseBody.currency(),
+        responseBody.asOf()
+    );
   }
 
   private BusinessException translateFailure(Throwable throwable) {
