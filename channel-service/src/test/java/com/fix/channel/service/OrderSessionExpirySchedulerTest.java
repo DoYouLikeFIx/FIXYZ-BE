@@ -2,7 +2,10 @@ package com.fix.channel.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +21,12 @@ class OrderSessionExpirySchedulerTest {
   void setUp() {
     persistenceService = new RecordingPersistenceService();
     ttlStore = new RecordingTtlStore();
-    scheduler = new OrderSessionExpiryScheduler(persistenceService, ttlStore, 2);
+    scheduler = new OrderSessionExpiryScheduler(
+        persistenceService,
+        ttlStore,
+        Clock.fixed(Instant.parse("2026-03-12T00:00:00Z"), ZoneOffset.UTC),
+        2
+    );
   }
 
   @Test
@@ -30,14 +38,14 @@ class OrderSessionExpirySchedulerTest {
 
     scheduler.expireOverdueSessions();
 
-    assertThat(persistenceService.cutoff).isNotNull();
+    assertThat(persistenceService.referenceTime).isEqualTo(Instant.parse("2026-03-12T00:00:00Z"));
     assertThat(persistenceService.requestedBatchSizes).containsExactly(2, 2);
     assertThat(ttlStore.clearedSessionIds).containsExactly("sess-1", "sess-2", "sess-3");
   }
 
   private static class RecordingPersistenceService extends OrderSessionPersistenceService {
 
-    private Instant cutoff;
+    private Instant referenceTime;
     private List<List<String>> expiredSessionIdBatches = List.of();
     private final List<Integer> requestedBatchSizes = new ArrayList<>();
 
@@ -46,8 +54,8 @@ class OrderSessionExpirySchedulerTest {
     }
 
     @Override
-    public List<String> expireOverdueSessionBatch(Instant cutoff, int batchSize) {
-      this.cutoff = cutoff;
+    public List<String> expireOverdueSessionBatch(Instant referenceTime, int batchSize) {
+      this.referenceTime = referenceTime;
       requestedBatchSizes.add(batchSize);
       if (expiredSessionIdBatches.isEmpty()) {
         return List.of();
@@ -63,12 +71,12 @@ class OrderSessionExpirySchedulerTest {
     private final List<String> clearedSessionIds = new ArrayList<>();
 
     @Override
-    public void activate(String orderSessionId) {
+    public void activate(String orderSessionId, Instant expiresAt) {
     }
 
     @Override
-    public java.util.Optional<Long> remainingSeconds(String orderSessionId) {
-      return java.util.Optional.empty();
+    public boolean isActive(String orderSessionId) {
+      return false;
     }
 
     @Override
@@ -77,8 +85,8 @@ class OrderSessionExpirySchedulerTest {
     }
 
     @Override
-    public long ttlSeconds() {
-      return 600L;
+    public Duration ttl() {
+      return Duration.ofMinutes(10);
     }
   }
 }

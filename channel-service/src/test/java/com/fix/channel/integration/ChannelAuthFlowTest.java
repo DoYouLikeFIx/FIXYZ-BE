@@ -6,12 +6,14 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fix.channel.client.CorebankProvisioningClient;
+import com.fix.channel.client.CorebankLinkedAccountProfile;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.common.error.BusinessException;
@@ -63,6 +65,9 @@ class ChannelAuthFlowTest {
 
   @Test
   void shouldRegisterMemberAndPersistEncodedPassword() throws Exception {
+    when(corebankProvisioningClient.provisionDefaultAccount(any(), any(), any(), any()))
+        .thenReturn(new CorebankLinkedAccountProfile(1001L, 1L, "110123456789"));
+
     mockMvc.perform(post("/api/v1/auth/register")
             .with(csrf())
             .param("email", "NEW.USER@fixyz.com")
@@ -78,6 +83,8 @@ class ChannelAuthFlowTest {
     assertThat(passwordEncoder.matches("Abcd1234!", saved.getPasswordHash())).isTrue();
     assertThat(saved.getRole()).isEqualTo("ROLE_USER");
     assertThat(saved.getStatus()).isEqualTo("ACTIVE");
+    assertThat(saved.getAccountId()).isEqualTo(1001L);
+    assertThat(saved.getAccountNumber()).isEqualTo("110123456789");
     verify(corebankProvisioningClient).provisionDefaultAccount(
         eq(saved.getId()),
         eq(saved.getMemberNo()),

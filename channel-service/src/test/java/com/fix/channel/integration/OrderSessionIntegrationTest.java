@@ -24,10 +24,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultMatcher;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -67,18 +67,34 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldCreatePendingNewOrderSessionWithRedisTtl() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-001", "order.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Order User")
-    );
+    saveLinkedMember("M-ORD-001", "order.user@fixyz.com", "Order User", 101L, "12345678901234");
 
     AuthSession authSession = login("order.user@fixyz.com", "Abcd1234!");
-    JsonNode response = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174260", "ORD-REF-001");
+    JsonNode response = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174260",
+        101L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
 
     String orderSessionId = response.path("data").path("orderSessionId").asText();
     long remainingSeconds = response.path("data").path("remainingSeconds").asLong();
 
     assertThat(orderSessionId).isNotBlank();
+    assertThat(response.path("data").path("clOrdId").asText()).isEqualTo("123e4567-e89b-42d3-a456-426614174260");
     assertThat(response.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
+    assertThat(response.path("data").path("accountId").asLong()).isEqualTo(101L);
+    assertThat(response.path("data").path("symbol").asText()).isEqualTo("005930");
+    assertThat(response.path("data").path("side").asText()).isEqualTo("BUY");
+    assertThat(response.path("data").path("orderType").asText()).isEqualTo("LIMIT");
+    assertThat(response.path("data").path("qty").asLong()).isEqualTo(10L);
+    assertThat(response.path("data").path("price").asLong()).isEqualTo(72000L);
+    assertThat(response.path("data").path("createdAt").asText()).isNotBlank();
+    assertThat(response.path("data").path("updatedAt").asText()).isNotBlank();
     assertThat(response.path("data").path("expiresAt").asText()).isNotBlank();
     assertThat(remainingSeconds).isBetween(1L, 600L);
     assertThat(stringRedisTemplate.hasKey("ch:order-session:" + orderSessionId)).isTrue();
@@ -93,21 +109,34 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldReturnOwnedOrderSessionStatus() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-002", "status.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Status User")
-    );
+    saveLinkedMember("M-ORD-002", "status.user@fixyz.com", "Status User", 102L, "12345678901235");
 
     AuthSession authSession = login("status.user@fixyz.com", "Abcd1234!");
-    JsonNode created = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174260", "ORD-REF-002");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174261",
+        102L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
     String orderSessionId = created.path("data").path("orderSessionId").asText();
     String createdExpiresAt = created.path("data").path("expiresAt").asText();
 
-    mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(sessionCookie(authSession))
-            .param("orderSessionId", orderSessionId))
+    mockMvc.perform(get("/api/v1/orders/sessions/{orderSessionId}", orderSessionId)
+            .cookie(sessionCookie(authSession)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.orderSessionId").value(orderSessionId))
+        .andExpect(jsonPath("$.data.clOrdId").value("123e4567-e89b-42d3-a456-426614174261"))
+        .andExpect(jsonPath("$.data.accountId").value(102L))
+        .andExpect(jsonPath("$.data.symbol").value("005930"))
+        .andExpect(jsonPath("$.data.side").value("BUY"))
+        .andExpect(jsonPath("$.data.orderType").value("LIMIT"))
+        .andExpect(jsonPath("$.data.qty").value(10))
+        .andExpect(jsonPath("$.data.price").value(72000))
         .andExpect(jsonPath("$.data.status").value("PENDING_NEW"))
         .andExpect(jsonPath("$.data.remainingSeconds").isNumber())
         .andExpect(jsonPath("$.data.expiresAt").value(createdExpiresAt));
@@ -115,17 +144,34 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldReturnExistingOrderSessionWhenOwnerRecreatesActiveSession() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-002B", "repeat.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Repeat User")
-    );
+    saveLinkedMember("M-ORD-002B", "repeat.user@fixyz.com", "Repeat User", 103L, "12345678901236");
 
     AuthSession authSession = login("repeat.user@fixyz.com", "Abcd1234!");
-    JsonNode created = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174261", "ORD-REF-002B");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174262",
+        103L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
     String orderSessionId = created.path("data").path("orderSessionId").asText();
     String expiresAt = created.path("data").path("expiresAt").asText();
     long firstRemainingSeconds = created.path("data").path("remainingSeconds").asLong();
 
-    JsonNode recreated = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174261", "ORD-REF-002B", status().isOk());
+    JsonNode recreated = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174262",
+        103L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L,
+        status().isOk()
+    );
 
     assertThat(recreated.path("data").path("orderSessionId").asText()).isEqualTo(orderSessionId);
     assertThat(recreated.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
@@ -135,20 +181,27 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
-  void shouldRejectReplayWhenOrderRefChanges() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-002C", "mismatch.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Mismatch User")
-    );
+  void shouldRejectReplayWhenOrderPayloadChanges() throws Exception {
+    saveLinkedMember("M-ORD-002C", "mismatch.user@fixyz.com", "Mismatch User", 104L, "12345678901237");
 
     AuthSession authSession = login("mismatch.user@fixyz.com", "Abcd1234!");
-    createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174264", "ORD-REF-002C");
+    createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174263",
+        104L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(authSession))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174263")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174264", "ORD-REF-CHANGED"))
-            )
+            .content(orderSessionPayload(104L, "005930", "BUY", "LIMIT", 10, 72100L)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("ORD_001"))
         .andExpect(jsonPath("$.message").value("clOrdId replay payload mismatch"))
@@ -156,22 +209,17 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
-  void shouldRejectNonOwnerOrderSessionStatusLookup() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-003A", "owner.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Owner User")
-    );
-    memberRepository.save(
-        Member.registerUser("M-ORD-003B", "intruder.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Intruder User")
-    );
+  void shouldRejectCreateWhenLinkedAccountDoesNotBelongToSessionMember() throws Exception {
+    saveLinkedMember("M-ORD-002D", "ownership.user@fixyz.com", "Ownership User", 105L, "12345678901238");
 
-    AuthSession owner = login("owner.user@fixyz.com", "Abcd1234!");
-    AuthSession intruder = login("intruder.user@fixyz.com", "Abcd1234!");
-    JsonNode created = createOrderSession(owner, "123e4567-e89b-42d3-a456-426614174260", "ORD-REF-003");
-    String orderSessionId = created.path("data").path("orderSessionId").asText();
+    AuthSession authSession = login("ownership.user@fixyz.com", "Abcd1234!");
 
-    mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(sessionCookie(intruder))
-            .param("orderSessionId", orderSessionId))
+    mockMvc.perform(post("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174264")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(orderSessionPayload(999L, "005930", "BUY", "LIMIT", 10, 72000L)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
@@ -179,24 +227,56 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
+  void shouldRejectNonOwnerOrderSessionStatusLookup() throws Exception {
+    saveLinkedMember("M-ORD-003A", "owner.user@fixyz.com", "Owner User", 106L, "12345678901239");
+    saveLinkedMember("M-ORD-003B", "intruder.user@fixyz.com", "Intruder User", 107L, "12345678901240");
+
+    AuthSession owner = login("owner.user@fixyz.com", "Abcd1234!");
+    AuthSession intruder = login("intruder.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        owner,
+        "123e4567-e89b-42d3-a456-426614174265",
+        106L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    mockMvc.perform(get("/api/v1/orders/sessions/{orderSessionId}", orderSessionId)
+            .cookie(sessionCookie(intruder)))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CHANNEL-006"))
+        .andExpect(jsonPath("$.message").value("Access denied."))
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions/" + orderSessionId));
+  }
+
+  @Test
   void shouldRejectNonOwnerDuplicateOrderSessionCreate() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-003C", "owner.create@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Owner Create")
-    );
-    memberRepository.save(
-        Member.registerUser("M-ORD-003D", "intruder.create@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Intruder Create")
-    );
+    saveLinkedMember("M-ORD-003C", "owner.create@fixyz.com", "Owner Create", 108L, "12345678901241");
+    saveLinkedMember("M-ORD-003D", "intruder.create@fixyz.com", "Intruder Create", 109L, "12345678901242");
 
     AuthSession owner = login("owner.create@fixyz.com", "Abcd1234!");
     AuthSession intruder = login("intruder.create@fixyz.com", "Abcd1234!");
-    createOrderSession(owner, "123e4567-e89b-42d3-a456-426614174262", "ORD-REF-003B");
+    createOrderSession(
+        owner,
+        "123e4567-e89b-42d3-a456-426614174266",
+        108L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(intruder))
             .header("X-CSRF-TOKEN", intruder.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174266")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174262", "ORD-REF-003B"))
-            )
+            .content(orderSessionPayload(109L, "005930", "BUY", "LIMIT", 10, 72000L)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
@@ -205,23 +285,29 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldReturnExpiredContractWhenOrderSessionTtlIsGone() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-004", "expired.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired User")
-    );
+    saveLinkedMember("M-ORD-004", "expired.user@fixyz.com", "Expired User", 110L, "12345678901243");
 
     AuthSession authSession = login("expired.user@fixyz.com", "Abcd1234!");
-    JsonNode created = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174260", "ORD-REF-004");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174267",
+        110L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
     String orderSessionId = created.path("data").path("orderSessionId").asText();
 
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
 
-    mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(sessionCookie(authSession))
-            .param("orderSessionId", orderSessionId))
+    mockMvc.perform(get("/api/v1/orders/sessions/{orderSessionId}", orderSessionId)
+            .cookie(sessionCookie(authSession)))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
         .andExpect(jsonPath("$.message").value("Order session not found."))
-        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions"));
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions/" + orderSessionId));
 
     assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
         .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.EXPIRED));
@@ -229,12 +315,19 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldReturnExpiredContractWhenDuplicateCreateTargetsExpiredSession() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-004B", "expired.action@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired Action")
-    );
+    saveLinkedMember("M-ORD-004B", "expired.action@fixyz.com", "Expired Action", 111L, "12345678901244");
 
     AuthSession authSession = login("expired.action@fixyz.com", "Abcd1234!");
-    JsonNode created = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174263", "ORD-REF-004B");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174268",
+        111L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
     String orderSessionId = created.path("data").path("orderSessionId").asText();
 
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
@@ -242,9 +335,9 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(authSession))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174268")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174263", "ORD-REF-004B"))
-            )
+            .content(orderSessionPayload(111L, "005930", "BUY", "LIMIT", 10, 72000L)))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
         .andExpect(jsonPath("$.message").value("Order session not found."))
@@ -253,12 +346,19 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldReturnExpiredContractBeforeReplayPayloadValidation() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-004C", "expired.mismatch@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired Mismatch")
-    );
+    saveLinkedMember("M-ORD-004C", "expired.mismatch@fixyz.com", "Expired Mismatch", 112L, "12345678901245");
 
     AuthSession authSession = login("expired.mismatch@fixyz.com", "Abcd1234!");
-    JsonNode created = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174269", "ORD-REF-004C");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174269",
+        112L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
     String orderSessionId = created.path("data").path("orderSessionId").asText();
 
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
@@ -266,9 +366,9 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(authSession))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174269")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174269", "ORD-REF-CHANGED"))
-            )
+            .content(orderSessionPayload(112L, "005930", "BUY", "LIMIT", 10, 72100L)))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.code").value("ORD-008"))
         .andExpect(jsonPath("$.message").value("Order session not found."))
@@ -277,41 +377,50 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldRejectNonOwnerLookupEvenWhenSessionExpired() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-004D", "expired.owner@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired Owner")
-    );
-    memberRepository.save(
-        Member.registerUser("M-ORD-004E", "expired.intruder@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired Intruder")
-    );
+    saveLinkedMember("M-ORD-004D", "expired.owner@fixyz.com", "Expired Owner", 113L, "12345678901246");
+    saveLinkedMember("M-ORD-004E", "expired.intruder@fixyz.com", "Expired Intruder", 114L, "12345678901247");
 
     AuthSession owner = login("expired.owner@fixyz.com", "Abcd1234!");
     AuthSession intruder = login("expired.intruder@fixyz.com", "Abcd1234!");
-    JsonNode created = createOrderSession(owner, "123e4567-e89b-42d3-a456-426614174270", "ORD-REF-004D");
+    JsonNode created = createOrderSession(
+        owner,
+        "123e4567-e89b-42d3-a456-426614174270",
+        113L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
     String orderSessionId = created.path("data").path("orderSessionId").asText();
 
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
 
-    mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(sessionCookie(intruder))
-            .param("orderSessionId", orderSessionId))
+    mockMvc.perform(get("/api/v1/orders/sessions/{orderSessionId}", orderSessionId)
+            .cookie(sessionCookie(intruder)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
-        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions"));
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions/" + orderSessionId));
   }
 
   @Test
   void shouldRejectNonOwnerDuplicateCreateEvenWhenSessionExpired() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-004F", "expired.create.owner@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired Create Owner")
-    );
-    memberRepository.save(
-        Member.registerUser("M-ORD-004G", "expired.create.intruder@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired Create Intruder")
-    );
+    saveLinkedMember("M-ORD-004F", "expired.create.owner@fixyz.com", "Expired Create Owner", 115L, "12345678901248");
+    saveLinkedMember("M-ORD-004G", "expired.create.intruder@fixyz.com", "Expired Create Intruder", 116L, "12345678901249");
 
     AuthSession owner = login("expired.create.owner@fixyz.com", "Abcd1234!");
     AuthSession intruder = login("expired.create.intruder@fixyz.com", "Abcd1234!");
-    JsonNode created = createOrderSession(owner, "123e4567-e89b-42d3-a456-426614174271", "ORD-REF-004E");
+    JsonNode created = createOrderSession(
+        owner,
+        "123e4567-e89b-42d3-a456-426614174271",
+        115L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
     String orderSessionId = created.path("data").path("orderSessionId").asText();
 
     stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
@@ -319,9 +428,9 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(intruder))
             .header("X-CSRF-TOKEN", intruder.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174271")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174271", "ORD-REF-004E"))
-            )
+            .content(orderSessionPayload(116L, "005930", "BUY", "LIMIT", 10, 72000L)))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
@@ -330,83 +439,62 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldRequireAuthenticationForStatusLookup() throws Exception {
-    mockMvc.perform(get("/api/v1/orders/sessions")
-            .param("orderSessionId", "123e4567-e89b-42d3-a456-426614174265"))
+    mockMvc.perform(get("/api/v1/orders/sessions/{orderSessionId}",
+            "123e4567-e89b-42d3-a456-426614174272"))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("AUTH-003"))
         .andExpect(jsonPath("$.message").value("authentication required"));
   }
 
   @Test
-  void shouldRejectStatusLookupWhenLookupTargetIsMissing() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-005", "validation.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Validation User")
-    );
+  void shouldRejectCreateWhenClOrdIdHeaderIsMissing() throws Exception {
+    saveLinkedMember("M-ORD-005", "validation.user@fixyz.com", "Validation User", 117L, "12345678901250");
 
     AuthSession authSession = login("validation.user@fixyz.com", "Abcd1234!");
-
-    mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(sessionCookie(authSession)))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("VALIDATION_001"))
-        .andExpect(jsonPath("$.message").value("exactly one of orderSessionId or clOrdId is required"));
-  }
-
-  @Test
-  void shouldRejectStatusLookupWhenBothIdentifiersAreProvided() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-006", "dual.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Dual User")
-    );
-
-    AuthSession authSession = login("dual.user@fixyz.com", "Abcd1234!");
-
-    mockMvc.perform(get("/api/v1/orders/sessions")
-            .cookie(sessionCookie(authSession))
-            .param("orderSessionId", "123e4567-e89b-42d3-a456-426614174266")
-            .param("clOrdId", "123e4567-e89b-42d3-a456-426614174267"))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("VALIDATION_001"))
-        .andExpect(jsonPath("$.message").value("exactly one of orderSessionId or clOrdId is required"));
-  }
-
-  @Test
-  void shouldRejectOversizedOrderRef() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-007", "length.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Length User")
-    );
-
-    AuthSession authSession = login("length.user@fixyz.com", "Abcd1234!");
-    String oversizedOrderRef = "X".repeat(65);
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(authSession))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174268", oversizedOrderRef))
-            )
+            .content(orderSessionPayload(117L, "005930", "BUY", "LIMIT", 10, 72000L)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_001"))
-        .andExpect(jsonPath("$.message").value("size must be between 1 and 64"));
+        .andExpect(jsonPath("$.message").value("X-ClOrdID header is required"));
+  }
+
+  @Test
+  void shouldRejectCreateWhenMarketOrderContainsPrice() throws Exception {
+    saveLinkedMember("M-ORD-006", "market.user@fixyz.com", "Market User", 118L, "12345678901251");
+
+    AuthSession authSession = login("market.user@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(post("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174273")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(orderSessionPayload(118L, "005930", "BUY", "MARKET", 10, 72000L)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("VALIDATION_001"))
+        .andExpect(jsonPath("$.message").value("LIMIT orders require price and MARKET orders must omit price"));
   }
 
   @Test
   void shouldEnforceCreateRateLimitPerMember() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-008", "ratelimit.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Rate User")
-    );
+    saveLinkedMember("M-ORD-008", "ratelimit.user@fixyz.com", "Rate User", 119L, "12345678901252");
 
     AuthSession authSession = login("ratelimit.user@fixyz.com", "Abcd1234!");
     for (int index = 0; index < 10; index++) {
-      String clOrdId = String.format("123e4567-e89b-42d3-a456-4266141742%02d", 70 + index);
-      createOrderSession(authSession, clOrdId, "ORD-REF-RL-" + index);
+      String clOrdId = String.format("123e4567-e89b-42d3-a456-4266141742%02d", 74 + index);
+      createOrderSession(authSession, clOrdId, 119L, "005930", "BUY", "LIMIT", 10, 72000L);
     }
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(authSession))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174299")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174299", "ORD-REF-RL-10"))
-            )
+            .content(orderSessionPayload(119L, "005930", "BUY", "LIMIT", 10, 72000L)))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("RATE_001"))
         .andExpect(jsonPath("$.message").value("rate limit exceeded"))
@@ -415,22 +503,34 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @Test
   void shouldAllowReplayEvenAfterCreateRateLimitIsReached() throws Exception {
-    memberRepository.save(
-        Member.registerUser("M-ORD-009", "replay-ratelimit.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Replay Rate User")
-    );
+    saveLinkedMember("M-ORD-009", "replay-ratelimit.user@fixyz.com", "Replay Rate User", 120L, "12345678901253");
 
     AuthSession authSession = login("replay-ratelimit.user@fixyz.com", "Abcd1234!");
-    JsonNode firstCreated = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174300", "ORD-REF-RL-BASE");
+    JsonNode firstCreated = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174300",
+        120L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
 
     for (int index = 0; index < 9; index++) {
       String clOrdId = String.format("123e4567-e89b-42d3-a456-4266141743%02d", index + 1);
-      createOrderSession(authSession, clOrdId, "ORD-REF-RL-BULK-" + index);
+      createOrderSession(authSession, clOrdId, 120L, "005930", "BUY", "LIMIT", 10, 72000L);
     }
 
     JsonNode replayed = createOrderSession(
         authSession,
         "123e4567-e89b-42d3-a456-426614174300",
-        "ORD-REF-RL-BASE",
+        120L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L,
         status().isOk()
     );
 
@@ -442,29 +542,55 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(authSession))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174399")
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload("123e4567-e89b-42d3-a456-426614174399", "ORD-REF-RL-OVER"))
-            )
+            .content(orderSessionPayload(120L, "005930", "BUY", "LIMIT", 10, 72000L)))
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("RATE_001"));
   }
 
-  private JsonNode createOrderSession(AuthSession authSession, String clOrdId, String orderRef) throws Exception {
-    return createOrderSession(authSession, clOrdId, orderRef, status().isCreated());
+  private Member saveLinkedMember(
+      String memberNo,
+      String email,
+      String name,
+      Long accountId,
+      String accountNumber
+  ) {
+    Member member = Member.registerUser(memberNo, email, passwordEncoder.encode("Abcd1234!"), name);
+    member.updateLinkedAccount(accountId, accountNumber);
+    return memberRepository.saveAndFlush(member);
   }
 
   private JsonNode createOrderSession(
       AuthSession authSession,
       String clOrdId,
-      String orderRef,
+      Long accountId,
+      String symbol,
+      String side,
+      String orderType,
+      int qty,
+      Long price
+  ) throws Exception {
+    return createOrderSession(authSession, clOrdId, accountId, symbol, side, orderType, qty, price, status().isCreated());
+  }
+
+  private JsonNode createOrderSession(
+      AuthSession authSession,
+      String clOrdId,
+      Long accountId,
+      String symbol,
+      String side,
+      String orderType,
+      int qty,
+      Long price,
       ResultMatcher expectedStatus
   ) throws Exception {
     MvcResult result = mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(sessionCookie(authSession))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", clOrdId)
             .contentType(MediaType.APPLICATION_JSON)
-            .content(orderSessionPayload(clOrdId, orderRef))
-            )
+            .content(orderSessionPayload(accountId, symbol, side, orderType, qty, price)))
         .andExpect(expectedStatus)
         .andExpect(jsonPath("$.success").value(true))
         .andReturn();
@@ -472,8 +598,15 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     return objectMapper.readTree(result.getResponse().getContentAsString());
   }
 
-  private String orderSessionPayload(String clOrdId, String orderRef) throws Exception {
-    return objectMapper.writeValueAsString(new OrderSessionPayload(clOrdId, orderRef));
+  private String orderSessionPayload(
+      Long accountId,
+      String symbol,
+      String side,
+      String orderType,
+      int qty,
+      Long price
+  ) throws Exception {
+    return objectMapper.writeValueAsString(new OrderSessionPayload(accountId, symbol, side, orderType, qty, price));
   }
 
   private AuthSession login(String email, String password) throws Exception {
@@ -490,7 +623,6 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     String csrfToken = fetchCsrfToken(sessionCookie.getValue());
 
-    // Keep assertions focused on order-session side effects, not auth bootstrap noise.
     auditLogRepository.deleteAll();
 
     return new AuthSession(sessionCookie.getValue(), csrfToken);
@@ -515,6 +647,13 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   private record AuthSession(String sessionId, String csrfToken) {
   }
 
-  private record OrderSessionPayload(String clOrdId, String orderRef) {
+  private record OrderSessionPayload(
+      Long accountId,
+      String symbol,
+      String side,
+      String orderType,
+      Integer qty,
+      Long price
+  ) {
   }
 }

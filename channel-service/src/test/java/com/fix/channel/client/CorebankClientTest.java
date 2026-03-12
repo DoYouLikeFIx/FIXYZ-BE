@@ -169,6 +169,85 @@ class CorebankClientTest {
   }
 
   @Test
+  void shouldMapAccountSummaryResponse() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/summary"))
+        .withQueryParam("memberId", equalTo("301"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "",
+                    "quantity": 0.0000,
+                    "availableQuantity": 0.0000,
+                    "availableQty": 0.0000,
+                    "balance": 1000000.0000,
+                    "availableBalance": 1000000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z"
+                  }
+                }
+                """)));
+
+    AccountPositionResult result = corebankClient.getAccountSummary(ACCOUNT_ID, MEMBER_ID, "trace-summary");
+
+    assertThat(result.getAccountId()).isEqualTo(ACCOUNT_ID);
+    assertThat(result.getMemberId()).isEqualTo(MEMBER_ID);
+    assertThat(result.getSymbol()).isEmpty();
+    assertThat(result.getBalance()).isEqualByComparingTo("1000000.0000");
+    assertThat(result.getCurrency()).isEqualTo("KRW");
+  }
+
+  @Test
+  void shouldMapOwnedPositionListResponse() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
+        .withQueryParam("memberId", equalTo("301"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": [
+                    {
+                      "accountId": 1,
+                      "memberId": 301,
+                      "symbol": "000660",
+                      "quantity": 15.0000,
+                      "availableQuantity": 7.0000,
+                      "availableQty": 7.0000,
+                      "balance": 98500000.0000,
+                      "availableBalance": 98500000.0000,
+                      "currency": "KRW",
+                      "asOf": "2026-03-10T00:00:00Z"
+                    },
+                    {
+                      "accountId": 1,
+                      "memberId": 301,
+                      "symbol": "005930",
+                      "quantity": 120.0000,
+                      "availableQuantity": 20.0000,
+                      "availableQty": 20.0000,
+                      "balance": 100000000.0000,
+                      "availableBalance": 100000000.0000,
+                      "currency": "KRW",
+                      "asOf": "2026-03-10T00:01:00Z"
+                    }
+                  ]
+                }
+                """)));
+
+    assertThat(corebankClient.getAccountPositions(ACCOUNT_ID, MEMBER_ID, "trace-position-list"))
+        .hasSize(2)
+        .extracting(AccountPositionResult::getSymbol)
+        .containsExactly("000660", "005930");
+  }
+
+  @Test
   void shouldMapAccountOrderHistoryResponse() {
     wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/orders"))
         .withQueryParam("memberId", equalTo("301"))
