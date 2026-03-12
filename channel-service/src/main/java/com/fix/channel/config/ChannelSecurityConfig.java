@@ -18,6 +18,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CsrfException;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 
 @Configuration
@@ -70,6 +71,28 @@ public class ChannelSecurityConfig {
                   correlationId
               );
               objectMapper.writeValue(response.getWriter(), body);
+            })
+            .accessDeniedHandler((request, response, accessDeniedException) -> {
+              if (accessDeniedException instanceof CsrfException) {
+                response.sendError(ErrorCode.AUTH_ACCESS_DENIED.httpStatus());
+                return;
+              }
+
+              String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
+              ErrorCode errorCode = ErrorCode.AUTH_ACCESS_DENIED;
+
+              response.setStatus(errorCode.httpStatus());
+              response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+              response.setCharacterEncoding("UTF-8");
+              response.setHeader(CommonHeaders.X_CORRELATION_ID, correlationId);
+
+              ApiErrorResponse body = ApiErrorResponse.from(
+                  errorCode,
+                  errorCode.defaultMessage(),
+                  request.getRequestURI(),
+                  correlationId
+              );
+              objectMapper.writeValue(response.getWriter(), body);
             }))
         .csrf(csrf -> csrf.csrfTokenRepository(tokenRepository))
         .cors(AbstractHttpConfigurer::disable)
@@ -90,6 +113,7 @@ public class ChannelSecurityConfig {
                 "/actuator/health",
                 "/actuator/info"
             ).permitAll()
+            .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
             .anyRequest().authenticated());
     return http.build();
   }
