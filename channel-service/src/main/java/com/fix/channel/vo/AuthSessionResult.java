@@ -9,6 +9,7 @@ public class AuthSessionResult {
   private final String role;
   private final boolean totpEnrolled;
   private final String accountId;
+  private final String accountNumber;
 
   private AuthSessionResult(
       String memberUuid,
@@ -17,7 +18,8 @@ public class AuthSessionResult {
       String name,
       String role,
       boolean totpEnrolled,
-      String accountId
+      String accountId,
+      String accountNumber
   ) {
     this.memberUuid = memberUuid;
     this.username = username;
@@ -26,6 +28,7 @@ public class AuthSessionResult {
     this.role = role;
     this.totpEnrolled = totpEnrolled;
     this.accountId = accountId;
+    this.accountNumber = accountNumber;
   }
 
   public static AuthSessionResult of(
@@ -35,9 +38,10 @@ public class AuthSessionResult {
       String name,
       String role,
       boolean totpEnrolled,
-      String accountId
+      String accountId,
+      String accountNumber
   ) {
-    return new AuthSessionResult(memberUuid, username, email, name, role, totpEnrolled, accountId);
+    return new AuthSessionResult(memberUuid, username, email, name, role, totpEnrolled, accountId, accountNumber);
   }
 
   public String getMemberUuid() {
@@ -66,5 +70,9 @@ public class AuthSessionResult {
 
   public String getAccountId() {
     return accountId;
+  }
+
+  public String getAccountNumber() {
+    return accountNumber;
   }
 }
