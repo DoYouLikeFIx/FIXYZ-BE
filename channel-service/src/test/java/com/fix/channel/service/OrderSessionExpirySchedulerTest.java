@@ -2,6 +2,7 @@ package com.fix.channel.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +19,7 @@ class OrderSessionExpirySchedulerTest {
   void setUp() {
     persistenceService = new RecordingPersistenceService();
     ttlStore = new RecordingTtlStore();
-    scheduler = new OrderSessionExpiryScheduler(persistenceService, ttlStore, 2);
+    scheduler = new OrderSessionExpiryScheduler(persistenceService, ttlStore, Clock.systemUTC(), 2);
   }
 
   @Test
