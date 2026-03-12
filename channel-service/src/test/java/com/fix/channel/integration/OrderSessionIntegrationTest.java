@@ -372,6 +372,31 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
+  void shouldReturnExpiredContractWhenClOrdIdLookupLosesTtl() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-ORD-004B2", "expired.clord@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired ClOrd")
+    );
+
+    AuthSession authSession = login("expired.clord@fixyz.com", "Abcd1234!");
+    String clOrdId = "123e4567-e89b-42d3-a456-426614174263B";
+    JsonNode created = createOrderSession(authSession, clOrdId, "ORD-REF-004B2");
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
+
+    mockMvc.perform(get("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .param("clOrdId", clOrdId))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("ORD-008"))
+        .andExpect(jsonPath("$.message").value("Order session not found."))
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions"));
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.EXPIRED));
+  }
+
+  @Test
   void shouldReturnExpiredContractBeforeReplayPayloadValidation() throws Exception {
     memberRepository.save(
         Member.registerUser("M-ORD-004C", "expired.mismatch@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Expired Mismatch")

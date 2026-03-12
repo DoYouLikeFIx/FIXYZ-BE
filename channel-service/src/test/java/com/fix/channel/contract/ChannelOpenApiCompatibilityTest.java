@@ -31,9 +31,6 @@ class ChannelOpenApiCompatibilityTest {
         .path("ApiResponseAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas").path("AccountPositionResponse");
     JsonNode orderSessionCreateRequestSchema = contract.path("components").path("schemas").path("OrderSessionCreateRequest");
-    JsonNode orderSessionSchema = contract.path("components").path("schemas").path("OrderSessionResponse");
-    JsonNode accountPositionListResponse = contract.path("components").path("schemas")
-        .path("ApiResponseListAccountPositionResponse");
     JsonNode accountOrderHistoryResponse = contract.path("components").path("schemas")
         .path("ApiResponseAccountOrderHistoryResponse");
     JsonNode accountOrderHistorySchema = contract.path("components").path("schemas")
@@ -47,8 +44,6 @@ class ChannelOpenApiCompatibilityTest {
         accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText()
     );
     JsonNode positionsOperation = paths.path("/api/v1/accounts/{accountId}/positions").path("get");
-    JsonNode positionsListOperation = paths.path("/api/v1/accounts/{accountId}/positions/list").path("get");
-    JsonNode summaryOperation = paths.path("/api/v1/accounts/{accountId}/summary").path("get");
 
     assertThat(fieldNames(paths))
         .contains(
@@ -56,10 +51,7 @@ class ChannelOpenApiCompatibilityTest {
             "/api/v1/auth/login",
             "/api/v1/orders",
             "/api/v1/orders/sessions",
-            "/api/v1/orders/sessions/{orderSessionId}",
             "/api/v1/accounts/{accountId}/positions",
-            "/api/v1/accounts/{accountId}/summary",
-            "/api/v1/accounts/{accountId}/positions/list",
             "/api/v1/accounts/{accountId}/orders",
             "/api/v1/admin/accounts/{accountId}/status"
         );
@@ -87,45 +79,28 @@ class ChannelOpenApiCompatibilityTest {
         .contains("challengeRequired", "authorizationReason");
     assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
-    assertThat(accountPositionListResponse.path("properties").path("error").path("$ref").asText())
-        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(adminStatusTransitionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(authSessionSchema.path("properties")))
-        .contains("memberUuid", "username", "email", "name", "role", "totpEnrolled", "accountId", "accountNumber");
+        .contains("memberUuid", "username", "email", "name", "role", "totpEnrolled", "accountId");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
     assertThat(fieldNames(orderSessionCreateRequestSchema.path("properties")))
-        .contains("accountId", "symbol", "side", "orderType", "qty", "price");
+        .contains("clOrdId", "orderRef");
     assertThat(fieldNames(orderSessionSchema.path("properties")))
         .contains(
             "orderSessionId",
             "clOrdId",
-            "accountId",
-            "symbol",
-            "side",
-            "orderType",
-            "qty",
-            "price",
-            "createdAt",
-            "updatedAt",
+            "status",
+            "challengeRequired",
+            "authorizationReason",
             "expiresAt",
             "remainingSeconds"
         );
-    assertThat(parameterNames(paths.path("/api/v1/orders/sessions").path("post").path("parameters")))
-        .contains("X-ClOrdID");
     assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
-    assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
-        .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
-    assertThat(positionsListOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
-        .isEqualTo("#/components/schemas/ApiResponseListAccountPositionResponse");
-    assertThat(accountPositionListResponse.path("properties").path("data").path("type").asText())
-        .isEqualTo("array");
-    assertThat(accountPositionListResponse.path("properties").path("data").path("items").path("$ref").asText())
-        .isEqualTo("#/components/schemas/AccountPositionResponse");
     assertThat(fieldNames(accountOrderHistorySchema.path("properties")))
         .contains("content", "totalElements", "totalPages", "number", "size");
     assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))
