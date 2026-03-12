@@ -10,6 +10,8 @@ import com.fix.corebank.entity.LedgerEntry;
 import com.fix.corebank.entity.LedgerEntryRef;
 import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
+import com.fix.corebank.exception.order.DailySellLimitExceededException;
+import com.fix.corebank.exception.order.InsufficientPositionException;
 import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.AccountStatusEventRepository;
 import com.fix.corebank.repository.ExecutionRepository;
@@ -97,10 +99,11 @@ public class CorebankOrderPersistenceService {
     ensureOrderEligibleAccountStatus(account);
 
     String side = normalizeSide(command.getSide());
-    positionRepository.findByAccountIdAndSymbolForUpdate(command.getAccountId(), command.getSymbol())
+    Position position = positionRepository.findByAccountIdAndSymbolForUpdate(command.getAccountId(), command.getSymbol())
         .orElseGet(() -> positionRepository.saveAndFlush(
             Position.of(command.getAccountId(), command.getSymbol(), BigDecimal.ZERO, BigDecimal.ZERO)
         ));
+    BigDecimal availableQty = resolveAvailableQuantity(position);
 
     BigDecimal todaySellQty = executionRepository.sumSellQuantityByAccountAndSymbolBetween(
         command.getAccountId(),
@@ -110,11 +113,22 @@ public class CorebankOrderPersistenceService {
     );
 
     if ("SELL".equals(side)) {
+      if (command.getQuantity().compareTo(availableQty) > 0) {
+        throw new InsufficientPositionException(
+            command.getAccountId(),
+            command.getSymbol(),
+            availableQty,
+            command.getQuantity()
+        );
+      }
       BigDecimal afterSell = todaySellQty.add(command.getQuantity());
       if (afterSell.compareTo(account.getDailySellLimit()) > 0) {
-        throw new BusinessException(
-            ErrorCode.ORD_INVALID_REQUEST,
-            "daily sell limit exceeded for account " + account.getAccountNo()
+        throw new DailySellLimitExceededException(
+            command.getAccountId(),
+            command.getSymbol(),
+            command.getQuantity(),
+            todaySellQty,
+            account.getDailySellLimit()
         );
       }
     }
@@ -210,6 +224,13 @@ public class CorebankOrderPersistenceService {
         LedgerEntry.of(journalEntry.getId(), order.getAccountId(), "ORDER", "DR", grossAmount)
     );
     ledgerEntryRefRepository.save(LedgerEntryRef.of(ledgerEntry.getId(), "CL_ORD_ID", order.getClOrdId()));
+  }
+
+  private BigDecimal resolveAvailableQuantity(Position position) {
+    if (position.getQty() == null) {
+      return BigDecimal.ZERO;
+    }
+    return position.getQty();
   }
 
   private String normalizeSide(String side) {
