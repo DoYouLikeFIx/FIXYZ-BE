@@ -46,12 +46,15 @@ import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -471,6 +474,195 @@ class CorebankOrderServiceTest {
           assertThat(businessException.getMessage()).contains("CLOSED");
         });
     assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectSellOrderWhenRequestedQuantityExceedsAvailablePosition() {
+    Account account = persistedAccount();
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("2.0000"), new BigDecimal("70000.0000"));
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION);
+          assertThat(businessException.getDetails()).containsEntry("availableQty", new BigDecimal("2.0000"));
+          assertThat(businessException.getDetails()).containsEntry("requestedQty", new BigDecimal("3.0000"));
+        });
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectSellOrderWhenDailyLimitIsExceeded() {
+    Account account = persistedAccount();
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(new BigDecimal("480.0000"));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("50.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ORD_DAILY_SELL_LIMIT_EXCEEDED);
+          assertThat(businessException.getDetails()).containsEntry("todaySold", new BigDecimal("480.0000"));
+          assertThat(businessException.getDetails()).containsEntry("dailyLimit", new BigDecimal("500.0000"));
+          assertThat(businessException.getDetails()).containsEntry("remainingLimit", new BigDecimal("20.0000"));
+        });
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldAcceptSellOrderExactlyAtDailyLimitBoundary() {
+    Account account = persistedAccount();
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
+    Order savedOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            IDEMPOTENT_CL_ORD_ID,
+            "005930",
+            "SELL",
+            new BigDecimal("20.0000"),
+            new BigDecimal("70200.0000")
+        ),
+        9012L
+    );
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID))
+        .thenReturn(Optional.empty())
+        .thenReturn(Optional.of(savedOrder));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(new BigDecimal("480.0000"));
+    when(orderRepository.saveAndFlush(any(Order.class))).thenReturn(savedOrder);
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7012L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8012L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        IDEMPOTENT_CL_ORD_ID,
+        "FEP-KRX-" + IDEMPOTENT_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        20L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
+        null,
+        null
+    ));
+
+    InternalOrderResult result = corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("20.0000"),
+        new BigDecimal("70200.0000")
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING");
+    assertThat(fepClient.submitCalls()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldComputeDailyWindowByConfiguredTimezoneRule() {
+    Account account = persistedAccount();
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
+    Order savedOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            IDEMPOTENT_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("3.0000"),
+            new BigDecimal("70200.0000")
+        ),
+        9013L
+    );
+    ReflectionTestUtils.setField(
+        corebankOrderPersistenceService,
+        "limitWindowClock",
+        Clock.fixed(Instant.parse("2026-03-01T15:10:00Z"), ZoneId.of("UTC"))
+    );
+    ReflectionTestUtils.setField(corebankOrderPersistenceService, "limitWindowZone", "Asia/Seoul");
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID))
+        .thenReturn(Optional.empty())
+        .thenReturn(Optional.of(savedOrder));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+    when(orderRepository.saveAndFlush(any(Order.class))).thenReturn(savedOrder);
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7013L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8013L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        IDEMPOTENT_CL_ORD_ID,
+        "FEP-KRX-" + IDEMPOTENT_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        3L,
+        Instant.parse("2026-03-01T15:10:30Z"),
+        null,
+        null,
+        null,
+        null,
+        null
+    ));
+
+    corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    ));
+
+    ArgumentCaptor<Instant> fromCaptor = ArgumentCaptor.forClass(Instant.class);
+    ArgumentCaptor<Instant> toCaptor = ArgumentCaptor.forClass(Instant.class);
+    verify(executionRepository, times(1))
+        .sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), fromCaptor.capture(), toCaptor.capture());
+    assertThat(fromCaptor.getValue()).isEqualTo(Instant.parse("2026-03-01T15:00:00Z"));
+    assertThat(toCaptor.getValue()).isEqualTo(Instant.parse("2026-03-02T15:00:00Z"));
   }
 
   @Test

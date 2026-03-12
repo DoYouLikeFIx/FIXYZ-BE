@@ -41,6 +41,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -550,7 +551,8 @@ class CorebankInternalApiSkeletonTest {
     corebankOrderService.setCreateOrderFailure(new BusinessException(
         ErrorCode.FEP_GATEWAY_TIMEOUT,
         ErrorCode.FEP_GATEWAY_TIMEOUT.defaultMessage(),
-        new ErrorMetadata("error.fep.timeout", "TIMEOUT")
+        new ErrorMetadata("error.fep.timeout", "TIMEOUT"),
+        Map.of("symbol", "005930", "requestedQty", 2)
     ));
 
     mockMvc.perform(post("/internal/v1/orders")
@@ -564,7 +566,9 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(status().isGatewayTimeout())
         .andExpect(jsonPath("$.code").value("FEP-002"))
         .andExpect(jsonPath("$.userMessageKey").value("error.fep.timeout"))
-        .andExpect(jsonPath("$.operatorCode").value("TIMEOUT"));
+        .andExpect(jsonPath("$.operatorCode").value("TIMEOUT"))
+        .andExpect(jsonPath("$.details.symbol").value("005930"))
+        .andExpect(jsonPath("$.details.requestedQty").value(2));
   }
 
   private static final class StubCorebankOrderService extends CorebankOrderService {

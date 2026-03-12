@@ -74,6 +74,7 @@ class CorebankOpenApiCompatibilityTest {
             "correlationId",
             "userMessageKey",
             "operatorCode",
+            "details",
             "timestamp"
         );
 

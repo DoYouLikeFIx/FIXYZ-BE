@@ -23,6 +23,7 @@ import com.fix.common.error.ErrorCode;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -118,6 +119,10 @@ class CorebankClientTest {
                   "message": "forbidden account ownership",
                   "path": "/internal/v1/accounts/1/positions",
                   "correlationId": "trace-core-auth-005",
+                  "details": {
+                    "accountId": 1,
+                    "memberId": 301
+                  },
                   "timestamp": "2026-03-10T00:00:00Z"
                 }
                 """)));
@@ -128,6 +133,7 @@ class CorebankClientTest {
           BusinessException businessException = (BusinessException) ex;
           assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP);
           assertThat(businessException.getMessage()).isEqualTo("forbidden account ownership");
+          assertThat(businessException.getDetails()).isEqualTo(Map.of("accountId", 1, "memberId", 301));
         });
   }
 

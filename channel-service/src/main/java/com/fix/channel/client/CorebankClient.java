@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.net.SocketTimeoutException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -315,7 +316,8 @@ public class CorebankClient {
                 errorCode,
                 defaultIfBlank(errorResponse.message(), errorCode.defaultMessage()),
                 restClientResponseException,
-                errorResponse.metadata()
+                errorResponse.metadata(),
+                errorResponse.details()
             ))
             .orElseGet(() -> {
               ErrorCode errorCode = resolveDependencyErrorCode(restClientResponseException);
@@ -513,7 +515,8 @@ public class CorebankClient {
       String code,
       String message,
       String userMessageKey,
-      String operatorCode
+      String operatorCode,
+      Map<String, Object> details
   ) {
     private ErrorMetadata metadata() {
       if ((userMessageKey == null || userMessageKey.isBlank())
