@@ -9,6 +9,8 @@ public record OrderSessionResponse(
     String orderSessionId,
     String clOrdId,
     String status,
+    boolean challengeRequired,
+    String authorizationReason,
     Instant expiresAt,
     Long remainingSeconds
 ) {
@@ -18,6 +20,8 @@ public record OrderSessionResponse(
         result.getOrderSessionId(),
         result.getClOrdId(),
         result.getStatus(),
+        result.isChallengeRequired(),
+        result.getAuthorizationReason(),
         result.getExpiresAt(),
         result.getRemainingSeconds()
     );
