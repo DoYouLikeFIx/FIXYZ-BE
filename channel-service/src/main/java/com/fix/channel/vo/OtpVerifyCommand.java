@@ -2,20 +2,20 @@ package com.fix.channel.vo;
 
 public class OtpVerifyCommand {
 
-  private final Long memberId;
+  private final String loginToken;
   private final String otpCode;
 
-  private OtpVerifyCommand(Long memberId, String otpCode) {
-    this.memberId = memberId;
+  private OtpVerifyCommand(String loginToken, String otpCode) {
+    this.loginToken = loginToken;
     this.otpCode = otpCode;
   }
 
-  public static OtpVerifyCommand of(Long memberId, String otpCode) {
-    return new OtpVerifyCommand(memberId, otpCode);
+  public static OtpVerifyCommand of(String loginToken, String otpCode) {
+    return new OtpVerifyCommand(loginToken, otpCode);
   }
 
-  public Long getMemberId() {
-    return memberId;
+  public String getLoginToken() {
+    return loginToken;
   }
 
   public String getOtpCode() {

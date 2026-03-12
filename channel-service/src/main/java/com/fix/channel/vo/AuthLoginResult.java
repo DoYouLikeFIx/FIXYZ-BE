@@ -1,30 +1,38 @@
 package com.fix.channel.vo;
 
+import java.time.Instant;
+
 public class AuthLoginResult {
 
-  private final Long memberId;
-  private final String email;
-  private final String name;
+  private final String loginToken;
+  private final String nextAction;
+  private final boolean totpEnrolled;
+  private final Instant expiresAt;
 
-  private AuthLoginResult(Long memberId, String email, String name) {
-    this.memberId = memberId;
-    this.email = email;
-    this.name = name;
+  private AuthLoginResult(String loginToken, String nextAction, boolean totpEnrolled, Instant expiresAt) {
+    this.loginToken = loginToken;
+    this.nextAction = nextAction;
+    this.totpEnrolled = totpEnrolled;
+    this.expiresAt = expiresAt;
   }
 
-  public static AuthLoginResult of(Long memberId, String email, String name) {
-    return new AuthLoginResult(memberId, email, name);
+  public static AuthLoginResult of(String loginToken, String nextAction, boolean totpEnrolled, Instant expiresAt) {
+    return new AuthLoginResult(loginToken, nextAction, totpEnrolled, expiresAt);
   }
 
-  public Long getMemberId() {
-    return memberId;
+  public String getLoginToken() {
+    return loginToken;
   }
 
-  public String getEmail() {
-    return email;
+  public String getNextAction() {
+    return nextAction;
   }
 
-  public String getName() {
-    return name;
+  public boolean isTotpEnrolled() {
+    return totpEnrolled;
+  }
+
+  public Instant getExpiresAt() {
+    return expiresAt;
   }
 }
