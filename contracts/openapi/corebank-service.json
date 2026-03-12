@@ -793,65 +793,6 @@
           }
         }
       },
-      "InternalAccountStatusRequest": {
-        "required": [
-          "memberId"
-        ],
-        "type": "object",
-        "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "ApiResponseInternalAccountStatusResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalAccountStatusResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountStatusResponse": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "accountNumber": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "orderEligible": {
-            "type": "boolean"
-          },
-          "denialCode": {
-            "type": "string"
-          },
-          "asOf": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
       "InternalAccountSummaryRequest": {
         "required": [
           "memberId"
@@ -912,6 +853,65 @@
             "type": "number"
           },
           "currency": {
+            "type": "string"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalAccountStatusRequest": {
+        "required": [
+          "memberId"
+        ],
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseInternalAccountStatusResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalAccountStatusResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalAccountStatusResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "orderEligible": {
+            "type": "boolean"
+          },
+          "denialCode": {
             "type": "string"
           },
           "asOf": {
