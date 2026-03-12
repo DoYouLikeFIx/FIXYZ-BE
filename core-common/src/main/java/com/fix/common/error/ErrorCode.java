@@ -24,6 +24,7 @@ public enum ErrorCode {
   AUTH_ACCOUNT_LOCKED("AUTH_002", "Account locked", 401),
   AUTH_REQUIRED("AUTH-003", "Authentication required", 401),
   AUTH_FORBIDDEN_OWNERSHIP("AUTH-005", "Forbidden account ownership", 403),
+  AUTH_ACCESS_DENIED("AUTH-006", "Access denied.", 403),
   AUTH_RESET_TOKEN_INVALID("AUTH-012", "reset token invalid or expired", 401),
   AUTH_RESET_TOKEN_CONSUMED("AUTH-013", "reset token already consumed", 409),
   AUTH_PASSWORD_RECOVERY_RATE_LIMIT("AUTH-014", "password recovery rate limit exceeded", 429),
