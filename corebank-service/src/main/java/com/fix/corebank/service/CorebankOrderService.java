@@ -84,12 +84,7 @@ public class CorebankOrderService {
 
   @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command) {
-    Account account = accountRepository.findById(command.getAccountId())
-        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
-
-    if (!account.getMemberId().equals(command.getMemberId())) {
-      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
-    }
+    Account account = getOwnedAccount(command.getAccountId(), command.getMemberId());
 
     Optional<Position> positionOptional = positionRepository.findByAccountIdAndSymbol(
         command.getAccountId(),
@@ -111,24 +106,47 @@ public class CorebankOrderService {
   }
 
   @Transactional(readOnly = true)
-  public AccountStatusResult getAccountStatus(AccountStatusQueryCommand command) {
-    Account account = accountRepository.findById(command.getAccountId())
-        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
-
-    if (!account.getMemberId().equals(command.getMemberId())) {
-      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
-    }
-
-    AccountStatus accountStatus = parseAccountStatus(account);
-    return AccountStatusResult.of(
+  public AccountPositionResult getAccountSummary(AccountStatusQueryCommand command) {
+    Account account = getOwnedAccount(command.getAccountId(), command.getMemberId());
+    return AccountPositionResult.of(
         account.getId(),
         account.getMemberId(),
-        account.getAccountNo(),
-        accountStatus.name(),
-        accountStatus.isOrderEligible(),
-        accountStatus.isOrderEligible() ? null : ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED.code(),
+        "",
+        BigDecimal.ZERO,
+        BigDecimal.ZERO,
+        account.getCashBalance(),
+        account.getCurrency(),
         resolveAccountAsOf(account)
     );
+  }
+
+  @Transactional(readOnly = true)
+  public List<AccountPositionResult> getAccountPositions(AccountStatusQueryCommand command) {
+    Account account = getOwnedAccount(command.getAccountId(), command.getMemberId());
+    return positionRepository.findAllByAccountIdOrderBySymbolAsc(command.getAccountId()).stream()
+        .map(position -> AccountPositionResult.of(
+            account.getId(),
+            account.getMemberId(),
+            position.getSymbol(),
+            position.getQty(),
+            position.getQty(),
+            account.getCashBalance(),
+            account.getCurrency(),
+            resolveAsOf(account, Optional.of(position))
+        ))
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public AccountStatusResult getAccountStatus(AccountStatusQueryCommand command) {
+    return toAccountStatusResult(getOwnedAccount(command.getAccountId(), command.getMemberId()));
+  }
+
+  @Transactional(readOnly = true)
+  public AccountStatusResult getDefaultAccountStatus(Long memberId) {
+    Account account = accountRepository.findByMemberId(memberId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+    return toAccountStatusResult(account);
   }
 
   @Transactional(readOnly = true)
@@ -408,6 +426,29 @@ public class CorebankOrderService {
     return updatedAt != null ? updatedAt : Instant.now();
   }
 
+  private Account getOwnedAccount(Long accountId, Long memberId) {
+    Account account = accountRepository.findById(accountId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+
+    if (!account.getMemberId().equals(memberId)) {
+      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
+    }
+    return account;
+  }
+
+  private AccountStatusResult toAccountStatusResult(Account account) {
+    AccountStatus accountStatus = parseAccountStatus(account);
+    return AccountStatusResult.of(
+        account.getId(),
+        account.getMemberId(),
+        account.getAccountNo(),
+        accountStatus.name(),
+        accountStatus.isOrderEligible(),
+        accountStatus.isOrderEligible() ? null : ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED.code(),
+        resolveAccountAsOf(account)
+    );
+  }
+
   private AccountStatus parseAccountStatus(Account account) {
     try {
       return AccountStatus.from(account.getStatus());
@@ -423,7 +464,7 @@ public class CorebankOrderService {
     BigDecimal unitPrice = defaultDecimal(row.orderPrice(), BigDecimal.ZERO);
     return AccountOrderHistoryItemResult.of(
         row.symbol(),
-        row.symbol(),
+        resolveSymbolName(row.symbol()),
         row.side(),
         qty,
         unitPrice,
@@ -436,6 +477,15 @@ public class CorebankOrderService {
 
   private BigDecimal defaultDecimal(BigDecimal value, BigDecimal fallback) {
     return value == null ? fallback : value;
+  }
+
+  private String resolveSymbolName(String symbol) {
+    return switch (symbol) {
+      case "005930" -> "삼성전자";
+      case "000660" -> "SK하이닉스";
+      case "035420" -> "NAVER";
+      default -> symbol;
+    };
   }
 
   private record RequerySignal(
