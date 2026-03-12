@@ -63,7 +63,7 @@ class OrderSessionExpirySchedulerTest {
     private final List<String> clearedSessionIds = new ArrayList<>();
 
     @Override
-    public void activate(String orderSessionId) {
+    public void activate(String orderSessionId, String initialStatus) {
     }
 
     @Override

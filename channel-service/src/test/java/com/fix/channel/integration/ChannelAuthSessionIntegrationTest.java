@@ -15,9 +15,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.client.CorebankProvisioningClient;
 import com.fix.channel.entity.Member;
+import com.fix.channel.entity.OtpVerification;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.repository.OtpVerificationRepository;
 import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.session.ChannelSessionAttributes;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +51,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   private AuditLogRepository auditLogRepository;
 
   @Autowired
+  private OtpVerificationRepository otpVerificationRepository;
+
+  @Autowired
   private SecurityEventRepository securityEventRepository;
 
   @Autowired
@@ -69,6 +75,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   void setUp() {
     memberRepository.deleteAll();
     auditLogRepository.deleteAll();
+    otpVerificationRepository.deleteAll();
     securityEventRepository.deleteAll();
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
@@ -109,6 +116,81 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     Object memberNameAttr = persisted.getAttribute("AUTH_MEMBER_NAME");
     assertThat(memberIdAttr).isEqualTo(saved.getId());
     assertThat(memberNameAttr).isEqualTo("IT User");
+    assertThat((Object) persisted.getAttribute(ChannelSessionAttributes.AUTH_LOGIN_AUTHENTICATED_AT))
+        .isInstanceOf(java.time.Instant.class);
+    assertThat((Object) persisted.getAttribute(ChannelSessionAttributes.AUTH_LOGIN_IP_ADDRESS)).isEqualTo("127.0.0.1");
+    assertThat((Object) persisted.getAttribute(ChannelSessionAttributes.AUTH_LOGIN_USER_AGENT)).isEqualTo("unknown");
+    assertThat((Object) persisted.getAttribute(ChannelSessionAttributes.AUTH_MFA_VERIFIED_AT)).isNull();
+    assertThat((Object) persisted.getAttribute(ChannelSessionAttributes.AUTH_ORDER_CHALLENGE_BYPASS_ELIGIBLE))
+        .isEqualTo(false);
+  }
+
+  @Test
+  void shouldClearHistoricalOtpContextOnFreshLogin() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-LOGIN-004", "mfa.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Mfa User")
+    );
+
+    OtpVerification verification = OtpVerification.issue(saved.getId(), "123456", java.time.Instant.now().plusSeconds(300));
+    verification.verify();
+    otpVerificationRepository.saveAndFlush(verification);
+
+    String loginSessionId = loginAndGetSessionId("mfa.user@fixyz.com", "Abcd1234!");
+
+    Session persisted = sessionRepository.findById(loginSessionId);
+    assertThat(persisted).isNotNull();
+    assertThat((Object) persisted.getAttribute(ChannelSessionAttributes.AUTH_LOGIN_AUTHENTICATED_AT))
+        .isInstanceOf(java.time.Instant.class);
+    assertThat((Object) persisted.getAttribute(ChannelSessionAttributes.AUTH_MFA_VERIFIED_AT)).isNull();
+    assertThat((Object) persisted.getAttribute(ChannelSessionAttributes.AUTH_ORDER_CHALLENGE_BYPASS_ELIGIBLE))
+        .isEqualTo(false);
+  }
+
+  @Test
+  void shouldRejectReplayedOtpWithoutRefreshingSessionMfaProof() throws Exception {
+    Member saved = memberRepository.save(
+        Member.registerUser("M-IT-LOGIN-005", "otp.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Otp User")
+    );
+
+    String sessionId = loginAndGetSessionId("otp.user@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+    otpVerificationRepository.saveAndFlush(
+        OtpVerification.issue(saved.getId(), "654321", java.time.Instant.now().plusSeconds(300))
+    );
+
+    mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("memberId", String.valueOf(saved.getId()))
+            .param("otpCode", "654321"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.matched").value(true));
+
+    Session firstVerificationSession = sessionRepository.findById(sessionId);
+    assertThat(firstVerificationSession).isNotNull();
+    Object firstVerifiedAt = firstVerificationSession.getAttribute(ChannelSessionAttributes.AUTH_MFA_VERIFIED_AT);
+    assertThat(firstVerifiedAt).isInstanceOf(java.time.Instant.class);
+    assertThat((Object) firstVerificationSession.getAttribute(ChannelSessionAttributes.AUTH_ORDER_CHALLENGE_BYPASS_ELIGIBLE))
+        .isEqualTo(true);
+
+    mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .param("memberId", String.valueOf(saved.getId()))
+            .param("otpCode", "654321"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.matched").value(false));
+
+    Session replayedSession = sessionRepository.findById(sessionId);
+    assertThat(replayedSession).isNotNull();
+    assertThat((Object) replayedSession.getAttribute(ChannelSessionAttributes.AUTH_MFA_VERIFIED_AT))
+        .isEqualTo(firstVerifiedAt);
+    assertThat((Object) replayedSession.getAttribute(ChannelSessionAttributes.AUTH_ORDER_CHALLENGE_BYPASS_ELIGIBLE))
+        .isEqualTo(true);
+    assertThat(securityEventRepository.findAll())
+        .noneSatisfy(event -> assertThat(event.getEventType()).isEqualTo("OTP_VERIFY_FAILED"));
   }
 
   @Test

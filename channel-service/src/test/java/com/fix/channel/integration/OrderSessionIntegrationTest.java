@@ -10,9 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.Member;
+import com.fix.channel.entity.OtpVerification;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.repository.OtpVerificationRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import jakarta.servlet.http.Cookie;
@@ -52,12 +54,16 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   private PasswordEncoder passwordEncoder;
 
   @Autowired
+  private OtpVerificationRepository otpVerificationRepository;
+
+  @Autowired
   private StringRedisTemplate stringRedisTemplate;
 
   @BeforeEach
   void setUp() {
     orderSessionRepository.deleteAll();
     auditLogRepository.deleteAll();
+    otpVerificationRepository.deleteAll();
     memberRepository.deleteAll();
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
@@ -79,9 +85,12 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     assertThat(orderSessionId).isNotBlank();
     assertThat(response.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
+    assertThat(response.path("data").path("challengeRequired").asBoolean()).isTrue();
+    assertThat(response.path("data").path("authorizationReason").asText()).isEqualTo("STEP_UP_REQUIRED");
     assertThat(response.path("data").path("expiresAt").asText()).isNotBlank();
     assertThat(remainingSeconds).isBetween(1L, 600L);
     assertThat(stringRedisTemplate.hasKey("ch:order-session:" + orderSessionId)).isTrue();
+    assertThat(stringRedisTemplate.opsForValue().get("ch:order-session:" + orderSessionId)).isEqualTo("PENDING_NEW");
     assertThat(stringRedisTemplate.getExpire("ch:order-session:" + orderSessionId)).isPositive();
     assertThat(stringRedisTemplate.opsForValue().get("ch:otp-attempts:" + orderSessionId)).isEqualTo("3");
     assertThat(auditLogRepository.findAll())
@@ -109,7 +118,43 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.orderSessionId").value(orderSessionId))
         .andExpect(jsonPath("$.data.status").value("PENDING_NEW"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(true))
+        .andExpect(jsonPath("$.data.authorizationReason").value("STEP_UP_REQUIRED"))
         .andExpect(jsonPath("$.data.remainingSeconds").isNumber())
+        .andExpect(jsonPath("$.data.expiresAt").value(createdExpiresAt));
+
+    mockMvc.perform(get("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .param("orderSessionId", orderSessionId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.orderSessionId").value(orderSessionId))
+        .andExpect(jsonPath("$.data.status").value("PENDING_NEW"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(true))
+        .andExpect(jsonPath("$.data.authorizationReason").value("STEP_UP_REQUIRED"))
+        .andExpect(jsonPath("$.data.expiresAt").value(createdExpiresAt));
+  }
+
+  @Test
+  void shouldReturnOwnedOrderSessionStatusWhenQueriedByClOrdId() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-ORD-002A", "status-clord.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Status ClOrd User")
+    );
+
+    AuthSession authSession = login("status-clord.user@fixyz.com", "Abcd1234!");
+    String clOrdId = "123e4567-e89b-42d3-a456-426614174260";
+    JsonNode created = createOrderSession(authSession, clOrdId, "ORD-REF-002A");
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+    String createdExpiresAt = created.path("data").path("expiresAt").asText();
+
+    mockMvc.perform(get("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .param("clOrdId", clOrdId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.orderSessionId").value(orderSessionId))
+        .andExpect(jsonPath("$.data.status").value("PENDING_NEW"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(true))
+        .andExpect(jsonPath("$.data.authorizationReason").value("STEP_UP_REQUIRED"))
         .andExpect(jsonPath("$.data.expiresAt").value(createdExpiresAt));
   }
 
@@ -129,9 +174,61 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     assertThat(recreated.path("data").path("orderSessionId").asText()).isEqualTo(orderSessionId);
     assertThat(recreated.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
+    assertThat(recreated.path("data").path("challengeRequired").asBoolean()).isTrue();
+    assertThat(recreated.path("data").path("authorizationReason").asText()).isEqualTo("STEP_UP_REQUIRED");
     assertThat(recreated.path("data").path("expiresAt").asText()).isEqualTo(expiresAt);
     assertThat(recreated.path("data").path("remainingSeconds").asLong()).isBetween(1L, firstRemainingSeconds);
     assertThat(auditLogRepository.count()).isEqualTo(1L);
+  }
+
+  @Test
+  void shouldAutoAuthorizeSessionWhenFreshLoginMfaBypassIsEligible() throws Exception {
+    Member member = memberRepository.save(
+        Member.registerUser("M-ORD-002D", "authed.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Authed User")
+    );
+
+    AuthSession authSession = login("authed.user@fixyz.com", "Abcd1234!");
+    verifyFreshLoginMfa(authSession, member.getId());
+
+    JsonNode response = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174272", "ORD-REF-002D");
+    String orderSessionId = response.path("data").path("orderSessionId").asText();
+
+    assertThat(response.path("data").path("status").asText()).isEqualTo("AUTHED");
+    assertThat(response.path("data").path("challengeRequired").asBoolean()).isFalse();
+    assertThat(response.path("data").path("authorizationReason").asText()).isEqualTo("LOGIN_MFA_FRESH");
+    assertThat(stringRedisTemplate.opsForValue().get("ch:order-session:" + orderSessionId)).isEqualTo("AUTHED");
+
+    JsonNode secondResponse = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174273",
+        "ORD-REF-002E"
+    );
+
+    assertThat(secondResponse.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
+    assertThat(secondResponse.path("data").path("challengeRequired").asBoolean()).isTrue();
+    assertThat(secondResponse.path("data").path("authorizationReason").asText()).isEqualTo("STEP_UP_REQUIRED");
+  }
+
+  @Test
+  void shouldRequireCurrentSessionMfaBeforeAutoAuthorizingOrderSession() throws Exception {
+    Member member = memberRepository.save(
+        Member.registerUser("M-ORD-002F", "stale-mfa.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Stale Mfa User")
+    );
+
+    OtpVerification verification = OtpVerification.issue(
+        member.getId(),
+        "111111",
+        java.time.Instant.now().plusSeconds(300)
+    );
+    verification.verify();
+    otpVerificationRepository.saveAndFlush(verification);
+
+    AuthSession authSession = login("stale-mfa.user@fixyz.com", "Abcd1234!");
+    JsonNode response = createOrderSession(authSession, "123e4567-e89b-42d3-a456-426614174274", "ORD-REF-002F");
+
+    assertThat(response.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
+    assertThat(response.path("data").path("challengeRequired").asBoolean()).isTrue();
+    assertThat(response.path("data").path("authorizationReason").asText()).isEqualTo("STEP_UP_REQUIRED");
   }
 
   @Test
@@ -172,6 +269,29 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     mockMvc.perform(get("/api/v1/orders/sessions")
             .cookie(sessionCookie(intruder))
             .param("orderSessionId", orderSessionId))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CHANNEL-006"))
+        .andExpect(jsonPath("$.message").value("Access denied."))
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions"));
+  }
+
+  @Test
+  void shouldRejectNonOwnerOrderSessionStatusLookupByClOrdId() throws Exception {
+    memberRepository.save(
+        Member.registerUser("M-ORD-003A2", "owner-clord.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Owner ClOrd User")
+    );
+    memberRepository.save(
+        Member.registerUser("M-ORD-003B2", "intruder-clord.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Intruder ClOrd User")
+    );
+
+    AuthSession owner = login("owner-clord.user@fixyz.com", "Abcd1234!");
+    AuthSession intruder = login("intruder-clord.user@fixyz.com", "Abcd1234!");
+    String clOrdId = "123e4567-e89b-42d3-a456-426614174360";
+    createOrderSession(owner, clOrdId, "ORD-REF-003C");
+
+    mockMvc.perform(get("/api/v1/orders/sessions")
+            .cookie(sessionCookie(intruder))
+            .param("clOrdId", clOrdId))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("CHANNEL-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
@@ -510,6 +630,21 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   private Cookie sessionCookie(AuthSession authSession) {
     return new Cookie("SESSION", authSession.sessionId());
+  }
+
+  private void verifyFreshLoginMfa(AuthSession authSession, Long memberId) throws Exception {
+    otpVerificationRepository.saveAndFlush(
+        OtpVerification.issue(memberId, "654321", java.time.Instant.now().plusSeconds(300))
+    );
+
+    mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .param("memberId", String.valueOf(memberId))
+            .param("otpCode", "654321"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.matched").value(true));
   }
 
   private record AuthSession(String sessionId, String csrfToken) {

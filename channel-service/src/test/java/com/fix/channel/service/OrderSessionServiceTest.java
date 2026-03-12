@@ -3,13 +3,18 @@ package com.fix.channel.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fix.channel.entity.OrderSessionAuthorizationReason;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
+import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.vo.OrderSessionAuthorizationDecision;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import com.fix.channel.vo.OrderSessionQueryCommand;
 import com.fix.common.error.BusinessException;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -53,6 +58,9 @@ class OrderSessionServiceTest {
   private AuditLogRepository auditLogRepository;
 
   @Autowired
+  private SecurityEventRepository securityEventRepository;
+
+  @Autowired
   private InMemoryOrderSessionTtlStore orderSessionTtlStore;
 
   @Autowired
@@ -65,6 +73,7 @@ class OrderSessionServiceTest {
   void setUp() {
     auditLogRepository.deleteAll();
     orderSessionRepository.deleteAll();
+    securityEventRepository.deleteAll();
     orderSessionTtlStore.reset();
     orderSessionPersistenceService.reset();
     orderSessionRateLimitService.reset();
@@ -79,9 +88,144 @@ class OrderSessionServiceTest {
     assertThat(result.isCreated()).isTrue();
     assertThat(result.getOrderSessionId()).isNotBlank();
     assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
     assertThat(result.getRemainingSeconds()).isEqualTo(600L);
     assertThat(result.getExpiresAt()).isNotNull();
     assertThat(auditLogRepository.count()).isEqualTo(1L);
+  }
+
+  @Test
+  void shouldCreateAutoAuthorizedSessionWhenFreshLoginMfaProofExists() {
+    Instant loginAuthenticatedAt = Instant.now().minusSeconds(30);
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.plusSeconds(5);
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268",
+        "ORD-REF-007A",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    assertThat(result.isCreated()).isTrue();
+    assertThat(result.getStatus()).isEqualTo("AUTHED");
+    assertThat(result.isChallengeRequired()).isFalse();
+    assertThat(result.getAuthorizationReason()).isEqualTo("LOGIN_MFA_FRESH");
+    assertThat(orderSessionRepository.findByOrderSessionId(result.getOrderSessionId()))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED);
+          assertThat(session.isChallengeRequired()).isFalse();
+          assertThat(session.getAuthorizationReason()).isEqualTo(OrderSessionAuthorizationReason.LOGIN_MFA_FRESH);
+        });
+  }
+
+  @Test
+  void shouldRequireChallengeWhenMfaProofPredatesCurrentLogin() {
+    Instant loginAuthenticatedAt = Instant.now();
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.minusSeconds(1);
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268AA",
+        "ORD-REF-007AA",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
+  }
+
+  @Test
+  void shouldRequireChallengeWhenTrustedSessionContinuityChanges() {
+    Instant loginAuthenticatedAt = Instant.now().minusSeconds(30);
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.plusSeconds(5);
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268B",
+        "ORD-REF-007B",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "10.0.0.2",
+        "test-agent"
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
+  }
+
+  @Test
+  void shouldRequireChallengeAfterRecentOrderSessionActivity() {
+    Instant loginAuthenticatedAt = Instant.now().minusSeconds(30);
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.plusSeconds(5);
+    var first = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268C",
+        "ORD-REF-007C",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    var second = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268D",
+        "ORD-REF-007D",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    assertThat(first.getStatus()).isEqualTo("AUTHED");
+    assertThat(second.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(second.isChallengeRequired()).isTrue();
+    assertThat(second.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
+  }
+
+  @Test
+  void shouldRequireChallengeWhenRecentSecurityEventExists() {
+    securityEventRepository.saveAndFlush(SecurityEvent.of(301L, "OTP_VERIFY_FAILED", "127.0.0.1", "test-agent", "MEDIUM"));
+
+    Instant loginAuthenticatedAt = Instant.now().minusSeconds(30);
+    Instant lastMfaVerifiedAt = loginAuthenticatedAt.plusSeconds(5);
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        301L,
+        "123e4567-e89b-42d3-a456-426614174268E",
+        "ORD-REF-007E",
+        lastMfaVerifiedAt,
+        loginAuthenticatedAt,
+        true,
+        "127.0.0.1",
+        "test-agent",
+        "127.0.0.1",
+        "test-agent"
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("STEP_UP_REQUIRED");
   }
 
   @Test
@@ -229,7 +373,7 @@ class OrderSessionServiceTest {
     private volatile boolean dropTtlOnNextActivation;
 
     @Override
-    public void activate(String orderSessionId) {
+    public void activate(String orderSessionId, String initialStatus) {
       if (failNextActivation) {
         failNextActivation = false;
         throw new BusinessException(com.fix.common.error.ErrorCode.INTERNAL_ERROR, "order session cache unavailable");
@@ -291,17 +435,19 @@ class OrderSessionServiceTest {
     }
 
     @Override
-    public OrderSession createPendingNewSession(OrderSessionCreateCommand command) {
+    public OrderSession createSession(OrderSessionCreateCommand command, OrderSessionAuthorizationDecision decision) {
       if (failNextCreateWithDuplicateAfterInsert) {
         failNextCreateWithDuplicateAfterInsert = false;
-        OrderSession concurrentSession = requiresNewTransactionTemplate.execute(status -> super.createPendingNewSession(command));
+        OrderSession concurrentSession = requiresNewTransactionTemplate.execute(
+            status -> super.createSession(command, decision)
+        );
         if (concurrentSession == null) {
           throw new IllegalStateException("simulated duplicate create race did not persist a session");
         }
-        orderSessionTtlStore.activate(concurrentSession.getOrderSessionId());
+        orderSessionTtlStore.activate(concurrentSession.getOrderSessionId(), concurrentSession.getStatus().name());
         throw new DataIntegrityViolationException("simulated duplicate create race");
       }
-      return super.createPendingNewSession(command);
+      return super.createSession(command, decision);
     }
 
     void failNextCreateWithDuplicateAfterInsert() {

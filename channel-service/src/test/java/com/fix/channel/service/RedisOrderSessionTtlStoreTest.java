@@ -19,7 +19,7 @@ class RedisOrderSessionTtlStoreTest {
     RedisOrderSessionTtlStore store =
         new NullActivationResultRedisOrderSessionTtlStore(provider(new StringRedisTemplate()));
 
-    assertThatThrownBy(() -> store.activate("sess-1"))
+    assertThatThrownBy(() -> store.activate("sess-1", "PENDING_NEW"))
         .isInstanceOf(BusinessException.class)
         .hasMessage("order session cache activation failed");
   }
@@ -87,7 +87,7 @@ class RedisOrderSessionTtlStoreTest {
     }
 
     @Override
-    protected Long executeActivation(StringRedisTemplate redisTemplate, String orderSessionId) {
+    protected Long executeActivation(StringRedisTemplate redisTemplate, String orderSessionId, String initialStatus) {
       return null;
     }
   }
