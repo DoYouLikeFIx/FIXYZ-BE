@@ -501,7 +501,6 @@ public class AuthService {
       String loginToken
   ) {
     Instant mfaVerifiedAt = Instant.now();
-    loginTokenService.consume(loginToken);
     HttpSession session = establishAuthenticatedSession(member, request, correlationId, mfaVerifiedAt);
 
     auditLogRepository.save(AuditLog.of(
@@ -520,6 +519,7 @@ public class AuthService {
       accountId = String.valueOf(member.getAccountId());
     }
 
+    loginTokenService.consume(loginToken);
     return OtpVerifyResult.verified(
         member.getMemberNo(),
         member.getEmail(),
