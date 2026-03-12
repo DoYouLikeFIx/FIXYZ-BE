@@ -12,6 +12,7 @@ import com.fix.common.error.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import java.util.List;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,6 +47,30 @@ public class AccountController {
     return ApiResponse.success(AccountPositionResponse.from(
         accountPositionService.getAccountPosition(request.toVo(accountId, memberId))
     ));
+  }
+
+  @GetMapping("/{accountId}/summary")
+  @Operation(summary = "Get account summary")
+  public ApiResponse<AccountPositionResponse> getSummary(
+      @PathVariable Long accountId,
+      HttpServletRequest httpServletRequest
+  ) {
+    Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
+    return ApiResponse.success(AccountPositionResponse.from(
+        accountPositionService.getAccountSummary(accountId, memberId)
+    ));
+  }
+
+  @GetMapping("/{accountId}/positions/list")
+  @Operation(summary = "Get owned account positions")
+  public ApiResponse<List<AccountPositionResponse>> getPositions(
+      @PathVariable Long accountId,
+      HttpServletRequest httpServletRequest
+  ) {
+    Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
+    return ApiResponse.success(accountPositionService.getAccountPositions(accountId, memberId).stream()
+        .map(AccountPositionResponse::from)
+        .toList());
   }
 
   @GetMapping("/{accountId}/orders")
