@@ -22,11 +22,13 @@ import com.fix.corebank.support.CorebankStandaloneMvcSupport;
 import com.fix.corebank.vo.AccountProvisioningCommand;
 import com.fix.corebank.vo.AccountProvisioningResult;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
+import com.fix.corebank.vo.AccountPositionsQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
 import com.fix.corebank.vo.AccountStatusQueryCommand;
 import com.fix.corebank.vo.AccountStatusResult;
 import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
+import com.fix.corebank.vo.AccountSummaryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.AccountOrderHistoryItemResult;
@@ -255,7 +257,7 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(jsonPath("$.data.availableQuantity").value(120.0))
         .andExpect(jsonPath("$.data.availableQty").value(120.0))
         .andExpect(jsonPath("$.data.balance").value(1000000.0))
-            .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
+        .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
             .andExpect(jsonPath("$.data.currency").value("KRW"));
 
     mockMvc.perform(get("/internal/v1/accounts/{accountId}/summary", 1L)
@@ -361,6 +363,34 @@ class CorebankInternalApiSkeletonTest {
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
             .param("memberId", "301")
             .param("symbol", "005930"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
+  }
+
+  @Test
+  void shouldMapOwnershipFailureForAccountPositionsEndpoint() throws Exception {
+    corebankOrderService.setAccountPositionsFailure(new BusinessException(
+        ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
+        "forbidden account ownership"
+    ));
+
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/positions/list", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301"))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
+  }
+
+  @Test
+  void shouldMapOwnershipFailureForAccountSummaryEndpoint() throws Exception {
+    corebankOrderService.setAccountSummaryFailure(new BusinessException(
+        ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
+        "forbidden account ownership"
+    ));
+
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/summary", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301"))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
   }
@@ -541,9 +571,11 @@ class CorebankInternalApiSkeletonTest {
 
     private PortfolioResult portfolioResult;
     private AccountPositionResult accountPositionResult;
-    private AccountPositionResult accountSummaryResult;
-    private List<AccountPositionResult> accountPositionsResult = List.of();
     private RuntimeException accountPositionFailure;
+    private List<AccountPositionResult> accountPositionsResult = List.of();
+    private RuntimeException accountPositionsFailure;
+    private AccountPositionResult accountSummaryResult;
+    private RuntimeException accountSummaryFailure;
     private AccountStatusResult accountStatusResult;
     private AccountStatusResult defaultAccountStatusResult;
     private RuntimeException accountStatusFailure;
@@ -580,22 +612,6 @@ class CorebankInternalApiSkeletonTest {
     }
 
     @Override
-    public AccountPositionResult getAccountSummary(AccountStatusQueryCommand command) {
-      if (accountStatusFailure != null) {
-        throw accountStatusFailure;
-      }
-      return accountSummaryResult;
-    }
-
-    @Override
-    public List<AccountPositionResult> getAccountPositions(AccountStatusQueryCommand command) {
-      if (accountStatusFailure != null) {
-        throw accountStatusFailure;
-      }
-      return accountPositionsResult;
-    }
-
-    @Override
     public AccountStatusResult getAccountStatus(AccountStatusQueryCommand command) {
       if (accountStatusFailure != null) {
         throw accountStatusFailure;
@@ -617,6 +633,22 @@ class CorebankInternalApiSkeletonTest {
         throw accountStatusTransitionFailure;
       }
       return accountStatusTransitionResult;
+    }
+
+    @Override
+    public List<AccountPositionResult> getAccountPositions(AccountPositionsQueryCommand command) {
+      if (accountPositionsFailure != null) {
+        throw accountPositionsFailure;
+      }
+      return accountPositionsResult;
+    }
+
+    @Override
+    public AccountPositionResult getAccountSummary(AccountSummaryQueryCommand command) {
+      if (accountSummaryFailure != null) {
+        throw accountSummaryFailure;
+      }
+      return accountSummaryResult;
     }
 
     @Override
@@ -649,14 +681,6 @@ class CorebankInternalApiSkeletonTest {
       this.accountPositionResult = accountPositionResult;
     }
 
-    private void setAccountSummaryResult(AccountPositionResult accountSummaryResult) {
-      this.accountSummaryResult = accountSummaryResult;
-    }
-
-    private void setAccountPositionsResult(List<AccountPositionResult> accountPositionsResult) {
-      this.accountPositionsResult = accountPositionsResult;
-    }
-
     private void setAccountPositionFailure(RuntimeException accountPositionFailure) {
       this.accountPositionFailure = accountPositionFailure;
     }
@@ -679,6 +703,22 @@ class CorebankInternalApiSkeletonTest {
 
     private void setAccountStatusTransitionFailure(RuntimeException accountStatusTransitionFailure) {
       this.accountStatusTransitionFailure = accountStatusTransitionFailure;
+    }
+
+    private void setAccountPositionsResult(List<AccountPositionResult> accountPositionsResult) {
+      this.accountPositionsResult = accountPositionsResult;
+    }
+
+    private void setAccountPositionsFailure(RuntimeException accountPositionsFailure) {
+      this.accountPositionsFailure = accountPositionsFailure;
+    }
+
+    private void setAccountSummaryResult(AccountPositionResult accountSummaryResult) {
+      this.accountSummaryResult = accountSummaryResult;
+    }
+
+    private void setAccountSummaryFailure(RuntimeException accountSummaryFailure) {
+      this.accountSummaryFailure = accountSummaryFailure;
     }
 
     private void setAccountOrderHistoryResult(AccountOrderHistoryResult accountOrderHistoryResult) {

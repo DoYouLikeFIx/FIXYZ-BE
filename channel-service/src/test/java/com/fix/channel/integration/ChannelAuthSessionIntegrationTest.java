@@ -1,9 +1,11 @@
 package com.fix.channel.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -74,6 +76,12 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     memberRepository.deleteAll();
     auditLogRepository.deleteAll();
     securityEventRepository.deleteAll();
+    doAnswer(invocation -> new CorebankLinkedAccountProfile(
+        1001L,
+        invocation.getArgument(0, Long.class),
+        "110123456789"
+    )).when(corebankProvisioningClient)
+        .provisionDefaultAccount(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
       return null;
@@ -331,8 +339,8 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(jsonPath("$.data.name").value("Session User"))
         .andExpect(jsonPath("$.data.role").value("ROLE_USER"))
         .andExpect(jsonPath("$.data.totpEnrolled").value(false))
-        .andExpect(jsonPath("$.data.accountId").doesNotExist())
-        .andExpect(jsonPath("$.data.accountNumber").doesNotExist());
+        .andExpect(jsonPath("$.data.accountId").value("1001"))
+        .andExpect(jsonPath("$.data.accountNumber").value("110123456789"));
   }
 
   @Test
@@ -344,6 +352,13 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .thenReturn(new CorebankLinkedAccountProfile(1001L, saved.getId(), "110123456789"));
 
     String sessionId = loginAndGetSessionId("linked.session@fixyz.com", "Abcd1234!");
+    Member unlinked = memberRepository.findById(saved.getId()).orElseThrow();
+    unlinked.updateLinkedAccount(null, null);
+
+    Session persisted = sessionRepository.findById(sessionId);
+    assertThat(persisted).isNotNull();
+    persisted.removeAttribute("AUTH_ACCOUNT_ID");
+    saveSession(persisted);
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))

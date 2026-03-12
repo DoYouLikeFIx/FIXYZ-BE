@@ -3,8 +3,10 @@ package com.fix.channel.service;
 import com.fix.channel.client.CorebankClient;
 import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
-import com.fix.common.web.CorrelationIdSupport;
+import com.fix.channel.vo.AccountPositionsQueryCommand;
+import com.fix.channel.vo.AccountSummaryQueryCommand;
 import java.util.List;
+import com.fix.common.web.CorrelationIdSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -18,11 +20,11 @@ public class AccountPositionService {
     return corebankClient.getAccountPosition(command, CorrelationIdSupport.currentOrGenerate());
   }
 
-  public AccountPositionResult getAccountSummary(Long accountId, Long memberId) {
-    return corebankClient.getAccountSummary(accountId, memberId, CorrelationIdSupport.currentOrGenerate());
+  public List<AccountPositionResult> getAccountPositions(AccountPositionsQueryCommand command) {
+    return corebankClient.getAccountPositions(command, CorrelationIdSupport.currentOrGenerate());
   }
 
-  public List<AccountPositionResult> getAccountPositions(Long accountId, Long memberId) {
-    return corebankClient.getAccountPositions(accountId, memberId, CorrelationIdSupport.currentOrGenerate());
+  public AccountPositionResult getAccountSummary(AccountSummaryQueryCommand command) {
+    return corebankClient.getAccountSummary(command, CorrelationIdSupport.currentOrGenerate());
   }
 }

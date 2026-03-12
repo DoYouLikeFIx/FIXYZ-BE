@@ -283,7 +283,7 @@
             "in": "query",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/InternalAccountStatusRequest"
+              "$ref": "#/components/schemas/InternalAccountSummaryRequest"
             }
           }
         ],
@@ -361,7 +361,7 @@
             "in": "query",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/InternalAccountStatusRequest"
+              "$ref": "#/components/schemas/InternalAccountPositionsRequest"
             }
           }
         ],
@@ -823,7 +823,7 @@
           }
         }
       },
-      "InternalAccountStatusRequest": {
+      "InternalAccountSummaryRequest": {
         "required": [
           "memberId"
         ],
@@ -891,6 +891,18 @@
           }
         }
       },
+      "InternalAccountStatusRequest": {
+        "required": [
+          "memberId"
+        ],
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ApiResponseInternalAccountStatusResponse": {
         "type": "object",
         "properties": {
@@ -952,6 +964,18 @@
           "symbol": {
             "minLength": 1,
             "type": "string"
+          }
+        }
+      },
+      "InternalAccountPositionsRequest": {
+        "required": [
+          "memberId"
+        ],
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

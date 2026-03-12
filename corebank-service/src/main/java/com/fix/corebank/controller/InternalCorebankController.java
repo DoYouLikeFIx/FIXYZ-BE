@@ -6,6 +6,8 @@ import com.fix.common.validation.ContractPatterns;
 import com.fix.corebank.dto.request.InternalAccountPositionRequest;
 import com.fix.corebank.dto.request.InternalAccountStatusRequest;
 import com.fix.corebank.dto.request.InternalAccountStatusTransitionRequest;
+import com.fix.corebank.dto.request.InternalAccountPositionsRequest;
+import com.fix.corebank.dto.request.InternalAccountSummaryRequest;
 import com.fix.corebank.dto.request.InternalAccountOrderHistoryRequest;
 import com.fix.corebank.dto.request.InternalOrderCreateRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
@@ -36,7 +38,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
 import java.util.List;
 
 @RestController
@@ -73,7 +74,7 @@ public class InternalCorebankController {
   @GetMapping("/accounts/{accountId}/summary")
   public ApiResponse<InternalAccountPositionResponse> accountSummary(
       @PathVariable Long accountId,
-      @Valid @ModelAttribute InternalAccountStatusRequest request
+      @Valid @ModelAttribute InternalAccountSummaryRequest request
   ) {
     return ApiResponse.success(InternalAccountPositionResponse.from(
         corebankOrderService.getAccountSummary(request.toVo(accountId))
@@ -83,7 +84,7 @@ public class InternalCorebankController {
   @GetMapping("/accounts/{accountId}/positions/list")
   public ApiResponse<List<InternalAccountPositionResponse>> accountPositions(
       @PathVariable Long accountId,
-      @Valid @ModelAttribute InternalAccountStatusRequest request
+      @Valid @ModelAttribute InternalAccountPositionsRequest request
   ) {
     return ApiResponse.success(corebankOrderService.getAccountPositions(request.toVo(accountId)).stream()
         .map(InternalAccountPositionResponse::from)

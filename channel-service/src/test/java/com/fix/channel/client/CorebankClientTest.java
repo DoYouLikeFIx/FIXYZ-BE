@@ -13,7 +13,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fix.channel.vo.AdminAccountStatusTransitionCommand;
 import com.fix.channel.vo.AdminAccountStatusTransitionResult;
 import com.fix.channel.vo.AccountPositionQueryCommand;
+import com.fix.channel.vo.AccountPositionsQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
+import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryResult;
 import com.fix.common.error.BusinessException;
@@ -168,7 +170,6 @@ class CorebankClientTest {
         .withHeader("X-Correlation-Id", equalTo("trace-channel-alias")));
   }
 
-  @Test
   void shouldMapAccountSummaryResponse() {
     wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/summary"))
         .withQueryParam("memberId", equalTo("301"))
@@ -193,13 +194,20 @@ class CorebankClientTest {
                 }
                 """)));
 
-    AccountPositionResult result = corebankClient.getAccountSummary(ACCOUNT_ID, MEMBER_ID, "trace-summary");
+    AccountPositionResult result = corebankClient.getAccountSummary(summaryCommand(), "trace-summary");
 
     assertThat(result.getAccountId()).isEqualTo(ACCOUNT_ID);
     assertThat(result.getMemberId()).isEqualTo(MEMBER_ID);
     assertThat(result.getSymbol()).isEmpty();
+    assertThat(result.getQuantity()).isEqualByComparingTo("0.0000");
+    assertThat(result.getAvailableQuantity()).isEqualByComparingTo("0.0000");
     assertThat(result.getBalance()).isEqualByComparingTo("1000000.0000");
     assertThat(result.getCurrency()).isEqualTo("KRW");
+
+    wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/summary"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-summary")));
   }
 
   @Test
@@ -241,10 +249,15 @@ class CorebankClientTest {
                 }
                 """)));
 
-    assertThat(corebankClient.getAccountPositions(ACCOUNT_ID, MEMBER_ID, "trace-position-list"))
+    assertThat(corebankClient.getAccountPositions(positionsCommand(), "trace-position-list"))
         .hasSize(2)
         .extracting(AccountPositionResult::getSymbol)
         .containsExactly("000660", "005930");
+
+    wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-position-list")));
   }
 
   @Test
@@ -397,6 +410,21 @@ class CorebankClientTest {
   }
 
   private AdminAccountStatusTransitionCommand statusTransitionCommand(String status) {
-    return AdminAccountStatusTransitionCommand.of(ACCOUNT_ID, MEMBER_ID, status, "risk-control", "ops-admin", "ticket=FIX-43");
+    return AdminAccountStatusTransitionCommand.of(
+        ACCOUNT_ID,
+        MEMBER_ID,
+        status,
+        "risk-control",
+        "ops-admin",
+        "ticket=FIX-43"
+    );
+  }
+
+  private AccountPositionsQueryCommand positionsCommand() {
+    return AccountPositionsQueryCommand.of(ACCOUNT_ID, MEMBER_ID);
+  }
+
+  private AccountSummaryQueryCommand summaryCommand() {
+    return AccountSummaryQueryCommand.of(ACCOUNT_ID, MEMBER_ID);
   }
 }

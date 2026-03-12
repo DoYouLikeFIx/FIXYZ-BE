@@ -49,6 +49,7 @@ public class AuthService {
   private static final String ACTIVE_STATUS = "ACTIVE";
   private static final String ACCOUNT_LOCKED_EVENT_TYPE = "ACCOUNT_LOCKED";
   private static final String ACCOUNT_LOCKED_SEVERITY = "HIGH";
+  private static final String AUTH_ACCOUNT_ID = "AUTH_ACCOUNT_ID";
 
   private final MemberRepository memberRepository;
   private final AuditLogRepository auditLogRepository;
@@ -206,6 +207,7 @@ public class AuthService {
         FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME,
         member.getEmail()
     );
+    hydrateSessionAccountId(session, member, resolveCorrelationId(request));
 
     SecurityContext context = SecurityContextHolder.createEmptyContext();
     context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
@@ -236,6 +238,10 @@ public class AuthService {
     Member member = memberRepository.findById(memberId)
         .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
     Member resolvedMember = ensureLinkedAccount(member, CorrelationIdSupport.ensureCorrelationId(request));
+    String resolvedAccountId = resolveSessionAccountId(session, resolvedMember, request);
+    if (resolvedAccountId == null && resolvedMember.getAccountId() != null) {
+      resolvedAccountId = String.valueOf(resolvedMember.getAccountId());
+    }
 
     return AuthSessionResult.of(
         resolvedMember.getMemberNo(),
@@ -244,7 +250,7 @@ public class AuthService {
         resolvedMember.getName(),
         resolvedMember.getRole(),
         false,
-        resolvedMember.getAccountId() == null ? null : String.valueOf(resolvedMember.getAccountId()),
+        resolvedAccountId,
         resolvedMember.getAccountNumber()
     );
   }
@@ -392,6 +398,48 @@ public class AuthService {
       return memberIdNumber.longValue();
     }
     return null;
+  }
+
+  private String resolveSessionAccountId(HttpSession session, Member member, HttpServletRequest request) {
+    Object accountIdAttr = session.getAttribute(AUTH_ACCOUNT_ID);
+    if (accountIdAttr instanceof Number accountIdNumber) {
+      return String.valueOf(accountIdNumber.longValue());
+    }
+    if (accountIdAttr instanceof String accountIdText && !accountIdText.isBlank()) {
+      return accountIdText;
+    }
+
+    return hydrateSessionAccountId(session, member, resolveCorrelationId(request));
+  }
+
+  private String hydrateSessionAccountId(HttpSession session, Member member, String correlationId) {
+    try {
+      Member resolvedMember = ensureLinkedAccount(member, correlationId);
+      Long accountId = resolvedMember.getAccountId();
+      if (accountId == null || accountId <= 0L) {
+        CorebankLinkedAccountProfile linkedAccountProfile = corebankProvisioningClient.provisionDefaultAccount(
+            member.getId(),
+            member.getMemberNo(),
+            member.getEmail(),
+            correlationId
+        );
+        if (linkedAccountProfile != null) {
+          resolvedMember.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
+          accountId = linkedAccountProfile.accountId();
+        }
+      }
+      if (accountId == null || accountId <= 0L) {
+        session.removeAttribute(AUTH_ACCOUNT_ID);
+        return null;
+      }
+
+      String resolvedAccountId = String.valueOf(accountId);
+      session.setAttribute(AUTH_ACCOUNT_ID, resolvedAccountId);
+      return resolvedAccountId;
+    } catch (BusinessException ex) {
+      session.removeAttribute(AUTH_ACCOUNT_ID);
+      return null;
+    }
   }
 
   private String resolveUsername(String email) {

@@ -6,6 +6,8 @@ import com.fix.channel.dto.response.AccountOrderHistoryResponse;
 import com.fix.channel.dto.response.AccountPositionResponse;
 import com.fix.channel.service.AccountOrderHistoryService;
 import com.fix.channel.service.AccountPositionService;
+import com.fix.channel.vo.AccountPositionsQueryCommand;
+import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -49,6 +51,22 @@ public class AccountController {
     ));
   }
 
+  @GetMapping("/{accountId}/positions/list")
+  @Operation(summary = "Get owned account positions")
+  public ApiResponse<List<AccountPositionResponse>> getPositions(
+      @PathVariable Long accountId,
+      HttpServletRequest httpServletRequest
+  ) {
+    Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
+    return ApiResponse.success(
+        accountPositionService.getAccountPositions(
+                AccountPositionsQueryCommand.of(accountId, memberId)
+            ).stream()
+            .map(AccountPositionResponse::from)
+            .toList()
+    );
+  }
+
   @GetMapping("/{accountId}/summary")
   @Operation(summary = "Get account summary")
   public ApiResponse<AccountPositionResponse> getSummary(
@@ -57,22 +75,9 @@ public class AccountController {
   ) {
     Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
     return ApiResponse.success(AccountPositionResponse.from(
-        accountPositionService.getAccountSummary(accountId, memberId)
+        accountPositionService.getAccountSummary(AccountSummaryQueryCommand.of(accountId, memberId))
     ));
   }
-
-  @GetMapping("/{accountId}/positions/list")
-  @Operation(summary = "Get owned account positions")
-  public ApiResponse<List<AccountPositionResponse>> getPositions(
-      @PathVariable Long accountId,
-      HttpServletRequest httpServletRequest
-  ) {
-    Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
-    return ApiResponse.success(accountPositionService.getAccountPositions(accountId, memberId).stream()
-        .map(AccountPositionResponse::from)
-        .toList());
-  }
-
   @GetMapping("/{accountId}/orders")
   @Operation(summary = "Get account order history")
   public ApiResponse<AccountOrderHistoryResponse> getOrderHistory(

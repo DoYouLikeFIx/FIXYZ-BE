@@ -18,11 +18,13 @@ import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.ExecutionRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
+import com.fix.corebank.vo.AccountPositionsQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
 import com.fix.corebank.vo.AccountStatusQueryCommand;
 import com.fix.corebank.vo.AccountStatusResult;
 import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
+import com.fix.corebank.vo.AccountSummaryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryItemResult;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
@@ -102,6 +104,53 @@ public class CorebankOrderService {
         account.getCashBalance(),
         account.getCurrency(),
         resolveAsOf(account, positionOptional)
+    );
+  }
+
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+  public List<AccountPositionResult> getAccountPositions(AccountPositionsQueryCommand command) {
+    Account account = accountRepository.findById(command.getAccountId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+
+    if (!account.getMemberId().equals(command.getMemberId())) {
+      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
+    }
+
+    return positionRepository.findAllByAccountIdAndQtyGreaterThanOrderBySymbolAsc(
+            command.getAccountId(),
+            BigDecimal.ZERO
+        ).stream()
+        .map(position -> AccountPositionResult.of(
+            account.getId(),
+            command.getMemberId(),
+            position.getSymbol(),
+            position.getQty(),
+            position.getQty(),
+            account.getCashBalance(),
+            account.getCurrency(),
+            resolveAsOf(account, Optional.of(position))
+        ))
+        .toList();
+  }
+
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+  public AccountPositionResult getAccountSummary(AccountSummaryQueryCommand command) {
+    Account account = accountRepository.findById(command.getAccountId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+
+    if (!account.getMemberId().equals(command.getMemberId())) {
+      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
+    }
+
+    return AccountPositionResult.of(
+        account.getId(),
+        command.getMemberId(),
+        "",
+        BigDecimal.ZERO,
+        BigDecimal.ZERO,
+        account.getCashBalance(),
+        account.getCurrency(),
+        resolveAsOf(account, Optional.empty())
     );
   }
 
