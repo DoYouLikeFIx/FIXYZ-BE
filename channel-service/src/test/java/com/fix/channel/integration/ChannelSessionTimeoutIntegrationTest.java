@@ -7,10 +7,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import jakarta.servlet.http.Cookie;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +46,9 @@ class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationT
   private MemberRepository memberRepository;
 
   @Autowired
+  private ObjectMapper objectMapper;
+
+  @Autowired
   private PasswordEncoder passwordEncoder;
 
   @Autowired
@@ -50,6 +56,9 @@ class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationT
 
   @Autowired
   private StringRedisTemplate stringRedisTemplate;
+
+  @Autowired
+  private TotpService totpService;
 
   @BeforeEach
   void setUp() {
@@ -80,10 +89,37 @@ class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationT
   }
 
   private String loginAndGetSessionId(String email, String password) throws Exception {
-    MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
-            .with(csrf())
+    Member member = memberRepository.findByEmail(email).orElseThrow();
+    if (!member.isTotpEnabled()) {
+      member.enableTotpEnrollment();
+      memberRepository.saveAndFlush(member);
+      totpService.provisionActiveSecret(member);
+    } else if (!totpService.hasActiveSecret(member)) {
+      totpService.provisionActiveSecret(member);
+    }
+    PreAuthSession preAuthSession = bootstrapPreAuthSession();
+
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
             .param("email", email)
             .param("password", password))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    String loginToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    MvcResult result = mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "loginToken", loginToken,
+                "otpCode", totpService.currentCode(member)
+            ))))
         .andExpect(status().isOk())
         .andReturn();
 
@@ -91,6 +127,21 @@ class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationT
     assertThat(sessionCookie).isNotNull();
     assertThat(sessionCookie.getValue()).isNotBlank();
     return sessionCookie.getValue();
+  }
+
+  private PreAuthSession bootstrapPreAuthSession() throws Exception {
+    MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    Cookie sessionCookie = result.getResponse().getCookie("SESSION");
+    assertThat(sessionCookie).isNotNull();
+    String csrfToken = objectMapper.readTree(result.getResponse().getContentAsString())
+        .path("data")
+        .path("token")
+        .asText();
+    assertThat(csrfToken).isNotBlank();
+    return new PreAuthSession(sessionCookie.getValue(), csrfToken);
   }
 
   private void awaitSessionExpiration(String sessionId) throws InterruptedException {
@@ -102,5 +153,11 @@ class ChannelSessionTimeoutIntegrationTest extends ChannelContainersIntegrationT
       Thread.sleep(SESSION_EXPIRE_POLL_MS);
     }
     assertThat(sessionRepository.findById(sessionId)).isNull();
+  }
+
+  private record PreAuthSession(String sessionId, String csrfToken) {
+    private Cookie sessionCookie() {
+      return new Cookie("SESSION", sessionId);
+    }
   }
 }

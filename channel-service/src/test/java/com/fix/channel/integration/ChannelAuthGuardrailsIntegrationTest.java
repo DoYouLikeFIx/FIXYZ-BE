@@ -134,7 +134,10 @@ class ChannelAuthGuardrailsIntegrationTest extends ChannelContainersIntegrationT
             .param("email", "guard.reset@fixyz.com")
             .param("password", "Abcd1234!"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true));
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.loginToken").isString())
+        .andExpect(jsonPath("$.data.nextAction").value("ENROLL_TOTP"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false));
 
     Member updated = memberRepository.findById(saved.getId()).orElseThrow();
     assertThat(updated.getStatus()).isEqualTo("ACTIVE");
