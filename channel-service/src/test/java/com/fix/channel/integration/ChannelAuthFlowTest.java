@@ -133,6 +133,27 @@ class ChannelAuthFlowTest {
   }
 
   @Test
+  void shouldContinueLoginWhenCorebankLookupFails() throws Exception {
+    Member member = saveMember("M-LOGIN-003", "lookup.fail@fixyz.com", "Abcd1234!", "Lookup Fail");
+    doThrow(new BusinessException(ErrorCode.CORE_PROVISIONING_UNAVAILABLE, "corebank linked account lookup failed"))
+        .when(corebankProvisioningClient)
+        .fetchDefaultAccountProfile(any(), anyString());
+
+    MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
+            .with(csrf())
+            .param("email", "lookup.fail@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.memberId").value(member.getId()))
+        .andReturn();
+
+    HttpSession session = result.getRequest().getSession(false);
+    assertThat(session).isNotNull();
+    assertThat(session.getAttribute("AUTH_ACCOUNT_ID")).isEqualTo("1001");
+  }
+
+  @Test
   void shouldReturnUnauthorizedWhenPasswordDoesNotMatch() throws Exception {
     saveMember("M-LOGIN-002", "wrong.pw@fixyz.com", "Abcd1234!", "Wrong Pw");
 

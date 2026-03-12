@@ -43,7 +43,9 @@ class ChannelOpenApiCompatibilityTest {
         contract,
         accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText()
     );
+    JsonNode summaryOperation = paths.path("/api/v1/accounts/{accountId}/summary").path("get");
     JsonNode positionsOperation = paths.path("/api/v1/accounts/{accountId}/positions").path("get");
+    JsonNode listPositionsOperation = paths.path("/api/v1/accounts/{accountId}/positions/list").path("get");
 
     assertThat(fieldNames(paths))
         .contains(
@@ -51,7 +53,9 @@ class ChannelOpenApiCompatibilityTest {
             "/api/v1/auth/login",
             "/api/v1/orders",
             "/api/v1/orders/sessions",
+            "/api/v1/accounts/{accountId}/summary",
             "/api/v1/accounts/{accountId}/positions",
+            "/api/v1/accounts/{accountId}/positions/list",
             "/api/v1/accounts/{accountId}/orders",
             "/api/v1/admin/accounts/{accountId}/status"
         );
@@ -84,7 +88,7 @@ class ChannelOpenApiCompatibilityTest {
     assertThat(adminStatusTransitionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(authSessionSchema.path("properties")))
-        .contains("memberUuid", "username", "email", "name", "role", "totpEnrolled", "accountId");
+        .contains("memberUuid", "username", "email", "name", "role", "totpEnrolled", "accountId", "accountNumber");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
     assertThat(fieldNames(orderSessionCreateRequestSchema.path("properties")))
@@ -99,8 +103,12 @@ class ChannelOpenApiCompatibilityTest {
             "expiresAt",
             "remainingSeconds"
         );
+    assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
     assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
+    assertThat(listPositionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseListAccountPositionResponse");
     assertThat(fieldNames(accountOrderHistorySchema.path("properties")))
         .contains("content", "totalElements", "totalPages", "number", "size");
     assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))

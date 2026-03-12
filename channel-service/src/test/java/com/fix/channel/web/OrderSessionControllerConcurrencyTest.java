@@ -35,6 +35,7 @@ class OrderSessionControllerConcurrencyTest {
     Instant now = Instant.now();
     CountDownLatch firstCallEntered = new CountDownLatch(1);
     CountDownLatch releaseFirstCall = new CountDownLatch(1);
+    CountDownLatch secondLockAttempted = new CountDownLatch(1);
     AtomicInteger callCount = new AtomicInteger();
     List<Boolean> bypassFlags = new CopyOnWriteArrayList<>();
     OrderSessionService orderSessionService = new OrderSessionService(null, null, null, null, null, null) {
@@ -70,9 +71,10 @@ class OrderSessionControllerConcurrencyTest {
         );
       }
     };
+    TrackingChannelSessionRequestLock requestLock = new TrackingChannelSessionRequestLock(secondLockAttempted);
     OrderSessionController controller = new OrderSessionController(
         orderSessionService,
-        new ChannelSessionRequestLock(new StaticListableBeanFactory().getBeanProvider(StringRedisTemplate.class))
+        requestLock
     );
     MockHttpSession session = new MockHttpSession();
     session.setAttribute(ChannelSessionAttributes.AUTH_MEMBER_ID, 301L);
@@ -101,7 +103,7 @@ class OrderSessionControllerConcurrencyTest {
           )
       );
 
-      Thread.sleep(200L);
+      assertThat(requestLock.awaitSecondAttempt(1)).isTrue();
       assertThat(callCount.get()).isEqualTo(1);
 
       releaseFirstCall.countDown();
@@ -141,6 +143,29 @@ class OrderSessionControllerConcurrencyTest {
     } catch (InterruptedException ex) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("interrupted while waiting for concurrent controller test", ex);
+    }
+  }
+
+  private static final class TrackingChannelSessionRequestLock extends ChannelSessionRequestLock {
+
+    private final CountDownLatch secondAttempted;
+    private final AtomicInteger invocationCount = new AtomicInteger();
+
+    private TrackingChannelSessionRequestLock(CountDownLatch secondAttempted) {
+      super(new StaticListableBeanFactory().getBeanProvider(StringRedisTemplate.class));
+      this.secondAttempted = secondAttempted;
+    }
+
+    @Override
+    public <T> T executeLocked(String sessionId, java.util.function.Supplier<T> action) {
+      if (invocationCount.incrementAndGet() == 2) {
+        secondAttempted.countDown();
+      }
+      return super.executeLocked(sessionId, action);
+    }
+
+    private boolean awaitSecondAttempt(int timeoutSeconds) throws InterruptedException {
+      return secondAttempted.await(timeoutSeconds, TimeUnit.SECONDS);
     }
   }
 }

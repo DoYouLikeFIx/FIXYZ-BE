@@ -110,21 +110,16 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
     mockMvc.perform(post("/api/v1/orders/sessions")
             .cookie(new Cookie("SESSION", authSession.sessionId()))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
-            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174290")
             .contentType(MediaType.APPLICATION_JSON)
             .content(objectMapper.writeValueAsString(new OrderSessionPayload(
-                1001L,
-                "005930",
-                "BUY",
-                "LIMIT",
-                2,
-                71000L
+                "123e4567-e89b-42d3-a456-426614174290",
+                "DEMO-ORDER-REF-001"
             ))))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.status").value("PENDING_NEW"))
-        .andExpect(jsonPath("$.data.symbol").value("005930"))
-        .andExpect(jsonPath("$.data.qty").value(2))
-        .andExpect(jsonPath("$.data.price").value(71000));
+        .andExpect(jsonPath("$.data.clOrdId").value("123e4567-e89b-42d3-a456-426614174290"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(true))
+        .andExpect(jsonPath("$.data.authorizationReason").value("STEP_UP_REQUIRED"));
   }
 
   private AuthSession login(String email, String password) throws Exception {
@@ -159,12 +154,8 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
   }
 
   private record OrderSessionPayload(
-      Long accountId,
-      String symbol,
-      String side,
-      String orderType,
-      Integer qty,
-      Long price
+      String clOrdId,
+      String orderRef
   ) {
   }
 }

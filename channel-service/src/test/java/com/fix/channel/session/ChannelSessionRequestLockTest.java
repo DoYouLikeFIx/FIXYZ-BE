@@ -22,7 +22,10 @@ class ChannelSessionRequestLockTest {
   void shouldSerializeSameSessionAcrossLockInstancesWhenRedisIsShared() throws Exception {
     Map<String, String> sharedRedisLocks = new ConcurrentHashMap<>();
     ChannelSessionRequestLock firstNodeLock = new TestChannelSessionRequestLock(sharedRedisLocks);
-    ChannelSessionRequestLock secondNodeLock = new TestChannelSessionRequestLock(sharedRedisLocks);
+    TestChannelSessionRequestLock secondNodeLock = new TestChannelSessionRequestLock(
+        sharedRedisLocks,
+        new CountDownLatch(1)
+    );
     CountDownLatch firstActionEntered = new CountDownLatch(1);
     CountDownLatch releaseFirstAction = new CountDownLatch(1);
     AtomicInteger activeActions = new AtomicInteger();
@@ -51,7 +54,7 @@ class ChannelSessionRequestLockTest {
         return null;
       }));
 
-      Thread.sleep(200L);
+      assertThat(secondNodeLock.awaitAcquireAttempted(1)).isTrue();
       assertThat(invocationOrder).containsExactly("first");
       assertThat(maxConcurrentActions.get()).isEqualTo(1);
 
@@ -79,12 +82,18 @@ class ChannelSessionRequestLockTest {
   private static final class TestChannelSessionRequestLock extends ChannelSessionRequestLock {
 
     private final Map<String, String> sharedRedisLocks;
+    private final CountDownLatch acquireAttempted;
 
     private TestChannelSessionRequestLock(Map<String, String> sharedRedisLocks) {
+      this(sharedRedisLocks, null);
+    }
+
+    private TestChannelSessionRequestLock(Map<String, String> sharedRedisLocks, CountDownLatch acquireAttempted) {
       super(new StaticListableBeanFactory(
           Map.of("redisTemplate", new StringRedisTemplate())
       ).getBeanProvider(StringRedisTemplate.class));
       this.sharedRedisLocks = sharedRedisLocks;
+      this.acquireAttempted = acquireAttempted;
     }
 
     @Override
@@ -94,12 +103,19 @@ class ChannelSessionRequestLockTest {
         String lockToken,
         java.time.Duration ttl
     ) {
+      if (acquireAttempted != null) {
+        acquireAttempted.countDown();
+      }
       return sharedRedisLocks.putIfAbsent(lockKey, lockToken) == null ? 1L : 0L;
     }
 
     @Override
     protected Long executeRelease(StringRedisTemplate redisTemplate, String lockKey, String lockToken) {
       return sharedRedisLocks.remove(lockKey, lockToken) ? 1L : 0L;
+    }
+
+    private boolean awaitAcquireAttempted(int timeoutSeconds) throws InterruptedException {
+      return acquireAttempted != null && acquireAttempted.await(timeoutSeconds, TimeUnit.SECONDS);
     }
   }
 }

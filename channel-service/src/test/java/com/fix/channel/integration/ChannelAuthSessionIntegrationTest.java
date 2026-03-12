@@ -177,7 +177,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
             .param("otpCode", "654321"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.matched").value(true));
+        .andExpect(jsonPath("$.data.verified").value(true));
 
     Session firstVerificationSession = sessionRepository.findById(sessionId);
     assertThat(firstVerificationSession).isNotNull();
@@ -193,7 +193,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
             .param("otpCode", "654321"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.matched").value(false));
+        .andExpect(jsonPath("$.data.verified").value(false));
 
     Session replayedSession = sessionRepository.findById(sessionId);
     assertThat(replayedSession).isNotNull();

@@ -669,7 +669,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .param("otpCode", "654321"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.matched").value(true));
+        .andExpect(jsonPath("$.data.verified").value(true));
   }
 
   private record AuthSession(String sessionId, String csrfToken) {

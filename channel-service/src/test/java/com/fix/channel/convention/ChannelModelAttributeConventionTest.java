@@ -31,6 +31,9 @@ class ChannelModelAttributeConventionTest {
 
     for (Class<?> controllerClass : controllerClasses) {
       for (Method method : controllerClass.getDeclaredMethods()) {
+        if (method.isSynthetic()) {
+          continue;
+        }
         for (Parameter parameter : method.getParameters()) {
           String parameterTypeName = parameter.getType().getName();
           if (parameterTypeName.contains(".dto.request.")) {
