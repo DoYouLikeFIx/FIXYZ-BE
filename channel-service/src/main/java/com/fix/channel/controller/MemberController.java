@@ -2,7 +2,12 @@ package com.fix.channel.controller;
 
 import com.fix.channel.dto.request.MemberPasswordUpdateRequest;
 import com.fix.channel.dto.request.MemberProfileUpdateRequest;
+import com.fix.channel.dto.request.TotpConfirmRequest;
+import com.fix.channel.dto.request.TotpEnrollRequest;
 import com.fix.channel.dto.response.MemberProfileResponse;
+import com.fix.channel.dto.response.OtpVerifyResponse;
+import com.fix.channel.dto.response.TotpEnrollResponse;
+import com.fix.channel.service.AuthService;
 import com.fix.channel.service.MemberService;
 import com.fix.common.error.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,9 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class MemberController {
 
   private final MemberService memberService;
+  private final AuthService authService;
 
-  public MemberController(MemberService memberService) {
+  public MemberController(MemberService memberService, AuthService authService) {
     this.memberService = memberService;
+    this.authService = authService;
   }
 
   @GetMapping("/me")
@@ -47,5 +56,21 @@ public class MemberController {
       HttpServletRequest httpServletRequest
   ) {
     memberService.updateMyPassword(request.toVo(), httpServletRequest);
+  }
+
+  @PostMapping("/me/totp/enroll")
+  public ApiResponse<TotpEnrollResponse> enrollTotp(
+      @Valid @RequestBody TotpEnrollRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    return ApiResponse.success(TotpEnrollResponse.from(authService.enrollTotp(request.toVo(), httpServletRequest)));
+  }
+
+  @PostMapping("/me/totp/confirm")
+  public ApiResponse<OtpVerifyResponse> confirmTotp(
+      @Valid @RequestBody TotpConfirmRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    return ApiResponse.success(OtpVerifyResponse.from(authService.confirmTotp(request.toVo(), httpServletRequest)));
   }
 }
