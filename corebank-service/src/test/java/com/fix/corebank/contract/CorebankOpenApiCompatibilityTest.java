@@ -76,6 +76,7 @@ class CorebankOpenApiCompatibilityTest {
             "operatorCode",
             "timestamp"
         );
+    assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();
 
     assertThat(orderResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
