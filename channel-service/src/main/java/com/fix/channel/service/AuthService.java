@@ -70,6 +70,8 @@ public class AuthService {
   private boolean sessionCookieSecure;
   @Value("${auth.guardrails.account-lockout.max-failed-attempts:5}")
   private int accountLockoutMaxFailedAttempts;
+  @Value("${auth.demo.auto-totp-enrolled:false}")
+  private boolean demoAutoTotpEnrolled;
 
   @Transactional
   public AuthRegisterResult register(AuthRegisterCommand command, String correlationId) {
@@ -81,6 +83,9 @@ public class AuthService {
         passwordEncoder.encode(command.getPassword()),
         command.getName().trim()
     );
+    if (demoAutoTotpEnrolled) {
+      member.enableTotpEnrollment();
+    }
     Member saved;
     try {
       saved = memberRepository.saveAndFlush(member);
@@ -249,7 +254,7 @@ public class AuthService {
         resolvedMember.getEmail(),
         resolvedMember.getName(),
         resolvedMember.getRole(),
-        false,
+        resolvedMember.isTotpEnabled(),
         resolvedAccountId,
         resolvedMember.getAccountNumber()
     );
