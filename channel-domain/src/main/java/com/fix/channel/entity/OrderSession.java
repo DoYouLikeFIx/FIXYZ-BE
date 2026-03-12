@@ -9,12 +9,15 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
 @Entity
 @Table(name = "order_sessions")
 public class OrderSession extends BaseTimeEntity {
+
+  private static final long DEFAULT_TTL_SECONDS = 600L;
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -43,6 +46,9 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "authorization_reason", nullable = false, length = 64)
   private OrderSessionAuthorizationReason authorizationReason;
 
+  @Column(name = "expires_at", nullable = false)
+  private Instant expiresAt;
+
   protected OrderSession() {
   }
 
@@ -52,7 +58,8 @@ public class OrderSession extends BaseTimeEntity {
       String orderRef,
       OrderSessionStatus status,
       boolean challengeRequired,
-      OrderSessionAuthorizationReason authorizationReason
+      OrderSessionAuthorizationReason authorizationReason,
+      Instant expiresAt
   ) {
     this.orderSessionId = UUID.randomUUID().toString();
     this.memberId = memberId;
@@ -61,6 +68,7 @@ public class OrderSession extends BaseTimeEntity {
     this.status = status;
     this.challengeRequired = challengeRequired;
     this.authorizationReason = Objects.requireNonNull(authorizationReason, "authorizationReason");
+    this.expiresAt = Objects.requireNonNull(expiresAt, "expiresAt");
   }
 
   public static OrderSession pendingNew(Long memberId, String clOrdId, String orderRef) {
@@ -79,7 +87,8 @@ public class OrderSession extends BaseTimeEntity {
         orderRef,
         OrderSessionStatus.PENDING_NEW,
         true,
-        authorizationReason
+        authorizationReason,
+        defaultExpiresAt()
     );
   }
 
@@ -95,7 +104,8 @@ public class OrderSession extends BaseTimeEntity {
         orderRef,
         OrderSessionStatus.AUTHED,
         false,
-        authorizationReason
+        authorizationReason,
+        defaultExpiresAt()
     );
   }
 
@@ -131,6 +141,10 @@ public class OrderSession extends BaseTimeEntity {
     return authorizationReason;
   }
 
+  public Instant getExpiresAt() {
+    return expiresAt;
+  }
+
   public boolean ownedBy(Long memberId) {
     return Objects.equals(this.memberId, memberId);
   }
@@ -143,5 +157,9 @@ public class OrderSession extends BaseTimeEntity {
 
   public void expire() {
     this.status = OrderSessionStatus.EXPIRED;
+  }
+
+  private static Instant defaultExpiresAt() {
+    return Instant.now().plusSeconds(DEFAULT_TTL_SECONDS);
   }
 }
