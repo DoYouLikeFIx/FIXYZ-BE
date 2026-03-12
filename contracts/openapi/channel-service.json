@@ -754,6 +754,10 @@
           "operatorCode": {
             "type": "string"
           },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "timestamp": {
             "type": "string",
             "format": "date-time"

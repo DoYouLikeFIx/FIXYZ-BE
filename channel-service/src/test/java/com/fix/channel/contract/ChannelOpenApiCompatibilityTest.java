@@ -64,6 +64,7 @@ class ChannelOpenApiCompatibilityTest {
             "correlationId",
             "userMessageKey",
             "operatorCode",
+            "details",
             "timestamp"
         );
 

@@ -58,6 +58,7 @@ class FepGatewayOpenApiCompatibilityTest {
     JsonNode cancelSchema = contract.path("components").path("schemas").path("FepOrderCancelRequest");
     JsonNode replaySchema = contract.path("components").path("schemas").path("FepOrderReplayRequest");
     JsonNode internalStatusSchema = contract.path("components").path("schemas").path("FepInternalOrderStatusRequest");
+    JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode statusResponseSchema = contract.path("components").path("schemas").path("FepOrderResponse");
     JsonNode cancelResponseSchema = contract.path("components").path("schemas").path("FepOrderCancelResponse");
     JsonNode replayResponseSchema = contract.path("components").path("schemas").path("FepOrderReplayResponse");
@@ -94,6 +95,17 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(cancelOperation.path("requestBody").path("required").asBoolean()).isTrue();
     assertThat(replayOperation.path("requestBody").path("required").asBoolean()).isTrue();
     assertThat(internalStatusOperation.path("requestBody").path("required").asBoolean()).isTrue();
+    assertThat(fieldNames(apiErrorSchema.path("properties")))
+        .contains(
+            "code",
+            "message",
+            "path",
+            "correlationId",
+            "userMessageKey",
+            "operatorCode",
+            "details",
+            "timestamp"
+        );
 
     assertThat(fieldNames(submitSchema.path("properties"))).containsAll(BASELINE_SUBMIT_FIELDS);
     assertThat(requiredFields(submitSchema))

@@ -34,6 +34,7 @@ class FepSimulatorOpenApiCompatibilityTest {
             "correlationId",
             "userMessageKey",
             "operatorCode",
+            "details",
             "timestamp"
         );
 
