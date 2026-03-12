@@ -6,7 +6,6 @@ import com.fix.channel.dto.response.OrderSessionResponse;
 import com.fix.channel.session.ChannelSessionAttributes;
 import com.fix.channel.session.ChannelSessionRequestLock;
 import com.fix.channel.service.OrderSessionService;
-import com.fix.channel.vo.OrderSessionCreateCommand;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -53,14 +52,9 @@ public class OrderSessionController {
       HttpServletRequest httpServletRequest
   ) {
     HttpSession session = requireAuthenticatedSession(httpServletRequest);
-    String clOrdId = request.clOrdId();
-    String orderRef = request.orderRef();
     return channelSessionRequestLock.executeLocked(session.getId(), () -> {
-      Long memberId = resolveAuthenticatedMemberId(session);
-      var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
-          memberId,
-          clOrdId,
-          orderRef,
+      var result = orderSessionService.createOrderSession(request.toVo(
+          resolveAuthenticatedMemberId(session),
           resolveLastMfaVerifiedAt(session),
           resolveLoginAuthenticatedAt(session),
           resolveChallengeBypassEligible(session),
