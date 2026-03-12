@@ -23,6 +23,7 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode loginResponse = contract.path("components").path("schemas").path("ApiResponseAuthLoginResponse");
     JsonNode orderResponse = contract.path("components").path("schemas").path("ApiResponseOrderResponse");
     JsonNode sessionResponse = contract.path("components").path("schemas").path("ApiResponseOrderSessionResponse");
+    JsonNode orderSessionSchema = contract.path("components").path("schemas").path("OrderSessionResponse");
     JsonNode accountPositionResponse = contract.path("components").path("schemas")
         .path("ApiResponseAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas").path("AccountPositionResponse");
@@ -66,6 +67,8 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(sessionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(fieldNames(orderSessionSchema.path("properties")))
+        .contains("challengeRequired", "authorizationReason");
     assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
