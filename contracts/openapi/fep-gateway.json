@@ -521,7 +521,9 @@
           },
           "details": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": {
+              "type": "object"
+            }
           },
           "timestamp": {
             "type": "string",
