@@ -28,6 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +46,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class AuthService {
 
@@ -71,6 +73,8 @@ public class AuthService {
   private boolean sessionCookieSecure;
   @Value("${auth.guardrails.account-lockout.max-failed-attempts:5}")
   private int accountLockoutMaxFailedAttempts;
+  @Value("${auth.demo.auto-totp-enrolled:false}")
+  private boolean demoAutoTotpEnrolled;
 
   @Transactional
   public AuthRegisterResult register(AuthRegisterCommand command, String correlationId) {
@@ -90,6 +94,10 @@ public class AuthService {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "member already exists");
       }
       throw ex;
+    }
+
+    if (demoAutoTotpEnrolled) {
+      saved.enableTotpEnrollment();
     }
 
     CorebankLinkedAccountProfile linkedAccountProfile = corebankProvisioningClient.provisionDefaultAccount(
@@ -240,8 +248,7 @@ public class AuthService {
     Member member = memberRepository.findById(memberId)
         .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
     String correlationId = resolveCorrelationId(request);
-    Member resolvedMember = ensureLinkedAccount(member, correlationId);
-    hydrateSessionLinkedAccount(session, resolvedMember, correlationId, false);
+    Member resolvedMember = hydrateSessionLinkedAccount(session, member, correlationId, false);
 
     return AuthSessionResult.of(
         resolvedMember.getMemberNo(),
@@ -299,29 +306,32 @@ public class AuthService {
     session.setAttribute(ChannelSessionAttributes.AUTH_ORDER_CHALLENGE_BYPASS_ELIGIBLE, false);
   }
 
-  private Member ensureLinkedAccount(Member member, String correlationId) {
-    if (member.getAccountId() != null && member.getAccountNumber() != null && !member.getAccountNumber().isBlank()) {
+  private Member lookupLinkedAccountSafely(Member member, String correlationId) {
+    if (hasLinkedAccount(member)) {
       return member;
     }
 
-    CorebankLinkedAccountProfile linkedAccountProfile =
-        corebankProvisioningClient.fetchDefaultAccountProfile(member.getId(), correlationId);
-    if (linkedAccountProfile != null) {
-      member.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
+    try {
+      CorebankLinkedAccountProfile linkedAccountProfile =
+          corebankProvisioningClient.fetchDefaultAccountProfile(member.getId(), correlationId);
+      if (linkedAccountProfile != null) {
+        member.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
+      }
+    } catch (BusinessException ex) {
+      log.warn("Continuing without linked account after corebank lookup failure: memberId={}", member.getId(), ex);
     }
     return member;
   }
 
-  private void hydrateSessionLinkedAccount(
+  private Member hydrateSessionLinkedAccount(
       HttpSession session,
       Member member,
       String correlationId,
       boolean provisionIfMissing
   ) {
-    Member resolvedMember = ensureLinkedAccount(member, correlationId);
+    Member resolvedMember = lookupLinkedAccountSafely(member, correlationId);
     if (provisionIfMissing
-        && (resolvedMember.getAccountId() == null || resolvedMember.getAccountNumber() == null
-            || resolvedMember.getAccountNumber().isBlank())) {
+        && !hasLinkedAccount(resolvedMember)) {
       try {
         CorebankLinkedAccountProfile linkedAccountProfile = corebankProvisioningClient.provisionDefaultAccount(
             resolvedMember.getId(),
@@ -334,13 +344,15 @@ public class AuthService {
         }
       } catch (BusinessException ex) {
         clearSessionLinkedAccount(session);
-        return;
+        log.warn("Continuing without linked account after corebank provisioning failure: memberId={}",
+            resolvedMember.getId(), ex);
+        return resolvedMember;
       }
     }
 
-    if (resolvedMember.getAccountId() == null || resolvedMember.getAccountId() <= 0L) {
+    if (!hasLinkedAccount(resolvedMember) || resolvedMember.getAccountId() <= 0L) {
       clearSessionLinkedAccount(session);
-      return;
+      return resolvedMember;
     }
 
     session.setAttribute(
@@ -349,9 +361,17 @@ public class AuthService {
     );
     if (resolvedMember.getAccountNumber() == null || resolvedMember.getAccountNumber().isBlank()) {
       session.removeAttribute(ChannelSessionAttributes.AUTH_ACCOUNT_NUMBER);
-      return;
+      return resolvedMember;
     }
     session.setAttribute(ChannelSessionAttributes.AUTH_ACCOUNT_NUMBER, resolvedMember.getAccountNumber());
+    return resolvedMember;
+  }
+
+  private boolean hasLinkedAccount(Member member) {
+    return member.getAccountId() != null
+        && member.getAccountId() > 0L
+        && member.getAccountNumber() != null
+        && !member.getAccountNumber().isBlank();
   }
 
   private String resolveSessionAccountId(HttpSession session, Member member) {
