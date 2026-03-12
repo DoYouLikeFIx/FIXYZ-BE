@@ -344,6 +344,26 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   }
 
   @Test
+  void shouldExposeMemberDrivenTotpEnrollmentOnCurrentSession() throws Exception {
+    Member member = Member.registerUser(
+        "M-IT-SESSION-003",
+        "totp.session@fixyz.com",
+        passwordEncoder.encode("Abcd1234!"),
+        "Totp Session"
+    );
+    member.enableTotpEnrollment();
+    Member saved = memberRepository.save(member);
+
+    String sessionId = loginAndGetSessionId("totp.session@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(get("/api/v1/auth/session")
+            .cookie(new Cookie("SESSION", sessionId)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.memberUuid").value(saved.getMemberNo()))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(true));
+  }
+
+  @Test
   void shouldBackfillLinkedAccountOnCurrentSessionRestore() throws Exception {
     Member saved = memberRepository.save(
         Member.registerUser("M-IT-SESSION-002", "linked.session@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Linked Session")
