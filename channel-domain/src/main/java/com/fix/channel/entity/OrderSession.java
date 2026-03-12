@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -36,19 +37,23 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "status", nullable = false, length = 32)
   private OrderSessionStatus status;
 
+  @Column(name = "expires_at", nullable = false)
+  private Instant expiresAt;
+
   protected OrderSession() {
   }
 
-  private OrderSession(Long memberId, String clOrdId, String orderRef, OrderSessionStatus status) {
+  private OrderSession(Long memberId, String clOrdId, String orderRef, OrderSessionStatus status, Instant expiresAt) {
     this.orderSessionId = UUID.randomUUID().toString();
     this.memberId = memberId;
     this.clOrdId = clOrdId;
     this.orderRef = orderRef;
     this.status = status;
+    this.expiresAt = expiresAt;
   }
 
-  public static OrderSession pendingNew(Long memberId, String clOrdId, String orderRef) {
-    return new OrderSession(memberId, clOrdId, orderRef, OrderSessionStatus.PENDING_NEW);
+  public static OrderSession pendingNew(Long memberId, String clOrdId, String orderRef, Instant expiresAt) {
+    return new OrderSession(memberId, clOrdId, orderRef, OrderSessionStatus.PENDING_NEW, expiresAt);
   }
 
   public Long getId() {
@@ -73,6 +78,10 @@ public class OrderSession extends BaseTimeEntity {
 
   public OrderSessionStatus getStatus() {
     return status;
+  }
+
+  public Instant getExpiresAt() {
+    return expiresAt;
   }
 
   public boolean ownedBy(Long memberId) {
