@@ -230,6 +230,46 @@ class ChannelAuthFlowTest {
   }
 
   @Test
+  void shouldRequireTotpEnrollmentAgainOnLaterLoginWhenRegistrationWasNotCompleted() throws Exception {
+    saveMember("M-LOGIN-003B", "resume.enroll@fixyz.com", "Abcd1234!", "Resume Enroll");
+
+    PreAuthSession firstSession = bootstrapPreAuthSession();
+    MvcResult firstLogin = mockMvc.perform(post("/api/v1/auth/login")
+            .session(firstSession.session())
+            .header("X-CSRF-TOKEN", firstSession.csrfToken())
+            .param("email", "resume.enroll@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.nextAction").value("ENROLL_TOTP"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false))
+        .andReturn();
+
+    String firstLoginToken = objectMapper.readTree(firstLogin.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    mockMvc.perform(post("/api/v1/members/me/totp/enroll")
+            .session(firstSession.session())
+            .header("X-CSRF-TOKEN", firstSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of("loginToken", firstLoginToken))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.manualEntryKey").isString())
+        .andExpect(jsonPath("$.data.enrollmentToken").isString());
+
+    PreAuthSession secondSession = bootstrapPreAuthSession();
+    mockMvc.perform(post("/api/v1/auth/login")
+            .session(secondSession.session())
+            .header("X-CSRF-TOKEN", secondSession.csrfToken())
+            .param("email", "resume.enroll@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.nextAction").value("ENROLL_TOTP"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false));
+  }
+
+  @Test
   void shouldThrottleOtpVerificationAttemptsPerLoginToken() throws Exception {
     Member member = saveMember("M-LOGIN-004", "otp.limit@fixyz.com", "Abcd1234!", "Otp Limit");
     enableTotp(member);
