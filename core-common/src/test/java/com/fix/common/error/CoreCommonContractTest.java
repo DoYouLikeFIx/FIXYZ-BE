@@ -95,5 +95,13 @@ class CoreCommonContractTest {
         ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED,
         ErrorCode.fromCode("ORD-012").orElseThrow()
     );
+    assertEquals(
+        ErrorCode.ORD_DAILY_SELL_LIMIT_EXCEEDED,
+        ErrorCode.fromCode("ORD-002").orElseThrow()
+    );
+    assertEquals(
+        ErrorCode.ORD_INSUFFICIENT_POSITION,
+        ErrorCode.fromCode("ORD-003").orElseThrow()
+    );
   }
 }
