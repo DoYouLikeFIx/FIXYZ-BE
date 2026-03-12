@@ -262,6 +262,45 @@
         }
       }
     },
+    "/internal/v1/accounts/{accountId}/summary": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "accountSummary",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalAccountSummaryRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalAccountPositionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/accounts/{accountId}/positions": {
       "get": {
         "tags": [
@@ -294,6 +333,45 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseInternalAccountPositionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/accounts/{accountId}/positions/list": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "accountPositions",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/InternalAccountPositionsRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseListInternalAccountPositionResponse"
                 }
               }
             }
@@ -715,6 +793,74 @@
           }
         }
       },
+      "InternalAccountSummaryRequest": {
+        "required": [
+          "memberId"
+        ],
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseInternalAccountPositionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalAccountPositionResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalAccountPositionResponse": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "availableQuantity": {
+            "type": "number"
+          },
+          "availableQty": {
+            "type": "number"
+          },
+          "balance": {
+            "type": "number"
+          },
+          "availableBalance": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "InternalAccountStatusRequest": {
         "required": [
           "memberId"
@@ -791,57 +937,34 @@
           }
         }
       },
-      "ApiResponseInternalAccountPositionResponse": {
+      "InternalAccountPositionsRequest": {
+        "required": [
+          "memberId"
+        ],
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseListInternalAccountPositionResponse": {
         "type": "object",
         "properties": {
           "success": {
             "type": "boolean"
           },
           "data": {
-            "$ref": "#/components/schemas/InternalAccountPositionResponse"
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InternalAccountPositionResponse"
+            }
           },
           "error": {
             "$ref": "#/components/schemas/ApiErrorResponse"
           },
           "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountPositionResponse": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "symbol": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number"
-          },
-          "availableQuantity": {
-            "type": "number"
-          },
-          "availableQty": {
-            "type": "number"
-          },
-          "balance": {
-            "type": "number"
-          },
-          "availableBalance": {
-            "type": "number"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "asOf": {
             "type": "string",
             "format": "date-time"
           }

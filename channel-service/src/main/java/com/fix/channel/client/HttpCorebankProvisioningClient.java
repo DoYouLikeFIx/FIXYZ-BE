@@ -19,8 +19,8 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
 
   public HttpCorebankProvisioningClient(
       RestClient.Builder restClientBuilder,
-      @Value("${corebank.internal.base-url:http://localhost:8081}") String corebankBaseUrl,
-      @Value("${corebank.internal.secret:${INTERNAL_SECRET:local-internal-secret}}") String internalSecret
+      @Value("${corebank.internal.base-url:${corebank.base-url:http://localhost:8081}}") String corebankBaseUrl,
+      @Value("${corebank.internal.secret:${internal.secret:${INTERNAL_SECRET:local-internal-secret}}}") String internalSecret
   ) {
     this.restClient = restClientBuilder
         .baseUrl(corebankBaseUrl)
@@ -30,7 +30,7 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
   }
 
   @Override
-  public void provisionDefaultAccount(Long memberId, String memberNo, String email, String correlationId) {
+  public Long provisionDefaultAccount(Long memberId, String memberNo, String email, String correlationId) {
     CorebankProvisioningRequest requestBody = new CorebankProvisioningRequest(memberId, memberNo, email);
     try {
       CorebankProvisioningEnvelope response = restClient.post()
@@ -45,6 +45,7 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
       if (response == null || !Boolean.TRUE.equals(response.getSuccess()) || response.getData() == null) {
         throw new BusinessException(ErrorCode.CORE_PROVISIONING_UNAVAILABLE, "corebank provisioning failed");
       }
+      return response.getData().getAccountId();
     } catch (RestClientException ex) {
       throw new BusinessException(ErrorCode.CORE_PROVISIONING_UNAVAILABLE, "corebank provisioning failed", ex);
     }

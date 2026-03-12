@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.vo.AdminAccountStatusTransitionCommand;
 import com.fix.channel.vo.AdminAccountStatusTransitionResult;
 import com.fix.channel.vo.AccountPositionQueryCommand;
+import com.fix.channel.vo.AccountPositionsQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
+import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryItemResult;
 import com.fix.channel.vo.AccountOrderHistoryResult;
@@ -37,6 +39,8 @@ public class CorebankClient {
 
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
   private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
+  private static final String COREBANK_ACCOUNT_POSITIONS_PATH = "/internal/v1/accounts/{accountId}/positions/list";
+  private static final String COREBANK_ACCOUNT_SUMMARY_PATH = "/internal/v1/accounts/{accountId}/summary";
   private static final String COREBANK_ACCOUNT_ORDERS_PATH = "/internal/v1/accounts/{accountId}/orders";
   private static final String COREBANK_ACCOUNT_STATUS_PATH = "/internal/v1/accounts/{accountId}/status";
 
@@ -47,8 +51,8 @@ public class CorebankClient {
   @Autowired
   public CorebankClient(
       RestClient.Builder restClientBuilder,
-      @Value("${corebank.base-url:http://localhost:8081}") String corebankBaseUrl,
-      @Value("${internal.secret:local-internal-secret}") String internalSecret
+      @Value("${corebank.internal.base-url:${corebank.base-url:http://localhost:8081}}") String corebankBaseUrl,
+      @Value("${corebank.internal.secret:${internal.secret:${INTERNAL_SECRET:local-internal-secret}}}") String internalSecret
   ) {
     this(
         restClientBuilder
@@ -119,6 +123,80 @@ public class CorebankClient {
           firstNonNull(responseBody.accountId(), command.getAccountId()),
           firstNonNull(responseBody.memberId(), command.getMemberId()),
           defaultIfBlank(responseBody.symbol(), command.getSymbol()),
+          quantity,
+          availableQuantity,
+          balance,
+          responseBody.currency(),
+          responseBody.asOf()
+      );
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public List<AccountPositionResult> getAccountPositions(
+      AccountPositionsQueryCommand command,
+      String correlationId
+  ) {
+    try {
+      CorebankApiResponse<List<CorebankAccountPositionResponse>> response = restClient.get()
+          .uri(uriBuilder -> uriBuilder
+              .path(COREBANK_ACCOUNT_POSITIONS_PATH)
+              .queryParam("memberId", command.getMemberId())
+              .build(command.getAccountId()))
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      List<CorebankAccountPositionResponse> responseBody = extractBody(response);
+      if (responseBody == null) {
+        return List.of();
+      }
+
+      return responseBody.stream()
+          .map((item) -> AccountPositionResult.of(
+              firstNonNull(item.accountId(), command.getAccountId()),
+              firstNonNull(item.memberId(), command.getMemberId()),
+              defaultIfBlank(item.symbol(), ""),
+              defaultDecimal(item.quantity(), BigDecimal.ZERO),
+              defaultDecimal(firstNonNull(item.availableQuantity(), item.availableQty()), BigDecimal.ZERO),
+              defaultDecimal(firstNonNull(item.balance(), item.availableBalance()), BigDecimal.ZERO),
+              item.currency(),
+              item.asOf()
+          ))
+          .toList();
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public AccountPositionResult getAccountSummary(
+      AccountSummaryQueryCommand command,
+      String correlationId
+  ) {
+    try {
+      CorebankApiResponse<CorebankAccountPositionResponse> response = restClient.get()
+          .uri(uriBuilder -> uriBuilder
+              .path(COREBANK_ACCOUNT_SUMMARY_PATH)
+              .queryParam("memberId", command.getMemberId())
+              .build(command.getAccountId()))
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankAccountPositionResponse responseBody = extractBody(response);
+      BigDecimal quantity = defaultDecimal(responseBody.quantity(), BigDecimal.ZERO);
+      BigDecimal availableQuantity =
+          defaultDecimal(firstNonNull(responseBody.availableQuantity(), responseBody.availableQty()), BigDecimal.ZERO);
+      BigDecimal balance = defaultDecimal(firstNonNull(responseBody.balance(), responseBody.availableBalance()), BigDecimal.ZERO);
+      return AccountPositionResult.of(
+          firstNonNull(responseBody.accountId(), command.getAccountId()),
+          firstNonNull(responseBody.memberId(), command.getMemberId()),
+          defaultIfBlank(responseBody.symbol(), ""),
           quantity,
           availableQuantity,
           balance,

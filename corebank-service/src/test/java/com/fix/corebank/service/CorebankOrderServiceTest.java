@@ -32,11 +32,13 @@ import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.entity.AccountStatusEvent;
 import com.fix.corebank.vo.AccountPositionQueryCommand;
+import com.fix.corebank.vo.AccountPositionsQueryCommand;
 import com.fix.corebank.vo.AccountPositionResult;
 import com.fix.corebank.vo.AccountStatusQueryCommand;
 import com.fix.corebank.vo.AccountStatusResult;
 import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
+import com.fix.corebank.vo.AccountSummaryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
@@ -173,6 +175,62 @@ class CorebankOrderServiceTest {
     assertThat(result.getQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
     assertThat(result.getAvailableQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
     assertThat(result.getBalance()).isEqualByComparingTo("100000000.0000");
+    assertThat(result.getAsOf()).isEqualTo(accountUpdatedAt);
+  }
+
+  @Test
+  void shouldReturnOwnedAccountPositionsWhenOwnershipMatches() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Instant samsungUpdatedAt = Instant.parse("2026-03-01T10:01:00Z");
+    Instant hynixUpdatedAt = Instant.parse("2026-03-01T10:02:00Z");
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    Position samsung = withUpdatedAt(
+        Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000")),
+        samsungUpdatedAt
+    );
+    Position hynix = withUpdatedAt(
+        Position.of(ACCOUNT_ID, "000660", new BigDecimal("40.0000"), new BigDecimal("120000.0000")),
+        hynixUpdatedAt
+    );
+
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findAllByAccountIdAndQtyGreaterThanOrderBySymbolAsc(
+        ACCOUNT_ID,
+        BigDecimal.ZERO
+    )).thenReturn(List.of(hynix, samsung));
+
+    List<AccountPositionResult> result = corebankOrderService.getAccountPositions(
+        AccountPositionsQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID)
+    );
+
+    assertThat(result).hasSize(2);
+    assertThat(result.get(0).getSymbol()).isEqualTo("000660");
+    assertThat(result.get(0).getQuantity()).isEqualByComparingTo("40.0000");
+    assertThat(result.get(0).getBalance()).isEqualByComparingTo("100000000.0000");
+    assertThat(result.get(0).getAsOf()).isEqualTo(hynixUpdatedAt);
+    assertThat(result.get(1).getSymbol()).isEqualTo("005930");
+    assertThat(result.get(1).getQuantity()).isEqualByComparingTo("120.0000");
+    assertThat(result.get(1).getAsOf()).isEqualTo(samsungUpdatedAt);
+  }
+
+  @Test
+  void shouldReturnAccountSummaryForCashOnlyAccount() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+
+    AccountPositionResult result = corebankOrderService.getAccountSummary(
+        AccountSummaryQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID)
+    );
+
+    assertThat(result.getAccountId()).isEqualTo(ACCOUNT_ID);
+    assertThat(result.getMemberId()).isEqualTo(OWNER_MEMBER_ID);
+    assertThat(result.getSymbol()).isEmpty();
+    assertThat(result.getQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+    assertThat(result.getAvailableQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+    assertThat(result.getBalance()).isEqualByComparingTo("100000000.0000");
+    assertThat(result.getCurrency()).isEqualTo("KRW");
     assertThat(result.getAsOf()).isEqualTo(accountUpdatedAt);
   }
 

@@ -51,6 +51,45 @@ class CorebankAccountPositionIntegrationTest {
   }
 
   @Test
+  void shouldReturnOwnedAccountPositionsList() throws Exception {
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/positions/list", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-positions-owned")
+            .param("memberId", "1"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-positions-owned"))
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data[0].accountId").value(1L))
+        .andExpect(jsonPath("$.data[0].memberId").value(1L))
+        .andExpect(jsonPath("$.data[0].symbol").value("005930"))
+        .andExpect(jsonPath("$.data[0].quantity").value(120.0))
+        .andExpect(jsonPath("$.data[0].availableQuantity").value(120.0))
+        .andExpect(jsonPath("$.data[0].balance").value(100000000.0))
+        .andExpect(jsonPath("$.data[0].currency").value("KRW"));
+  }
+
+  @Test
+  void shouldReturnAccountSummaryForCashOnlyFallback() throws Exception {
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/summary", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-summary-owned")
+            .param("memberId", "1"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-summary-owned"))
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.memberId").value(1L))
+        .andExpect(jsonPath("$.data.symbol").value(""))
+        .andExpect(jsonPath("$.data.quantity").value(0.0))
+        .andExpect(jsonPath("$.data.availableQuantity").value(0.0))
+        .andExpect(jsonPath("$.data.availableQty").value(0.0))
+        .andExpect(jsonPath("$.data.balance").value(100000000.0))
+        .andExpect(jsonPath("$.data.availableBalance").value(100000000.0))
+        .andExpect(jsonPath("$.data.currency").value("KRW"))
+        .andExpect(jsonPath("$.data.asOf").isNotEmpty());
+  }
+
+  @Test
   void shouldReturnZeroQuantityWhenPositionDoesNotExist() throws Exception {
     mockMvc.perform(get("/internal/v1/accounts/{accountId}/positions", 1L)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")

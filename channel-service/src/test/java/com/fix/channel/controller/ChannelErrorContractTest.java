@@ -190,6 +190,101 @@ class ChannelErrorContractTest {
 
   @Test
   @WithMockUser(username = "qa-user")
+  void shouldForwardSessionMemberIdAndExposeOwnedPositionList() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
+            urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
+        .withQueryParam("memberId", equalTo("301"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": [
+                    {
+                      "accountId": 1,
+                      "memberId": 301,
+                      "symbol": "000660",
+                      "quantity": 40.0000,
+                      "availableQuantity": 40.0000,
+                      "availableQty": 40.0000,
+                      "balance": 1000000.0000,
+                      "availableBalance": 1000000.0000,
+                      "currency": "KRW",
+                      "asOf": "2026-03-10T00:00:00Z"
+                    }
+                  ]
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions/list", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-positions"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-positions"))
+        .andExpect(jsonPath("$.data[0].accountId").value(1L))
+        .andExpect(jsonPath("$.data[0].memberId").value(301L))
+        .andExpect(jsonPath("$.data[0].symbol").value("000660"))
+        .andExpect(jsonPath("$.data[0].availableQuantity").value(40.0))
+        .andExpect(jsonPath("$.data[0].availableQty").value(40.0))
+        .andExpect(jsonPath("$.data[0].balance").value(1000000.0))
+        .andExpect(jsonPath("$.data[0].availableBalance").value(1000000.0));
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-positions")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldForwardSessionMemberIdAndExposeAccountSummary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
+            urlPathEqualTo("/internal/v1/accounts/1/summary"))
+        .withQueryParam("memberId", equalTo("301"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "",
+                    "quantity": 0.0000,
+                    "availableQuantity": 0.0000,
+                    "availableQty": 0.0000,
+                    "balance": 750000.0000,
+                    "availableBalance": 750000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z"
+                  }
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/summary", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-summary"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-summary"))
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.memberId").value(301L))
+        .andExpect(jsonPath("$.data.symbol").value(""))
+        .andExpect(jsonPath("$.data.availableQuantity").value(0.0))
+        .andExpect(jsonPath("$.data.balance").value(750000.0))
+        .andExpect(jsonPath("$.data.availableBalance").value(750000.0));
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/summary"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-summary")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
   void shouldForwardSessionMemberIdAndExposePagedOrderHistory() throws Exception {
     WIRE_MOCK_SERVER.resetAll();
     WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/orders"))
