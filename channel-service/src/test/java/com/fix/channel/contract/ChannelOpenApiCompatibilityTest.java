@@ -83,6 +83,7 @@ class ChannelOpenApiCompatibilityTest {
             "operatorCode",
             "timestamp"
         );
+    assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();
 
     assertThat(loginResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
