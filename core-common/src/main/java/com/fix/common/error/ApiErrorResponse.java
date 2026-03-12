@@ -1,7 +1,9 @@
 package com.fix.common.error;
 
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
+import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApiErrorResponse {
@@ -12,6 +14,7 @@ public class ApiErrorResponse {
   private final String correlationId;
   private final String userMessageKey;
   private final String operatorCode;
+  private final Map<String, Object> additionalProperties;
   private final Instant timestamp;
 
   private ApiErrorResponse(
@@ -21,6 +24,7 @@ public class ApiErrorResponse {
       String correlationId,
       String userMessageKey,
       String operatorCode,
+      Map<String, Object> additionalProperties,
       Instant timestamp
   ) {
     this.code = code;
@@ -29,6 +33,7 @@ public class ApiErrorResponse {
     this.correlationId = correlationId;
     this.userMessageKey = userMessageKey;
     this.operatorCode = operatorCode;
+    this.additionalProperties = additionalProperties == null ? Map.of() : Map.copyOf(additionalProperties);
     this.timestamp = timestamp;
   }
 
@@ -55,6 +60,7 @@ public class ApiErrorResponse {
         correlationId,
         metadata != null ? metadata.userMessageKey() : null,
         metadata != null ? metadata.operatorCode() : null,
+        metadata != null ? metadata.additionalProperties() : Map.of(),
         Instant.now()
     );
   }
@@ -81,6 +87,11 @@ public class ApiErrorResponse {
 
   public String getOperatorCode() {
     return operatorCode;
+  }
+
+  @JsonAnyGetter
+  public Map<String, Object> getAdditionalProperties() {
+    return additionalProperties;
   }
 
   public Instant getTimestamp() {
