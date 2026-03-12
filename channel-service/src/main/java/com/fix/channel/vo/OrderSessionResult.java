@@ -9,6 +9,8 @@ public class OrderSessionResult {
   private final String status;
   private final Instant expiresAt;
   private final Long remainingSeconds;
+  private final boolean challengeRequired;
+  private final String authorizationReason;
   private final boolean created;
 
   private OrderSessionResult(
@@ -17,6 +19,8 @@ public class OrderSessionResult {
       String status,
       Instant expiresAt,
       Long remainingSeconds,
+      boolean challengeRequired,
+      String authorizationReason,
       boolean created
   ) {
     this.orderSessionId = orderSessionId;
@@ -24,6 +28,8 @@ public class OrderSessionResult {
     this.status = status;
     this.expiresAt = expiresAt;
     this.remainingSeconds = remainingSeconds;
+    this.challengeRequired = challengeRequired;
+    this.authorizationReason = authorizationReason;
     this.created = created;
   }
 
@@ -33,9 +39,20 @@ public class OrderSessionResult {
       String status,
       Instant expiresAt,
       Long remainingSeconds,
+      boolean challengeRequired,
+      String authorizationReason,
       boolean created
   ) {
-    return new OrderSessionResult(orderSessionId, clOrdId, status, expiresAt, remainingSeconds, created);
+    return new OrderSessionResult(
+        orderSessionId,
+        clOrdId,
+        status,
+        expiresAt,
+        remainingSeconds,
+        challengeRequired,
+        authorizationReason,
+        created
+    );
   }
 
   public String getOrderSessionId() {
@@ -56,6 +73,14 @@ public class OrderSessionResult {
 
   public Long getRemainingSeconds() {
     return remainingSeconds;
+  }
+
+  public boolean isChallengeRequired() {
+    return challengeRequired;
+  }
+
+  public String getAuthorizationReason() {
+    return authorizationReason;
   }
 
   public boolean isCreated() {
