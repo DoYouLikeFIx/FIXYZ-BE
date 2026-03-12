@@ -1,12 +1,8 @@
 package com.fix.channel.service;
 
-import com.fix.channel.entity.AuditLog;
-import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.Notification;
-import com.fix.channel.entity.OtpVerification;
 import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.NotificationRepository;
-import com.fix.channel.repository.OtpVerificationRepository;
 import com.fix.channel.repository.SecurityEventRepository;
 import com.fix.channel.vo.AdminSecurityEventCommand;
 import com.fix.channel.vo.AdminSecurityEventResult;
@@ -15,12 +11,7 @@ import com.fix.channel.vo.CsrfBootstrapResult;
 import com.fix.channel.vo.NotificationItemVo;
 import com.fix.channel.vo.NotificationStreamCommand;
 import com.fix.channel.vo.NotificationStreamResult;
-import com.fix.channel.vo.OtpVerifyCommand;
-import com.fix.channel.vo.OtpVerifyResult;
 import com.fix.channel.vo.SecurityEventItemVo;
-import com.fix.common.error.BusinessException;
-import com.fix.common.error.ErrorCode;
-import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -37,40 +28,12 @@ public class ChannelScaffoldService {
   private static final int DEFAULT_LIMIT = 20;
   private static final int MAX_LIMIT = 100;
 
-  private final OtpVerificationRepository otpVerificationRepository;
   private final NotificationRepository notificationRepository;
   private final SecurityEventRepository securityEventRepository;
 
   @Transactional(readOnly = true)
   public CsrfBootstrapResult bootstrapCsrf(CsrfBootstrapCommand command, CsrfToken token) {
     return CsrfBootstrapResult.of(token.getToken(), token.getHeaderName(), token.getParameterName(), "SESSION");
-  }
-
-  @Transactional
-  public OtpVerifyResult verifyOtp(OtpVerifyCommand command) {
-    OtpVerification verification = otpVerificationRepository
-        .findByMemberId(command.getMemberId(), firstPageByIdDesc(1))
-        .stream()
-        .findFirst()
-        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "otp verification not issued"));
-
-    boolean matched = verification.getOtpCode().equals(command.getOtpCode())
-        && verification.getExpiresAt().isAfter(Instant.now());
-
-    if (matched) {
-      verification.verify();
-      otpVerificationRepository.save(verification);
-    } else {
-      securityEventRepository.save(SecurityEvent.of(
-          command.getMemberId(),
-          "OTP_VERIFY_FAILED",
-          "0.0.0.0",
-          "channel-service",
-          "MEDIUM"
-      ));
-    }
-
-    return OtpVerifyResult.of(matched);
   }
 
   @Transactional(readOnly = true)
