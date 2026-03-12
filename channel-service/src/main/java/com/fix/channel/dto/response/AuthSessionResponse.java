@@ -9,7 +9,8 @@ public record AuthSessionResponse(
     String name,
     String role,
     boolean totpEnrolled,
-    String accountId
+    String accountId,
+    String accountNumber
 ) {
 
   public static AuthSessionResponse from(AuthSessionResult result) {
@@ -20,7 +21,8 @@ public record AuthSessionResponse(
         result.getName(),
         result.getRole(),
         result.isTotpEnrolled(),
-        result.getAccountId()
+        result.getAccountId(),
+        result.getAccountNumber()
     );
   }
 }
