@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CoreCommonContractTest {
@@ -53,6 +54,27 @@ class CoreCommonContractTest {
     assertEquals("FEP-002", error.getCode());
     assertEquals("error.fep.timeout", error.getUserMessageKey());
     assertEquals("TIMEOUT", error.getOperatorCode());
+  }
+
+  @Test
+  void shouldIncludeStructuredErrorDetailsWhenPresent() {
+    ApiErrorResponse error = ApiErrorResponse.from(
+        ErrorCode.ORD_INVALID_REQUEST,
+        "Daily sell limit exceeded",
+        "/internal/v1/orders",
+        "corr-3",
+        new ErrorMetadata("error.order.daily_limit_exceeded", "DAILY_LIMIT_EXCEEDED"),
+        Map.of(
+            "requestedQty", "50.0000",
+            "remainingLimit", "30.0000"
+        )
+    );
+
+    assertNotNull(error.getDetails());
+    assertEquals("50.0000", error.getDetails().get("requestedQty"));
+    assertEquals("30.0000", error.getDetails().get("remainingLimit"));
+    assertEquals("error.order.daily_limit_exceeded", error.getUserMessageKey());
+    assertEquals("DAILY_LIMIT_EXCEEDED", error.getOperatorCode());
   }
 
   @Test
