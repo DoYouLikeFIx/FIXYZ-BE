@@ -3,12 +3,14 @@ package com.fix.channel.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
+@Slf4j
 @ConditionalOnProperty(
     value = "order.session.expiry-reconciliation.enabled",
     havingValue = "true",
@@ -40,7 +42,16 @@ public class OrderSessionExpiryScheduler {
     List<String> expiredSessionIds;
     do {
       expiredSessionIds = orderSessionPersistenceService.expireOverdueSessionBatch(cutoff, batchSize);
-      expiredSessionIds.forEach(orderSessionTtlStore::clear);
+      expiredSessionIds.forEach(this::clearRedisStateSafely);
     } while (expiredSessionIds.size() == batchSize);
+  }
+
+  private void clearRedisStateSafely(String orderSessionId) {
+    try {
+      orderSessionTtlStore.clear(orderSessionId);
+    } catch (RuntimeException ex) {
+      log.warn("Failed to clear Redis state for expired order session during reconciliation: orderSessionId={}",
+          orderSessionId, ex);
+    }
   }
 }

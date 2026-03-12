@@ -102,19 +102,25 @@ public class OrderSessionService {
   }
 
   private OrderSessionResult resolveConcurrentReplay(OrderSessionCreateCommand command, DataIntegrityViolationException ex) {
-    OrderSession concurrentSession = orderSessionRepository.findByClOrdId(command.getClOrdId())
-        .orElseThrow(() -> ex);
+    String concurrentSessionId = null;
+    RuntimeException failure = ex;
     try {
+      OrderSession concurrentSession = orderSessionRepository.findByClOrdId(command.getClOrdId())
+          .orElseThrow(() -> ex);
+      concurrentSessionId = concurrentSession.getOrderSessionId();
       sessionOwnershipValidator.validateOwner(concurrentSession, command.getMemberId());
       Long remainingSeconds = requireRemainingSeconds(concurrentSession);
       validateReplayPayload(concurrentSession, command);
       return buildResult(concurrentSession, remainingSeconds, false);
+    } catch (RuntimeException runtimeEx) {
+      failure = runtimeEx;
+      throw runtimeEx;
     } finally {
       safelyRefundCreateRateLimit(
           command.getMemberId(),
-          concurrentSession.getOrderSessionId(),
+          concurrentSessionId,
           "duplicate create recovery",
-          null
+          failure
       );
     }
   }
