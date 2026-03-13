@@ -23,7 +23,7 @@ public class OrderSessionTestFixture {
   public OrderSession createInitiatedSession(
       Long memberId,
       Long accountId,
-      String orderSessionId,
+      String clOrdId,
       String symbol,
       String side,
       String orderType,
@@ -36,8 +36,8 @@ public class OrderSessionTestFixture {
     return orderSessionRepository.saveAndFlush(OrderSession.initiated(
         memberId,
         accountId,
-        orderSessionId,
-        replayFingerprint(accountId, symbol, side, orderType, qty, price),
+        clOrdId,
+        replayFingerprint(memberId, accountId, symbol, side, orderType, qty, price),
         symbol,
         side,
         orderType,
@@ -52,7 +52,7 @@ public class OrderSessionTestFixture {
   public String createInitiatedSessionId(
       Long memberId,
       Long accountId,
-      String orderSessionId,
+      String clOrdId,
       String symbol,
       String side,
       String orderType,
@@ -65,7 +65,7 @@ public class OrderSessionTestFixture {
     return createInitiatedSession(
         memberId,
         accountId,
-        orderSessionId,
+        clOrdId,
         symbol,
         side,
         orderType,
@@ -77,7 +77,50 @@ public class OrderSessionTestFixture {
     ).getOrderSessionId();
   }
 
+  public String createExecutingSessionId(
+      Long memberId,
+      Long accountId,
+      String clOrdId,
+      String symbol,
+      String side,
+      String orderType,
+      BigDecimal qty,
+      BigDecimal price,
+      boolean challengeRequired,
+      String authorizationReason,
+      Instant expiresAt
+  ) {
+    OrderSession session = createInitiatedSession(
+        memberId,
+        accountId,
+        clOrdId,
+        symbol,
+        side,
+        orderType,
+        qty,
+        price,
+        challengeRequired,
+        authorizationReason,
+        expiresAt
+    );
+    session.startExecuting();
+    return orderSessionRepository.saveAndFlush(session).getOrderSessionId();
+  }
+
+  public String statusOf(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .map(session -> session.getStatus().name())
+        .orElse(null);
+  }
+
+  public String failureReasonOf(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .map(OrderSession::getFailureReason)
+        .orElse(null);
+  }
+
   private String replayFingerprint(
+      Long memberId,
       Long accountId,
       String symbol,
       String side,
@@ -86,7 +129,7 @@ public class OrderSessionTestFixture {
       BigDecimal price
   ) {
     return OrderSessionCreateCommand.of(
-        301L,
+        memberId,
         accountId,
         "fixture-only",
         symbol,

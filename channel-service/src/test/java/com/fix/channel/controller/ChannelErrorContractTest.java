@@ -157,6 +157,9 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.correlationId").value("trace-channel-timeout"))
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
 
+    assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("FAILED");
+    assertThat(orderSessionTestFixture.failureReasonOf(orderSessionId)).isEqualTo("FEP-002");
+
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-timeout")));
@@ -186,6 +189,33 @@ class ChannelErrorContractTest {
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("ORD-009"))
         .andExpect(jsonPath("$.message").value("order session is not authorized for execution"))
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions/" + orderSessionId + "/execute"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldReturnDedicatedErrorWhenCanonicalExecuteIsAlreadyInProgress() throws Exception {
+    orderSessionTestFixture.reset();
+    String orderSessionId = orderSessionTestFixture.createExecutingSessionId(
+        301L,
+        1L,
+        "123e4567-e89b-42d3-a456-426614174262",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(70100),
+        false,
+        "RECENT_LOGIN_MFA",
+        Instant.now().plusSeconds(600)
+    );
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .with(csrf())
+            .sessionAttr("AUTH_MEMBER_ID", 301L))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORD-010"))
+        .andExpect(jsonPath("$.message").value("order session execution is already in progress"))
         .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions/" + orderSessionId + "/execute"));
   }
 
