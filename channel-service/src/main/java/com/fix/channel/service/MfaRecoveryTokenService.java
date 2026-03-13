@@ -50,6 +50,7 @@ public class MfaRecoveryTokenService {
 
   public RecoveryProof issueRecoveryProof(Member member) {
     Instant now = Instant.now(clock);
+    pruneExpiredEntries(now);
     Instant expiresAt = now.plus(recoveryProofTtl);
     String recoveryProof = "recovery-" + UUID.randomUUID();
 
@@ -62,6 +63,7 @@ public class MfaRecoveryTokenService {
   }
 
   public RecoveryProofState consumeRecoveryProof(String recoveryProof) {
+    pruneExpiredEntries(Instant.now(clock));
     RecoveryProofState recoveryProofState = requireActiveRecoveryProof(recoveryProof);
     String normalizedProof = recoveryProofState.recoveryProof();
     Instant now = Instant.now(clock);
@@ -84,6 +86,7 @@ public class MfaRecoveryTokenService {
     }
 
     Instant now = Instant.now(clock);
+    pruneExpiredEntries(now);
     StoredRecoveryProof storedRecoveryProof = readRecoveryProof(normalizedProof);
     if (storedRecoveryProof == null || storedRecoveryProof.isExpiredAt(now)) {
       deleteRecoveryProof(normalizedProof, storedRecoveryProof == null ? null : storedRecoveryProof.memberId());
@@ -97,6 +100,7 @@ public class MfaRecoveryTokenService {
 
   public RebindTokenState issueRebindToken(Member member) {
     Instant now = Instant.now(clock);
+    pruneExpiredEntries(now);
     Instant expiresAt = now.plus(rebindTokenTtl);
     String rebindToken = "rebind-" + UUID.randomUUID();
 
@@ -115,6 +119,7 @@ public class MfaRecoveryTokenService {
     }
 
     Instant now = Instant.now(clock);
+    pruneExpiredEntries(now);
     StoredRebindToken storedRebindToken = readRebindToken(normalizedToken);
     if (storedRebindToken == null || storedRebindToken.isExpiredAt(now)) {
       deleteRebindToken(normalizedToken, storedRebindToken == null ? null : storedRebindToken.memberId());
@@ -127,6 +132,7 @@ public class MfaRecoveryTokenService {
   }
 
   public RebindTokenState consumeRebindToken(String rebindToken) {
+    pruneExpiredEntries(Instant.now(clock));
     RebindTokenState rebindTokenState = requireActiveRebindToken(rebindToken);
     Instant now = Instant.now(clock);
     StoredRebindToken storedRebindToken = readRebindToken(rebindTokenState.rebindToken());
@@ -150,12 +156,48 @@ public class MfaRecoveryTokenService {
       return;
     }
 
+    pruneExpiredEntries(Instant.now(clock));
     StoredRebindToken storedRebindToken = readRebindToken(normalizedToken);
     deleteRebindToken(normalizedToken, storedRebindToken == null ? null : storedRebindToken.memberId());
   }
 
   public long recoveryProofTtlSeconds() {
     return Math.max(1L, recoveryProofTtl.getSeconds());
+  }
+
+  private void pruneExpiredEntries(Instant now) {
+    pruneProofEntries(now);
+    pruneRebindEntries(now);
+  }
+
+  private void pruneProofEntries(Instant now) {
+    inMemoryProofs.entrySet().removeIf(entry -> isExpired(entry.getValue(), now));
+    inMemoryProofByMember.entrySet().removeIf(entry -> {
+      String proofId = entry.getValue();
+      if (proofId == null) {
+        return true;
+      }
+      return isExpired(inMemoryProofs.get(proofId), now);
+    });
+  }
+
+  private void pruneRebindEntries(Instant now) {
+    inMemoryRebindTokens.entrySet().removeIf(entry -> isExpired(entry.getValue(), now));
+    inMemoryRebindByMember.entrySet().removeIf(entry -> {
+      String tokenId = entry.getValue();
+      if (tokenId == null) {
+        return true;
+      }
+      return isExpired(inMemoryRebindTokens.get(tokenId), now);
+    });
+  }
+
+  private boolean isExpired(StoredRecoveryProof storedRecoveryProof, Instant now) {
+    return storedRecoveryProof == null || storedRecoveryProof.isExpiredAt(now);
+  }
+
+  private boolean isExpired(StoredRebindToken storedRebindToken, Instant now) {
+    return storedRebindToken == null || storedRebindToken.isExpiredAt(now);
   }
 
   private void supersedeRecoveryProof(Long memberId, Instant now) {

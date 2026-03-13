@@ -5,7 +5,6 @@ import com.fix.channel.dto.request.MemberProfileUpdateRequest;
 import com.fix.channel.dto.request.MemberTotpRebindRequest;
 import com.fix.channel.dto.request.TotpConfirmRequest;
 import com.fix.channel.dto.request.TotpEnrollRequest;
-import com.fix.channel.dto.response.MfaRecoveryRebindConfirmResponse;
 import com.fix.channel.dto.response.MemberProfileResponse;
 import com.fix.channel.dto.response.OtpVerifyResponse;
 import com.fix.channel.dto.response.TotpRebindBootstrapResponse;
