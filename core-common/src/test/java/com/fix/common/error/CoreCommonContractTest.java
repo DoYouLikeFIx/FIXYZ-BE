@@ -92,7 +92,7 @@ class CoreCommonContractTest {
   }
 
   @Test
-  void shouldResolveStory22AndStory26ContractErrorCodes() {
+  void shouldResolveContractErrorCodes() {
     assertEquals(
         ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
         ErrorCode.fromCode("AUTH-005").orElseThrow()
@@ -116,6 +116,10 @@ class CoreCommonContractTest {
     assertEquals(
         ErrorCode.ORD_INSUFFICIENT_POSITION,
         ErrorCode.fromCode("ORD-003").orElseThrow()
+    );
+    assertEquals(
+        ErrorCode.AUTH_MFA_REBIND_CURRENT_PASSWORD_MISMATCH,
+        ErrorCode.fromCode("AUTH-026").orElseThrow()
     );
   }
 }

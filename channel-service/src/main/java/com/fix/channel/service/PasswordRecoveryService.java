@@ -12,6 +12,7 @@ import com.fix.channel.vo.PasswordForgotChallengeCommand;
 import com.fix.channel.vo.PasswordForgotChallengeResult;
 import com.fix.channel.vo.PasswordForgotCommand;
 import com.fix.channel.vo.PasswordForgotResult;
+import com.fix.channel.vo.PasswordResetContinuationResult;
 import com.fix.channel.vo.PasswordResetCommand;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -52,6 +53,7 @@ public class PasswordRecoveryService {
   private final AuditLogRepository auditLogRepository;
   private final PasswordEncoder passwordEncoder;
   private final ChannelSessionInvalidationService channelSessionInvalidationService;
+  private final MfaRecoveryService mfaRecoveryService;
 
   public PasswordRecoveryService(
       PasswordRecoveryProperties properties,
@@ -65,7 +67,8 @@ public class PasswordRecoveryService {
       PasswordResetTokenRepository passwordResetTokenRepository,
       AuditLogRepository auditLogRepository,
       PasswordEncoder passwordEncoder,
-      ChannelSessionInvalidationService channelSessionInvalidationService
+      ChannelSessionInvalidationService channelSessionInvalidationService,
+      MfaRecoveryService mfaRecoveryService
   ) {
     this.properties = properties;
     this.rateLimitService = rateLimitService;
@@ -79,6 +82,7 @@ public class PasswordRecoveryService {
     this.auditLogRepository = auditLogRepository;
     this.passwordEncoder = passwordEncoder;
     this.channelSessionInvalidationService = channelSessionInvalidationService;
+    this.mfaRecoveryService = mfaRecoveryService;
   }
 
   @Transactional
@@ -168,7 +172,7 @@ public class PasswordRecoveryService {
   }
 
   @Transactional
-  public void reset(PasswordResetCommand command, HttpServletRequest request) {
+  public PasswordResetContinuationResult reset(PasswordResetCommand command, HttpServletRequest request) {
     long startedAt = timingEqualizer.start();
     try {
       String clientIp = resolveClientIp(request);
@@ -230,7 +234,16 @@ public class PasswordRecoveryService {
           correlationId
       ));
 
+      MfaRecoveryTokenService.RecoveryProof recoveryProof =
+          mfaRecoveryService.issueRecoveryProofIfEligible(member, request);
       registerAfterCommit(() -> channelSessionInvalidationService.invalidateAllPasswordSessions(member.getEmail()));
+      if (recoveryProof != null) {
+        return PasswordResetContinuationResult.withRecoveryProof(
+            recoveryProof.recoveryProof(),
+            mfaRecoveryService.recoveryProofTtlSeconds()
+        );
+      }
+      return PasswordResetContinuationResult.none();
     } finally {
       timingEqualizer.equalizeReset(startedAt);
     }

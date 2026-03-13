@@ -15,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
@@ -27,6 +29,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+  private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   private static final Set<String> BLOCKED_DETAIL_KEYS = Set.of(
       "accountid",
@@ -80,7 +84,8 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiErrorResponse> handleUnhandled(Exception ex, HttpServletRequest request) {
-    return build(ErrorCode.INTERNAL_ERROR, ex.getMessage(), request);
+    log.error("Unhandled exception on path={}", request.getRequestURI(), ex);
+    return build(ErrorCode.INTERNAL_ERROR, ErrorCode.INTERNAL_ERROR.defaultMessage(), request);
   }
 
   private ResponseEntity<ApiErrorResponse> build(ErrorCode errorCode, String message, HttpServletRequest request) {

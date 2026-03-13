@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.fix.channel.dto.request.AuthLoginRequest;
 import com.fix.channel.dto.request.AuthRegisterRequest;
 import com.fix.channel.dto.request.CsrfBootstrapRequest;
+import com.fix.channel.dto.request.MfaRecoveryRebindConfirmRequest;
+import com.fix.channel.dto.request.MfaRecoveryRebindRequest;
 import com.fix.channel.dto.request.OtpVerifyRequest;
 import com.fix.channel.dto.request.PasswordForgotChallengeRequest;
 import com.fix.channel.dto.request.PasswordForgotRequest;
@@ -25,12 +27,16 @@ import com.fix.channel.dto.response.AuthLogoutResponse;
 import com.fix.channel.dto.response.AuthRegisterResponse;
 import com.fix.channel.dto.response.AuthSessionResponse;
 import com.fix.channel.dto.response.CsrfBootstrapResponse;
+import com.fix.channel.dto.response.MfaRecoveryRebindConfirmResponse;
 import com.fix.channel.dto.response.OtpVerifyResponse;
 import com.fix.channel.dto.response.PasswordForgotChallengeResponse;
 import com.fix.channel.dto.response.PasswordForgotResponse;
+import com.fix.channel.dto.response.TotpRebindBootstrapResponse;
 import com.fix.channel.service.AuthService;
 import com.fix.channel.service.ChannelScaffoldService;
+import com.fix.channel.service.MfaRecoveryService;
 import com.fix.channel.service.PasswordRecoveryService;
+import com.fix.channel.vo.PasswordResetContinuationResult;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.web.CommonHeaders;
 
@@ -45,15 +51,18 @@ public class AuthController {
   private final AuthService authService;
   private final ChannelScaffoldService channelScaffoldService;
   private final PasswordRecoveryService passwordRecoveryService;
+  private final MfaRecoveryService mfaRecoveryService;
 
   public AuthController(
       AuthService authService,
       ChannelScaffoldService channelScaffoldService,
-      PasswordRecoveryService passwordRecoveryService
+      PasswordRecoveryService passwordRecoveryService,
+      MfaRecoveryService mfaRecoveryService
   ) {
     this.authService = authService;
     this.channelScaffoldService = channelScaffoldService;
     this.passwordRecoveryService = passwordRecoveryService;
+    this.mfaRecoveryService = mfaRecoveryService;
   }
 
   @PostMapping("/register")
@@ -140,9 +149,37 @@ public class AuthController {
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void resetPassword(
       @Valid @RequestBody PasswordResetRequest request,
+      HttpServletRequest httpServletRequest,
+      HttpServletResponse httpServletResponse
+  ) {
+    PasswordResetContinuationResult result = passwordRecoveryService.reset(request.toVo(), httpServletRequest);
+    if (result.hasMfaRecoveryProof()) {
+      httpServletResponse.setHeader(CommonHeaders.X_MFA_RECOVERY_PROOF, result.getMfaRecoveryProof());
+      httpServletResponse.setHeader(
+          CommonHeaders.X_MFA_RECOVERY_PROOF_EXPIRES_IN,
+          String.valueOf(result.getMfaRecoveryProofExpiresInSeconds())
+      );
+    }
+  }
+
+  @PostMapping("/mfa-recovery/rebind")
+  public ApiResponse<TotpRebindBootstrapResponse> bootstrapMfaRecoveryRebind(
+      @Valid @RequestBody MfaRecoveryRebindRequest request,
       HttpServletRequest httpServletRequest
   ) {
-    passwordRecoveryService.reset(request.toVo(), httpServletRequest);
+    return ApiResponse.success(TotpRebindBootstrapResponse.from(
+        mfaRecoveryService.bootstrapWithRecoveryProof(request.toVo(), httpServletRequest)
+    ));
+  }
+
+  @PostMapping("/mfa-recovery/rebind/confirm")
+  public ApiResponse<MfaRecoveryRebindConfirmResponse> confirmMfaRecoveryRebind(
+      @Valid @RequestBody MfaRecoveryRebindConfirmRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    return ApiResponse.success(MfaRecoveryRebindConfirmResponse.from(
+        mfaRecoveryService.confirmRebind(request.toVo(), httpServletRequest)
+    ));
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {

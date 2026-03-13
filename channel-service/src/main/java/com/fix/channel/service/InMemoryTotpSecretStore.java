@@ -60,8 +60,18 @@ public class InMemoryTotpSecretStore implements TotpSecretStore {
   }
 
   @Override
+  public void discardPendingSecret(Member member, String loginToken) {
+    pendingSecrets.remove(pendingKey(member, loginToken));
+  }
+
+  @Override
   public void saveActiveSecret(Member member, String manualEntryKey) {
     activeSecrets.put(member.getId(), manualEntryKey);
+  }
+
+  @Override
+  public void terminalizeActiveSecret(Member member) {
+    activeSecrets.remove(member.getId());
   }
 
   private String pendingKey(Member member, String loginToken) {

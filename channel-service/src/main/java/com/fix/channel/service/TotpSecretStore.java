@@ -14,7 +14,11 @@ public interface TotpSecretStore {
 
   void promotePendingSecret(Member member, String loginToken);
 
+  void discardPendingSecret(Member member, String loginToken);
+
   void saveActiveSecret(Member member, String manualEntryKey);
+
+  void terminalizeActiveSecret(Member member);
 
   record PendingTotpSecret(String manualEntryKey, Instant expiresAt) {
   }

@@ -115,8 +115,18 @@ public class VaultTotpSecretStore implements TotpSecretStore {
   }
 
   @Override
+  public void discardPendingSecret(Member member, String loginToken) {
+    delete(pathForPending(member, loginToken));
+  }
+
+  @Override
   public void saveActiveSecret(Member member, String manualEntryKey) {
     write(pathForActive(member), Map.of("secret", manualEntryKey));
+  }
+
+  @Override
+  public void terminalizeActiveSecret(Member member) {
+    delete(pathForActive(member));
   }
 
   private Optional<Map<String, Object>> read(String path) {
