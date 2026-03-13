@@ -14,16 +14,16 @@ import com.fix.channel.vo.MfaRecoveryRebindConfirmResult;
 import com.fix.channel.vo.TotpRebindBootstrapResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class MfaRecoveryService {
@@ -77,10 +77,17 @@ public class MfaRecoveryService {
   ) {
     Member member = requireAuthenticatedMemberForUpdate(request);
     if (!member.isTotpEnabled()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "totp rebind unavailable");
+      throw new BusinessException(
+          ErrorCode.AUTH_TOTP_ENROLLMENT_REQUIRED,
+          "totp enrollment required",
+          new ErrorMetadata(null, null, Map.of("enrollUrl", "/settings/totp/enroll"))
+      );
     }
     if (!passwordEncoder.matches(command.getCurrentPassword(), member.getPasswordHash())) {
-      throw new BusinessException(ErrorCode.CURRENT_PASSWORD_MISMATCH, "current password mismatch");
+      throw new BusinessException(
+          ErrorCode.AUTH_MFA_REBIND_CURRENT_PASSWORD_MISMATCH,
+          "current password mismatch"
+      );
     }
 
     return loginTokenService.withTokenLock(memberLockKey(member.getId()), () ->
@@ -111,7 +118,10 @@ public class MfaRecoveryService {
                 "mfa recovery proof or rebind token invalid or expired"
             ));
         if (!member.isTotpEnabled()) {
-          throw new BusinessException(ErrorCode.BAD_REQUEST, "totp rebind unavailable");
+          throw new BusinessException(
+              ErrorCode.AUTH_MFA_RECOVERY_TOKEN_INVALID,
+              "mfa recovery proof or rebind token invalid or expired"
+          );
         }
         TotpRebindBootstrapResult result = bootstrapForMember(member, "recovery-proof", request);
         mfaRecoveryTokenService.consumeRecoveryProof(command.getRecoveryProof());
@@ -232,16 +242,22 @@ public class MfaRecoveryService {
       }
 
       otpVerifyRateLimitService.clear(command.getRebindToken());
+      try {
+        channelSessionInvalidationService.invalidateAllSessions(
+            member.getEmail(),
+            "mfa-rebind-completed"
+        );
+      } catch (RuntimeException ex) {
+        log.warn("Failed to invalidate sessions during mfa rebind confirmation memberId={}", memberId, ex);
+        throw new BusinessException(
+            ErrorCode.INTERNAL_ERROR,
+            ErrorCode.INTERNAL_ERROR.defaultMessage(),
+            ex
+        );
+      }
       totpService.promotePendingSecret(member, command.getRebindToken());
       member.enableTotpEnrollment();
       mfaRecoveryTokenService.consumeRebindToken(command.getRebindToken());
-      registerAfterCommit(() -> persistNonCritical(
-          () -> channelSessionInvalidationService.invalidateAllSessions(
-              member.getEmail(),
-              "mfa-rebind-completed"
-          ),
-          "invalidating sessions after MFA rebind"
-      ));
       persistCompletedEvents(member, clientIp, userAgent, correlationId);
       return MfaRecoveryRebindConfirmResult.completed();
     } catch (BusinessException ex) {
@@ -371,20 +387,6 @@ public class MfaRecoveryService {
       totpService.discardPendingSecret(member, rebindTokenState.rebindToken());
       mfaRecoveryTokenService.discardRebindToken(rebindTokenState.rebindToken());
     }, "cleaning up failed MFA rebind bootstrap");
-  }
-
-  private void registerAfterCommit(Runnable runnable) {
-    if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-      runnable.run();
-      return;
-    }
-
-    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-      @Override
-      public void afterCommit() {
-        runnable.run();
-      }
-    });
   }
 
   private void persistNonCritical(Runnable runnable, String description) {

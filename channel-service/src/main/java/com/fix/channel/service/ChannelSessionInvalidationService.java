@@ -1,9 +1,14 @@
 package com.fix.channel.service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
@@ -37,16 +42,14 @@ public class ChannelSessionInvalidationService {
   public void invalidateAllSessions(String email, String reason) {
     @SuppressWarnings("rawtypes")
     FindByIndexNameSessionRepository sessionRepository = sessionRepositoryProvider.getIfAvailable();
-    if (sessionRepository == null) {
-      return;
+    if (sessionRepository != null) {
+      @SuppressWarnings("unchecked")
+      Map<String, ? extends Session> sessions = sessionRepository.findByPrincipalName(email);
+      sessions.keySet().forEach(sessionId -> {
+        markStaleSession(sessionId, normalizeReason(reason));
+        sessionRepository.deleteById(sessionId);
+      });
     }
-
-    @SuppressWarnings("unchecked")
-    Map<String, ? extends Session> sessions = sessionRepository.findByPrincipalName(email);
-    sessions.keySet().forEach(sessionId -> {
-      markStaleSession(sessionId, normalizeReason(reason));
-      sessionRepository.deleteById(sessionId);
-    });
     clearTrustedSessionMarkers(email);
   }
 
@@ -81,7 +84,29 @@ public class ChannelSessionInvalidationService {
     if (redisTemplate == null) {
       return;
     }
-    redisTemplate.delete(TRUSTED_SESSION_PREFIX + email.trim());
+    String normalizedEmail = email.trim();
+    byte[] exactKey = (TRUSTED_SESSION_PREFIX + normalizedEmail).getBytes(StandardCharsets.UTF_8);
+    String namespacedPattern = TRUSTED_SESSION_PREFIX + normalizedEmail + ":*";
+
+    redisTemplate.execute((RedisCallback<Void>) connection -> {
+      LinkedHashSet<byte[]> keysToDelete = new LinkedHashSet<>();
+      keysToDelete.add(exactKey);
+
+      ScanOptions scanOptions = ScanOptions.scanOptions()
+          .match(namespacedPattern)
+          .count(128)
+          .build();
+      try (Cursor<byte[]> cursor = connection.keyCommands().scan(scanOptions)) {
+        while (cursor.hasNext()) {
+          keysToDelete.add(cursor.next());
+        }
+      }
+
+      if (!keysToDelete.isEmpty()) {
+        connection.keyCommands().del(keysToDelete.toArray(new byte[0][]));
+      }
+      return null;
+    });
   }
 
   private String markerKey(String sessionId) {
