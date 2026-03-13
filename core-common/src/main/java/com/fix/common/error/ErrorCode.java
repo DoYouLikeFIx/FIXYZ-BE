@@ -37,6 +37,7 @@ public enum ErrorCode {
   AUTH_MFA_RECOVERY_TOKEN_INVALID("AUTH-019", "mfa recovery proof or rebind token invalid or expired", 401),
   AUTH_MFA_RECOVERY_TOKEN_CONSUMED("AUTH-020", "mfa recovery proof or rebind token already consumed", 409),
   AUTH_MFA_RECOVERY_REQUIRED("AUTH-021", "mfa recovery required", 403),
+  AUTH_MFA_REBIND_CURRENT_PASSWORD_MISMATCH("AUTH-026", "current password mismatch", 401),
   CHANNEL_SESSION_NOT_FOUND("CHANNEL_001", "Channel session not found", 404),
   CHANNEL_SESSION_EXPIRED("CHANNEL-001", "Channel session expired", 410),
   CHANNEL_OWNERSHIP_MISMATCH("CHANNEL-006", "Access denied.", 403),
