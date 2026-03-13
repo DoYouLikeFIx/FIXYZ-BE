@@ -27,6 +27,12 @@ public class OrderExecutionService {
   public OrderSessionResult execute(Long memberId, String orderSessionId) {
     OrderSession session = orderSessionService.requireOwnedSession(memberId, orderSessionId);
     Long remainingSeconds = requireRemainingSeconds(session);
+    if (session.getStatus() == OrderSessionStatus.EXECUTING) {
+      throw new BusinessException(
+          ErrorCode.ORDER_SESSION_EXECUTION_IN_PROGRESS,
+          "order session execution is already in progress"
+      );
+    }
     if (session.getStatus() != OrderSessionStatus.AUTHED) {
       throw new BusinessException(
           ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
@@ -35,48 +41,62 @@ public class OrderExecutionService {
     }
 
     orderSessionExecutionLockService.acquire(orderSessionId);
-    orderSessionPersistenceService.markExecuting(session);
+    try {
+      OrderSession executingSession = orderSessionPersistenceService.markExecuting(session);
+      OrderExecuteResult result;
+      try {
+        result = corebankClient.executeOrder(toCommand(executingSession), CorrelationIdSupport.currentOrGenerate());
+      } catch (RuntimeException ex) {
+        try {
+          orderSessionPersistenceService.markFailed(executingSession, executionFailureReason(ex));
+        } catch (RuntimeException markFailedEx) {
+          ex.addSuppressed(markFailedEx);
+        }
+        throw ex;
+      }
 
-    OrderExecuteResult result = corebankClient.executeOrder(toCommand(session), CorrelationIdSupport.currentOrGenerate());
-    OrderSession completedSession = orderSessionPersistenceService.markCompleted(
-        session,
-        result.getStatus(),
-        result.getOrderQuantity(),
-        java.math.BigDecimal.ZERO,
-        session.getPrice(),
-        result.getOrderId() == null ? null : String.valueOf(result.getOrderId()),
-        Instant.now(clock)
-    );
-    return OrderSessionResult.of(
-        completedSession.getOrderSessionId(),
-        completedSession.getClOrdId(),
-        completedSession.getStatus().name(),
-        completedSession.isChallengeRequired(),
-        completedSession.getAuthorizationReason(),
-        completedSession.getAccountId(),
-        completedSession.getSymbol(),
-        completedSession.getSide(),
-        completedSession.getOrderType(),
-        completedSession.getQty(),
-        completedSession.getPrice(),
-        null,
-        null,
-        null,
-        null,
-        resolveExpiresAt(completedSession),
-        remainingSeconds,
-        completedSession.getExecutionResult(),
-        completedSession.getExecutedQty(),
-        completedSession.getLeavesQty(),
-        completedSession.getExecutedPrice(),
-        completedSession.getExternalOrderId(),
-        completedSession.getFailureReason(),
-        completedSession.getExecutedAt(),
-        completedSession.getCanceledAt(),
-        completedSession.getCreatedAt(),
-        completedSession.getUpdatedAt(),
-        false
-    );
+      OrderSession completedSession = orderSessionPersistenceService.markCompleted(
+          executingSession,
+          result.getStatus(),
+          result.getOrderQuantity(),
+          java.math.BigDecimal.ZERO,
+          executingSession.getPrice(),
+          result.getOrderId() == null ? null : String.valueOf(result.getOrderId()),
+          Instant.now(clock)
+      );
+      return OrderSessionResult.of(
+          completedSession.getOrderSessionId(),
+          completedSession.getClOrdId(),
+          completedSession.getStatus().name(),
+          completedSession.isChallengeRequired(),
+          completedSession.getAuthorizationReason(),
+          completedSession.getAccountId(),
+          completedSession.getSymbol(),
+          completedSession.getSide(),
+          completedSession.getOrderType(),
+          completedSession.getQty(),
+          completedSession.getPrice(),
+          null,
+          null,
+          null,
+          null,
+          resolveExpiresAt(completedSession),
+          remainingSeconds,
+          completedSession.getExecutionResult(),
+          completedSession.getExecutedQty(),
+          completedSession.getLeavesQty(),
+          completedSession.getExecutedPrice(),
+          completedSession.getExternalOrderId(),
+          completedSession.getFailureReason(),
+          completedSession.getExecutedAt(),
+          completedSession.getCanceledAt(),
+          completedSession.getCreatedAt(),
+          completedSession.getUpdatedAt(),
+          false
+      );
+    } finally {
+      orderSessionExecutionLockService.release(orderSessionId);
+    }
   }
 
   private OrderExecuteCommand toCommand(OrderSession session) {
@@ -109,5 +129,16 @@ public class OrderExecutionService {
 
   private BusinessException orderSessionNotFound() {
     return new BusinessException(ErrorCode.ORDER_SESSION_NOT_FOUND, "Order session not found.");
+  }
+
+  private String executionFailureReason(RuntimeException exception) {
+    if (exception instanceof BusinessException businessException) {
+      return businessException.getErrorCode().code();
+    }
+    String simpleName = exception.getClass().getSimpleName();
+    if (simpleName != null && !simpleName.isBlank()) {
+      return simpleName;
+    }
+    return "EXECUTION_FAILED";
   }
 }

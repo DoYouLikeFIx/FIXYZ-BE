@@ -158,15 +158,15 @@ public class OrderSessionService {
         verification.windowIndex(),
         verification.normalizedOtp()
     )) {
-      return buildResult(session, remainingSeconds, false);
+      return buildResult(reloadLatestSession(session), remainingSeconds, false);
     }
 
+    OrderSession authorizedSession = orderSessionPersistenceService.markAuthorized(session);
     orderSessionOtpChallengeService.recordSuccess(
-        session.getOrderSessionId(),
+        authorizedSession.getOrderSessionId(),
         verification.windowIndex(),
         verification.normalizedOtp()
     );
-    OrderSession authorizedSession = orderSessionPersistenceService.markAuthorized(session);
     return buildResult(authorizedSession, remainingSeconds, false);
   }
 
@@ -276,6 +276,11 @@ public class OrderSessionService {
                 && event.getCreatedAt() != null
                 && !event.getCreatedAt().isBefore(threshold)
         );
+  }
+
+  private OrderSession reloadLatestSession(OrderSession fallbackSession) {
+    return orderSessionRepository.findByOrderSessionId(fallbackSession.getOrderSessionId())
+        .orElse(fallbackSession);
   }
 
   private void validatePreTradeEligibility(OrderSessionCreateCommand command) {

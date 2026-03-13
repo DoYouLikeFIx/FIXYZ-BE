@@ -47,6 +47,15 @@ public class OrderSessionExecutionLockService {
     }
   }
 
+  public void release(String orderSessionId) {
+    String lockKey = lockKey(orderSessionId);
+    StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
+    if (redisTemplate != null) {
+      redisTemplate.delete(lockKey);
+    }
+    localLocks.remove(lockKey);
+  }
+
   private String lockKey(String orderSessionId) {
     return LOCK_KEY_PREFIX + orderSessionId;
   }
