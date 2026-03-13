@@ -12,7 +12,7 @@ class OrderSessionStateMachineTest {
   @Test
   void shouldCreatePendingNewOrderSessionAndExpireIt() {
     Instant expiresAt = Instant.parse("2026-03-12T00:10:00Z");
-    OrderSession session = OrderSession.pendingNew(
+    OrderSession session = OrderSession.initiated(
         1L,
         101L,
         "123e4567-e89b-42d3-a456-426614174260",
@@ -22,6 +22,8 @@ class OrderSessionStateMachineTest {
         "LIMIT",
         BigDecimal.TEN,
         BigDecimal.valueOf(72000),
+        true,
+        "ELEVATED_ORDER_RISK",
         expiresAt
     );
 
