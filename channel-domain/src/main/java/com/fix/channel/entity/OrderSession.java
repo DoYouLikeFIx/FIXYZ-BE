@@ -1,4 +1,5 @@
 package com.fix.channel.entity;
+
 import com.fix.common.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -56,8 +57,38 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "status", nullable = false, length = 32)
   private OrderSessionStatus status;
 
+  @Column(name = "challenge_required", nullable = false)
+  private boolean challengeRequired;
+
+  @Column(name = "authorization_reason", nullable = false, length = 64)
+  private String authorizationReason;
+
   @Column(name = "expires_at", nullable = false)
   private Instant expiresAt;
+
+  @Column(name = "execution_result", length = 32)
+  private String executionResult;
+
+  @Column(name = "executed_qty", precision = 19, scale = 4)
+  private BigDecimal executedQty;
+
+  @Column(name = "leaves_qty", precision = 19, scale = 4)
+  private BigDecimal leavesQty;
+
+  @Column(name = "executed_price", precision = 19, scale = 4)
+  private BigDecimal executedPrice;
+
+  @Column(name = "external_order_id", length = 64)
+  private String externalOrderId;
+
+  @Column(name = "failure_reason", length = 64)
+  private String failureReason;
+
+  @Column(name = "executed_at")
+  private Instant executedAt;
+
+  @Column(name = "canceled_at")
+  private Instant canceledAt;
 
   protected OrderSession() {
   }
@@ -73,6 +104,8 @@ public class OrderSession extends BaseTimeEntity {
       BigDecimal qty,
       BigDecimal price,
       OrderSessionStatus status,
+      boolean challengeRequired,
+      String authorizationReason,
       Instant expiresAt
   ) {
     this.orderSessionId = UUID.randomUUID().toString();
@@ -86,10 +119,12 @@ public class OrderSession extends BaseTimeEntity {
     this.qty = qty;
     this.price = price;
     this.status = status;
+    this.challengeRequired = challengeRequired;
+    this.authorizationReason = authorizationReason;
     this.expiresAt = expiresAt;
   }
 
-  public static OrderSession pendingNew(
+  public static OrderSession initiated(
       Long memberId,
       Long accountId,
       String clOrdId,
@@ -99,6 +134,8 @@ public class OrderSession extends BaseTimeEntity {
       String orderType,
       BigDecimal qty,
       BigDecimal price,
+      boolean challengeRequired,
+      String authorizationReason,
       Instant expiresAt
   ) {
     return new OrderSession(
@@ -111,7 +148,9 @@ public class OrderSession extends BaseTimeEntity {
         orderType,
         qty,
         price,
-        OrderSessionStatus.PENDING_NEW,
+        challengeRequired ? OrderSessionStatus.PENDING_NEW : OrderSessionStatus.AUTHED,
+        challengeRequired,
+        authorizationReason,
         expiresAt
     );
   }
@@ -164,8 +203,48 @@ public class OrderSession extends BaseTimeEntity {
     return status;
   }
 
+  public boolean isChallengeRequired() {
+    return challengeRequired;
+  }
+
+  public String getAuthorizationReason() {
+    return authorizationReason;
+  }
+
   public Instant getExpiresAt() {
     return expiresAt;
+  }
+
+  public String getExecutionResult() {
+    return executionResult;
+  }
+
+  public BigDecimal getExecutedQty() {
+    return executedQty;
+  }
+
+  public BigDecimal getLeavesQty() {
+    return leavesQty;
+  }
+
+  public BigDecimal getExecutedPrice() {
+    return executedPrice;
+  }
+
+  public String getExternalOrderId() {
+    return externalOrderId;
+  }
+
+  public String getFailureReason() {
+    return failureReason;
+  }
+
+  public Instant getExecutedAt() {
+    return executedAt;
+  }
+
+  public Instant getCanceledAt() {
+    return canceledAt;
   }
 
   public boolean ownedBy(Long memberId) {
@@ -174,6 +253,37 @@ public class OrderSession extends BaseTimeEntity {
 
   public boolean matchesReplayFingerprint(String candidateFingerprint) {
     return Objects.equals(this.replayFingerprint, candidateFingerprint);
+  }
+
+  public void authorize() {
+    this.status = OrderSessionStatus.AUTHED;
+  }
+
+  public void startExecuting() {
+    this.status = OrderSessionStatus.EXECUTING;
+  }
+
+  public void complete(
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      Instant executedAt
+  ) {
+    this.status = OrderSessionStatus.COMPLETED;
+    this.executionResult = executionResult;
+    this.executedQty = executedQty;
+    this.leavesQty = leavesQty;
+    this.executedPrice = executedPrice;
+    this.externalOrderId = externalOrderId;
+    this.executedAt = executedAt;
+    this.failureReason = null;
+  }
+
+  public void fail(String failureReason) {
+    this.status = OrderSessionStatus.FAILED;
+    this.failureReason = failureReason;
   }
 
   public void expire() {
