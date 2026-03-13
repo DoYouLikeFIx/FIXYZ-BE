@@ -53,12 +53,13 @@ public class ChannelSecurityConfig {
         .exceptionHandling(exceptionHandling -> exceptionHandling
             .authenticationEntryPoint((request, response, authException) -> {
               String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
-
-              ErrorCode errorCode = resolveAuthErrorCode(
+              String staleReason = resolveStaleSessionReason(
                   request.getCookies(),
                   sessionCookieName,
                   channelSessionInvalidationService
               );
+
+              ErrorCode errorCode = resolveAuthErrorCode(request.getCookies(), sessionCookieName, staleReason);
               response.setStatus(errorCode.httpStatus());
               response.setContentType(MediaType.APPLICATION_JSON_VALUE);
               response.setCharacterEncoding("UTF-8");
@@ -66,7 +67,7 @@ public class ChannelSecurityConfig {
 
               ApiErrorResponse body = ApiErrorResponse.from(
                   errorCode,
-                  resolveAuthErrorMessage(errorCode),
+                  resolveAuthErrorMessage(errorCode, staleReason),
                   request.getRequestURI(),
                   correlationId
               );
@@ -106,6 +107,8 @@ public class ChannelSecurityConfig {
                 "/api/v1/auth/register",
                 "/api/v1/auth/login",
                 "/api/v1/auth/otp/verify",
+                "/api/v1/auth/mfa-recovery/rebind",
+                "/api/v1/auth/mfa-recovery/rebind/confirm",
                 "/api/v1/members/me/totp/enroll",
                 "/api/v1/members/me/totp/confirm",
                 "/api/v1/auth/password/forgot",
@@ -124,8 +127,34 @@ public class ChannelSecurityConfig {
   private ErrorCode resolveAuthErrorCode(
       Cookie[] cookies,
       String sessionCookieName,
+      String staleReason
+  ) {
+    return staleReason != null
+        ? ErrorCode.AUTH_STALE_SESSION
+        : resolveFallbackAuthErrorCode(cookies, sessionCookieName);
+  }
+
+  private String resolveStaleSessionReason(
+      Cookie[] cookies,
+      String sessionCookieName,
       ChannelSessionInvalidationService channelSessionInvalidationService
   ) {
+    if (cookies == null || cookies.length == 0) {
+      return null;
+    }
+
+    String sessionId = Arrays.stream(cookies)
+        .filter(cookie -> sessionCookieName.equals(cookie.getName())
+            && cookie.getValue() != null
+            && !cookie.getValue().isBlank())
+        .map(Cookie::getValue)
+        .findFirst()
+        .orElse(null);
+
+    return channelSessionInvalidationService.consumeStaleSessionReason(sessionId);
+  }
+
+  private ErrorCode resolveFallbackAuthErrorCode(Cookie[] cookies, String sessionCookieName) {
     if (cookies == null || cookies.length == 0) {
       return ErrorCode.AUTH_REQUIRED;
     }
@@ -137,16 +166,14 @@ public class ChannelSecurityConfig {
         .map(Cookie::getValue)
         .findFirst()
         .orElse(null);
-
-    if (channelSessionInvalidationService.consumePasswordChangedMarker(sessionId)) {
-      return ErrorCode.AUTH_STALE_SESSION;
-    }
-
     return sessionId != null ? ErrorCode.CHANNEL_SESSION_EXPIRED : ErrorCode.AUTH_REQUIRED;
   }
 
-  private String resolveAuthErrorMessage(ErrorCode errorCode) {
+  private String resolveAuthErrorMessage(ErrorCode errorCode, String staleReason) {
     if (errorCode == ErrorCode.AUTH_STALE_SESSION) {
+      if ("mfa-rebind-completed".equals(staleReason)) {
+        return "stale session after mfa recovery rebind";
+      }
       return "stale session after password change";
     }
     if (errorCode == ErrorCode.CHANNEL_SESSION_EXPIRED) {
