@@ -434,6 +434,13 @@ public class AuthService {
           new ErrorMetadata(null, null, Map.of("enrollUrl", "/settings/totp/enroll"))
       );
     }
+    if (!totpService.hasActiveSecret(member)) {
+      throw new BusinessException(
+          ErrorCode.AUTH_MFA_RECOVERY_REQUIRED,
+          "mfa recovery required",
+          new ErrorMetadata(null, null, Map.of("recoveryUrl", "/mfa-recovery"))
+      );
+    }
     TotpService.TotpVerification verification = totpService.verifyCurrentCode(member, command.getOtpCode());
     if (!verification.matched()) {
       otpVerifyRateLimitService.recordFailure(command.getLoginToken());

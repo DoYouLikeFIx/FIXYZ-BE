@@ -12,7 +12,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChannelSessionInvalidationService {
 
-  private static final String STALE_SESSION_PREFIX = "ch:password-recovery:stale-session:";
+  private static final String STALE_SESSION_PREFIX = "ch:session-stale:";
+  private static final String TRUSTED_SESSION_PREFIX = "ch:trusted-session:";
 
   @SuppressWarnings("rawtypes")
   private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
@@ -30,6 +31,10 @@ public class ChannelSessionInvalidationService {
   }
 
   public void invalidateAllPasswordSessions(String email) {
+    invalidateAllSessions(email, "password-changed");
+  }
+
+  public void invalidateAllSessions(String email, String reason) {
     @SuppressWarnings("rawtypes")
     FindByIndexNameSessionRepository sessionRepository = sessionRepositoryProvider.getIfAvailable();
     if (sessionRepository == null) {
@@ -39,32 +44,54 @@ public class ChannelSessionInvalidationService {
     @SuppressWarnings("unchecked")
     Map<String, ? extends Session> sessions = sessionRepository.findByPrincipalName(email);
     sessions.keySet().forEach(sessionId -> {
-      markStaleSession(sessionId);
+      markStaleSession(sessionId, normalizeReason(reason));
       sessionRepository.deleteById(sessionId);
     });
+    clearTrustedSessionMarkers(email);
   }
 
   public boolean consumePasswordChangedMarker(String sessionId) {
+    return consumeStaleSessionReason(sessionId) != null;
+  }
+
+  public String consumeStaleSessionReason(String sessionId) {
     if (sessionId == null || sessionId.isBlank()) {
-      return false;
+      return null;
     }
     StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
     if (redisTemplate == null) {
-      return false;
+      return null;
     }
-    String marker = redisTemplate.opsForValue().getAndDelete(markerKey(sessionId));
-    return marker != null;
+    return redisTemplate.opsForValue().getAndDelete(markerKey(sessionId));
   }
 
-  private void markStaleSession(String sessionId) {
+  private void markStaleSession(String sessionId, String reason) {
     StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
     if (redisTemplate == null) {
       return;
     }
-    redisTemplate.opsForValue().set(markerKey(sessionId), "password-changed", staleMarkerTtl);
+    redisTemplate.opsForValue().set(markerKey(sessionId), reason, staleMarkerTtl);
+  }
+
+  private void clearTrustedSessionMarkers(String email) {
+    if (email == null || email.isBlank()) {
+      return;
+    }
+    StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
+    if (redisTemplate == null) {
+      return;
+    }
+    redisTemplate.delete(TRUSTED_SESSION_PREFIX + email.trim());
   }
 
   private String markerKey(String sessionId) {
     return STALE_SESSION_PREFIX + sessionId;
+  }
+
+  private String normalizeReason(String reason) {
+    if (reason == null || reason.isBlank()) {
+      return "security-change";
+    }
+    return reason.trim();
   }
 }

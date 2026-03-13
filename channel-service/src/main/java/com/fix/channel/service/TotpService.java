@@ -65,12 +65,20 @@ public class TotpService {
     totpSecretStore.promotePendingSecret(member, loginToken);
   }
 
+  public void discardPendingSecret(Member member, String loginToken) {
+    totpSecretStore.discardPendingSecret(member, loginToken);
+  }
+
   public void provisionActiveSecret(Member member) {
     totpSecretStore.saveActiveSecret(member, generateRandomManualEntryKey());
   }
 
   public boolean hasActiveSecret(Member member) {
     return totpSecretStore.findActiveSecret(member).isPresent();
+  }
+
+  public void terminalizeActiveSecret(Member member) {
+    totpSecretStore.terminalizeActiveSecret(member);
   }
 
   public String currentCode(Member member) {
