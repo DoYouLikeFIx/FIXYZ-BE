@@ -17,11 +17,14 @@ import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.PasswordResetTokenRepository;
 import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.service.ChannelSessionInvalidationService;
 import com.fix.channel.service.PasswordRecoveryMailDispatcher;
 import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.Cookie;
+import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +33,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -39,6 +44,8 @@ import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -78,10 +85,16 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
   private StringRedisTemplate stringRedisTemplate;
 
   @Autowired
+  private JdbcTemplate jdbcTemplate;
+
+  @Autowired
   private RecordingPasswordRecoveryMailDispatcher recordingPasswordRecoveryMailDispatcher;
 
   @Autowired
   private TotpService totpService;
+
+  @Autowired
+  private ToggleableChannelSessionInvalidationService channelSessionInvalidationService;
 
   @BeforeEach
   void setUp() {
@@ -90,6 +103,7 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
     securityEventRepository.deleteAll();
     memberRepository.deleteAll();
     recordingPasswordRecoveryMailDispatcher.clear();
+    channelSessionInvalidationService.setFailInvalidation(false);
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
       return null;
@@ -254,6 +268,9 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
     String rebindToken = bootstrapData.path("rebindToken").asText();
     String manualEntryKey = bootstrapData.path("manualEntryKey").asText();
     String enrollmentToken = bootstrapData.path("enrollmentToken").asText();
+    stringRedisTemplate.opsForValue().set("ch:trusted-session:rebind.session@fixyz.com", "web");
+    stringRedisTemplate.opsForValue().set("ch:trusted-session:rebind.session@fixyz.com:ios", "ios");
+    stringRedisTemplate.opsForValue().set("ch:trusted-session:rebind.session@fixyz.com:android", "android");
 
     mockMvc.perform(post("/api/v1/auth/mfa-recovery/rebind/confirm")
             .cookie(new Cookie("SESSION", sessionId))
@@ -267,6 +284,10 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.rebindCompleted").value(true))
         .andExpect(jsonPath("$.data.reauthRequired").value(true));
+
+    assertThat(stringRedisTemplate.opsForValue().get("ch:trusted-session:rebind.session@fixyz.com")).isNull();
+    assertThat(stringRedisTemplate.opsForValue().get("ch:trusted-session:rebind.session@fixyz.com:ios")).isNull();
+    assertThat(stringRedisTemplate.opsForValue().get("ch:trusted-session:rebind.session@fixyz.com:android")).isNull();
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))
@@ -283,6 +304,103 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
             ))))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("AUTH-020"));
+  }
+
+  @Test
+  void shouldRejectAuthenticatedRebindWhenCurrentPasswordMismatchWithCanonicalAuthCode() throws Exception {
+    Member member = memberRepository.save(
+        Member.registerUser("M-REC-008", "rebind.mismatch@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Mismatch Rebind")
+    );
+    member.enableTotpEnrollment();
+    memberRepository.saveAndFlush(member);
+    totpService.provisionActiveSecret(member);
+
+    String sessionId = loginAndGetSessionId("rebind.mismatch@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    mockMvc.perform(post("/api/v1/members/me/totp/rebind")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .contentType("application/json")
+            .content("""
+                {
+                  "currentPassword": "Wrong1234!"
+                }
+                """))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-026"))
+        .andExpect(jsonPath("$.message").value("current password mismatch"));
+  }
+
+  @Test
+  void shouldRequireEnrollmentMetadataWhenAuthenticatedRebindNoLongerHasTotpEnrollment() throws Exception {
+    Member member = memberRepository.save(
+        Member.registerUser("M-REC-009", "rebind.enroll@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Enroll Rebind")
+    );
+    member.enableTotpEnrollment();
+    memberRepository.saveAndFlush(member);
+    totpService.provisionActiveSecret(member);
+
+    String sessionId = loginAndGetSessionId("rebind.enroll@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    disableTotpEnrollment("rebind.enroll@fixyz.com");
+
+    mockMvc.perform(post("/api/v1/members/me/totp/rebind")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .contentType("application/json")
+            .content("""
+                {
+                  "currentPassword": "Abcd1234!"
+                }
+                """))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("AUTH-009"))
+        .andExpect(jsonPath("$.enrollUrl").value("/settings/totp/enroll"));
+  }
+
+  @Test
+  void shouldRejectRecoveryProofBootstrapWithDisclosureSafeInvalidCodeWhenTotpStateChanges() throws Exception {
+    Member member = memberRepository.save(
+        Member.registerUser("M-REC-010", "rebind.disclosure@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Disclosure Rebind")
+    );
+    member.enableTotpEnrollment();
+    memberRepository.saveAndFlush(member);
+    totpService.provisionActiveSecret(member);
+
+    forgot("rebind.disclosure@fixyz.com");
+    String rawToken = recordingPasswordRecoveryMailDispatcher.singleToken("rebind.disclosure@fixyz.com");
+
+    MvcResult resetResult = mockMvc.perform(post("/api/v1/auth/password/reset")
+            .with(csrf())
+            .contentType("application/json")
+            .content("""
+                {
+                  "token": "%s",
+                  "newPassword": "Qwer1234!"
+                }
+                """.formatted(rawToken)))
+        .andExpect(status().isNoContent())
+        .andExpect(header().exists(CommonHeaders.X_MFA_RECOVERY_PROOF))
+        .andReturn();
+
+    String recoveryProof = resetResult.getResponse().getHeader(CommonHeaders.X_MFA_RECOVERY_PROOF);
+    assertThat(recoveryProof).isNotBlank();
+
+    disableTotpEnrollment("rebind.disclosure@fixyz.com");
+
+    mockMvc.perform(post("/api/v1/auth/mfa-recovery/rebind")
+            .with(csrf())
+            .contentType("application/json")
+            .content("""
+                {
+                  "recoveryProof": "%s"
+                }
+                """.formatted(recoveryProof)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-019"))
+        .andExpect(jsonPath("$.message").value("mfa recovery proof or rebind token invalid or expired"));
   }
 
   @Test
@@ -640,6 +758,66 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
         });
   }
 
+  @Test
+  void shouldAbortRebindConfirmationWhenSessionInvalidationFails() throws Exception {
+    Member member = memberRepository.save(
+        Member.registerUser("M-REC-011", "rebind.failure@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Failure Rebind")
+    );
+    member.enableTotpEnrollment();
+    memberRepository.saveAndFlush(member);
+    totpService.provisionActiveSecret(member);
+
+    String sessionId = loginAndGetSessionId("rebind.failure@fixyz.com", "Abcd1234!");
+    String csrfToken = fetchCsrfToken(sessionId);
+
+    MvcResult bootstrapResult = mockMvc.perform(post("/api/v1/members/me/totp/rebind")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .contentType("application/json")
+            .content("""
+                {
+                  "currentPassword": "Abcd1234!"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    JsonNode bootstrapData = objectMapper.readTree(bootstrapResult.getResponse().getContentAsString()).path("data");
+    String rebindToken = bootstrapData.path("rebindToken").asText();
+    String manualEntryKey = bootstrapData.path("manualEntryKey").asText();
+    String enrollmentToken = bootstrapData.path("enrollmentToken").asText();
+
+    channelSessionInvalidationService.setFailInvalidation(true);
+
+    mockMvc.perform(post("/api/v1/auth/mfa-recovery/rebind/confirm")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .contentType("application/json")
+            .content(objectMapper.writeValueAsString(Map.of(
+                "rebindToken", rebindToken,
+                "enrollmentToken", enrollmentToken,
+                "otpCode", totpService.currentCodeForManualEntryKey(manualEntryKey)
+            ))))
+        .andExpect(status().isInternalServerError())
+        .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+        .andExpect(jsonPath("$.message").value("Internal server error"));
+
+    channelSessionInvalidationService.setFailInvalidation(false);
+
+    mockMvc.perform(post("/api/v1/auth/mfa-recovery/rebind/confirm")
+            .cookie(new Cookie("SESSION", sessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .contentType("application/json")
+            .content(objectMapper.writeValueAsString(Map.of(
+                "rebindToken", rebindToken,
+                "enrollmentToken", enrollmentToken,
+                "otpCode", totpService.currentCodeForManualEntryKey(manualEntryKey)
+            ))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.rebindCompleted").value(true))
+        .andExpect(jsonPath("$.data.reauthRequired").value(true));
+  }
+
   private JsonNode forgot(String email) throws Exception {
     MvcResult result = mockMvc.perform(post("/api/v1/auth/password/forgot")
             .with(csrf())
@@ -782,6 +960,21 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
     return new PreAuthSession(sessionCookie.getValue(), csrfToken);
   }
 
+  private void disableTotpEnrollment(String email) {
+    jdbcTemplate.update(
+        """
+            update members
+               set totp_enabled = false,
+                   totp_enrolled_at = null,
+                   updated_at = ?,
+                   version = version + 1
+             where email = ?
+            """,
+        Timestamp.from(Instant.now()),
+        email
+    );
+  }
+
   private record PreAuthSession(String sessionId, String csrfToken) {
     private Cookie sessionCookie() {
       return new Cookie("SESSION", sessionId);
@@ -804,6 +997,45 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
     @Primary
     RecordingPasswordRecoveryMailDispatcher recordingPasswordRecoveryMailDispatcher() {
       return new RecordingPasswordRecoveryMailDispatcher();
+    }
+
+    @Bean
+    @Primary
+    ToggleableChannelSessionInvalidationService channelSessionInvalidationService(
+        @SuppressWarnings("rawtypes") ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider,
+        ObjectProvider<StringRedisTemplate> redisTemplateProvider,
+        @Value("${server.servlet.session.timeout:30m}") Duration staleMarkerTtl
+    ) {
+      return new ToggleableChannelSessionInvalidationService(
+          sessionRepositoryProvider,
+          redisTemplateProvider,
+          staleMarkerTtl
+      );
+    }
+  }
+
+  static class ToggleableChannelSessionInvalidationService extends ChannelSessionInvalidationService {
+
+    private volatile boolean failInvalidation;
+
+    ToggleableChannelSessionInvalidationService(
+        @SuppressWarnings("rawtypes") ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider,
+        ObjectProvider<StringRedisTemplate> redisTemplateProvider,
+        Duration staleMarkerTtl
+    ) {
+      super(sessionRepositoryProvider, redisTemplateProvider, staleMarkerTtl);
+    }
+
+    void setFailInvalidation(boolean failInvalidation) {
+      this.failInvalidation = failInvalidation;
+    }
+
+    @Override
+    public void invalidateAllSessions(String email, String reason) {
+      if (failInvalidation) {
+        throw new IllegalStateException("session invalidation unavailable");
+      }
+      super.invalidateAllSessions(email, reason);
     }
   }
 
