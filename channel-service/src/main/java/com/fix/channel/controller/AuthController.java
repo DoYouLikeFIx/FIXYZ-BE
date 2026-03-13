@@ -108,8 +108,11 @@ public class AuthController {
   }
 
   @PostMapping("/otp/verify")
-  public ApiResponse<OtpVerifyResponse> verifyOtp(@Valid @ModelAttribute OtpVerifyRequest request) {
-    return ApiResponse.success(OtpVerifyResponse.from(channelScaffoldService.verifyOtp(request.toVo())));
+  public ApiResponse<OtpVerifyResponse> verifyOtp(
+      @Valid @RequestBody OtpVerifyRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    return ApiResponse.success(OtpVerifyResponse.from(authService.verifyOtp(request.toVo(), httpServletRequest)));
   }
 
   @PostMapping("/password/forgot")

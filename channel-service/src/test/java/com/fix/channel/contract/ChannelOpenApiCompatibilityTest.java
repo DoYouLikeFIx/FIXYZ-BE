@@ -21,6 +21,14 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode paths = contract.path("paths");
     JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode loginResponse = contract.path("components").path("schemas").path("ApiResponseAuthLoginResponse");
+    JsonNode loginSchema = contract.path("components").path("schemas").path("AuthLoginResponse");
+    JsonNode otpVerifyResponse = contract.path("components").path("schemas").path("ApiResponseOtpVerifyResponse");
+    JsonNode otpVerifySchema = contract.path("components").path("schemas").path("OtpVerifyResponse");
+    JsonNode totpEnrollResponse = contract.path("components").path("schemas").path("ApiResponseTotpEnrollResponse");
+    JsonNode totpEnrollSchema = contract.path("components").path("schemas").path("TotpEnrollResponse");
+    JsonNode totpEnrollRequestSchema = contract.path("components").path("schemas").path("TotpEnrollRequest");
+    JsonNode totpConfirmRequestSchema = contract.path("components").path("schemas").path("TotpConfirmRequest");
+    JsonNode otpVerifyRequestSchema = contract.path("components").path("schemas").path("OtpVerifyRequest");
     JsonNode authSessionResponse = contract.path("components").path("schemas")
         .path("ApiResponseAuthSessionResponse");
     JsonNode authSessionSchema = contract.path("components").path("schemas").path("AuthSessionResponse");
@@ -53,6 +61,8 @@ class ChannelOpenApiCompatibilityTest {
         .contains(
             "/api/v1/auth/session",
             "/api/v1/auth/login",
+            "/api/v1/members/me/totp/enroll",
+            "/api/v1/members/me/totp/confirm",
             "/api/v1/orders",
             "/api/v1/orders/sessions",
             "/api/v1/orders/sessions/{orderSessionId}",
@@ -74,8 +84,13 @@ class ChannelOpenApiCompatibilityTest {
             "details",
             "timestamp"
         );
+    assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();
 
     assertThat(loginResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(totpEnrollResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(otpVerifyResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(authSessionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
@@ -93,6 +108,18 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(authSessionSchema.path("properties")))
         .contains("memberUuid", "username", "email", "name", "role", "totpEnrolled", "accountId", "accountNumber");
+    assertThat(fieldNames(loginSchema.path("properties")))
+        .contains("loginToken", "nextAction", "totpEnrolled", "expiresAt");
+    assertThat(fieldNames(totpEnrollRequestSchema.path("properties")))
+        .contains("loginToken");
+    assertThat(fieldNames(totpConfirmRequestSchema.path("properties")))
+        .contains("loginToken", "enrollmentToken", "otpCode");
+    assertThat(fieldNames(otpVerifyRequestSchema.path("properties")))
+        .contains("loginToken", "otpCode");
+    assertThat(fieldNames(totpEnrollSchema.path("properties")))
+        .contains("manualEntryKey", "qrUri", "enrollmentToken", "expiresAt");
+    assertThat(fieldNames(otpVerifySchema.path("properties")))
+        .contains("verified", "memberUuid", "email", "name", "role", "totpEnrolled", "accountId", "accountNumber", "mfaVerifiedAt");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
     assertThat(fieldNames(orderSessionCreateRequestSchema.path("properties")))
@@ -114,6 +141,15 @@ class ChannelOpenApiCompatibilityTest {
         );
     assertThat(parameterNames(paths.path("/api/v1/orders/sessions").path("post").path("parameters")))
         .contains("X-ClOrdID");
+    assertThat(paths.path("/api/v1/auth/otp/verify").path("post").path("requestBody").path("content")
+        .path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/OtpVerifyRequest");
+    assertThat(paths.path("/api/v1/members/me/totp/enroll").path("post").path("requestBody").path("content")
+        .path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/TotpEnrollRequest");
+    assertThat(paths.path("/api/v1/members/me/totp/confirm").path("post").path("requestBody").path("content")
+        .path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/TotpConfirmRequest");
     assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
     assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())

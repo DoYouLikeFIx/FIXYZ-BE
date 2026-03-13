@@ -14,13 +14,20 @@ import com.fix.channel.vo.AuthLoginResult;
 import com.fix.channel.vo.AuthRegisterCommand;
 import com.fix.channel.vo.AuthRegisterResult;
 import com.fix.channel.vo.AuthSessionResult;
+import com.fix.channel.vo.OtpVerifyCommand;
+import com.fix.channel.vo.OtpVerifyResult;
+import com.fix.channel.vo.TotpConfirmCommand;
+import com.fix.channel.vo.TotpEnrollCommand;
+import com.fix.channel.vo.TotpEnrollResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -50,12 +57,20 @@ public class AuthService {
   private static final String ACCOUNT_LOCKED_EVENT_TYPE = "ACCOUNT_LOCKED";
   private static final String ACCOUNT_LOCKED_SEVERITY = "HIGH";
   private static final String AUTH_ACCOUNT_ID = "AUTH_ACCOUNT_ID";
+  private static final String AUTH_LAST_MFA_VERIFIED_AT = "AUTH_LAST_MFA_VERIFIED_AT";
+  private static final String NEXT_ACTION_VERIFY_TOTP = "VERIFY_TOTP";
+  private static final String NEXT_ACTION_ENROLL_TOTP = "ENROLL_TOTP";
 
   private final MemberRepository memberRepository;
   private final AuditLogRepository auditLogRepository;
   private final SecurityEventRepository securityEventRepository;
   private final PasswordEncoder passwordEncoder;
   private final LoginIpRateLimitService loginIpRateLimitService;
+  private final LoginTokenService loginTokenService;
+  private final OtpVerifyRateLimitService otpVerifyRateLimitService;
+  private final TotpEnrollRateLimitService totpEnrollRateLimitService;
+  private final TotpReplayGuardService totpReplayGuardService;
+  private final TotpService totpService;
   private final CorebankProvisioningClient corebankProvisioningClient;
   @SuppressWarnings("rawtypes")
   private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
@@ -104,6 +119,9 @@ public class AuthService {
     );
     if (linkedAccountProfile != null) {
       saved.updateLinkedAccount(linkedAccountProfile.accountId(), linkedAccountProfile.accountNumber());
+    }
+    if (demoAutoTotpEnrolled && !totpService.hasActiveSecret(saved)) {
+      totpService.provisionActiveSecret(saved);
     }
 
     auditLogRepository.save(AuditLog.of(
@@ -192,39 +210,67 @@ public class AuthService {
 
     member.resetFailedLoginAttempts();
 
-    auditLogRepository.save(AuditLog.of(
-        member.getId(),
-        AuditAction.AUTH_LOGIN_SUCCESS,
-        "MEMBER",
-        String.valueOf(member.getId()),
-        "email=" + email
-    ));
+    LoginTokenService.LoginTokenState loginTokenState = loginTokenService.issue(member, request, clientIp, userAgent);
+    String nextAction = member.isTotpEnabled() ? NEXT_ACTION_VERIFY_TOTP : NEXT_ACTION_ENROLL_TOTP;
 
-    HttpSession existingSession = request.getSession(false);
-    if (existingSession != null) {
-      existingSession.invalidate();
+    return AuthLoginResult.of(
+        loginTokenState.loginToken(),
+        nextAction,
+        loginTokenState.totpEnrolled(),
+        loginTokenState.expiresAt()
+    );
+  }
+
+  @Transactional(noRollbackFor = BusinessException.class)
+  public TotpEnrollResult enrollTotp(TotpEnrollCommand command, HttpServletRequest request) {
+    String clientIp = resolveClientIp(request);
+    String userAgent = resolveUserAgent(request);
+    String correlationId = resolveCorrelationId(request);
+    LoginTokenService.LoginTokenState loginTokenState = loginTokenService.requireBoundActive(
+        command.getLoginToken(),
+        request,
+        clientIp,
+        userAgent
+    );
+    totpEnrollRateLimitService.checkAllowed(command.getLoginToken());
+    totpEnrollRateLimitService.recordAttempt(command.getLoginToken());
+    Member member = memberRepository.findById(loginTokenState.memberId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_LOGIN_TOKEN_EXPIRED, "login token expired or invalid"));
+    if (member.isTotpEnabled()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "totp already enrolled");
     }
 
-    HttpSession session = request.getSession(true);
-    session.setAttribute("AUTH_MEMBER_ID", member.getId());
-    session.setAttribute("AUTH_MEMBER_NAME", member.getName());
-    session.setAttribute(
-        FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME,
-        member.getEmail()
+    TotpService.TotpEnrollment enrollment = totpService.bootstrap(
+        member,
+        loginTokenState.expiresAt(),
+        command.getLoginToken()
     );
-    hydrateSessionAccountId(session, member, resolveCorrelationId(request));
-
-    SecurityContext context = SecurityContextHolder.createEmptyContext();
-    context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-        member.getEmail(),
-        null,
-        List.of(new SimpleGrantedAuthority(member.getRole()))
+    auditLogRepository.save(AuditLog.of(
+        member.getId(),
+        AuditAction.AUTH_TOTP_ENROLLMENT_BOOTSTRAP,
+        "TOTP",
+        member.getMemberNo(),
+        "totp enrollment bootstrap issued",
+        clientIp,
+        userAgent,
+        correlationId
     ));
-    session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
+    return TotpEnrollResult.of(
+        enrollment.manualEntryKey(),
+        enrollment.qrUri(),
+        enrollment.enrollmentToken(),
+        enrollment.expiresAt()
+    );
+  }
 
-    expireOtherSessions(member.getEmail(), session.getId());
+  @Transactional(noRollbackFor = BusinessException.class)
+  public OtpVerifyResult confirmTotp(TotpConfirmCommand command, HttpServletRequest request) {
+    return loginTokenService.withTokenLock(command.getLoginToken(), () -> doConfirmTotp(command, request));
+  }
 
-    return AuthLoginResult.of(member.getId(), member.getEmail(), member.getName());
+  @Transactional(noRollbackFor = BusinessException.class)
+  public OtpVerifyResult verifyOtp(OtpVerifyCommand command, HttpServletRequest request) {
+    return loginTokenService.withTokenLock(command.getLoginToken(), () -> doVerifyOtp(command, request));
   }
 
   @Transactional
@@ -361,6 +407,173 @@ public class AuthService {
 
     return "23000".equals(ex.getSQLState())
         && containsIgnoreCase(ex.getMessage(), "duplicate");
+  }
+
+  private OtpVerifyResult doVerifyOtp(OtpVerifyCommand command, HttpServletRequest request) {
+    String correlationId = resolveCorrelationId(request);
+    String clientIp = resolveClientIp(request);
+    String userAgent = resolveUserAgent(request);
+    LoginTokenService.LoginTokenState loginTokenState = loginTokenService.requireBoundActive(
+        command.getLoginToken(),
+        request,
+        clientIp,
+        userAgent
+    );
+    otpVerifyRateLimitService.checkAllowed(command.getLoginToken());
+
+    Member member = memberRepository.findByIdForUpdate(loginTokenState.memberId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_LOGIN_TOKEN_EXPIRED, "login token expired or invalid"));
+
+    if (member.isLocked()) {
+      throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED, "account locked");
+    }
+    if (!member.isTotpEnabled()) {
+      throw new BusinessException(
+          ErrorCode.AUTH_TOTP_ENROLLMENT_REQUIRED,
+          "totp enrollment required",
+          new ErrorMetadata(null, null, Map.of("enrollUrl", "/settings/totp/enroll"))
+      );
+    }
+    TotpService.TotpVerification verification = totpService.verifyCurrentCode(member, command.getOtpCode());
+    if (!verification.matched()) {
+      otpVerifyRateLimitService.recordFailure(command.getLoginToken());
+      throw invalidOtp(member.getId(), clientIp, userAgent);
+    }
+
+    totpReplayGuardService.claim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
+    otpVerifyRateLimitService.clear(command.getLoginToken());
+    return completeAuthenticatedLogin(member, request, correlationId, clientIp, userAgent, command.getLoginToken());
+  }
+
+  private OtpVerifyResult doConfirmTotp(TotpConfirmCommand command, HttpServletRequest request) {
+    String correlationId = resolveCorrelationId(request);
+    String clientIp = resolveClientIp(request);
+    String userAgent = resolveUserAgent(request);
+    LoginTokenService.LoginTokenState loginTokenState = loginTokenService.requireBoundActive(
+        command.getLoginToken(),
+        request,
+        clientIp,
+        userAgent
+    );
+    otpVerifyRateLimitService.checkAllowed(command.getLoginToken());
+
+    Member member = memberRepository.findByIdForUpdate(loginTokenState.memberId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_LOGIN_TOKEN_EXPIRED, "login token expired or invalid"));
+
+    if (member.isLocked()) {
+      throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED, "account locked");
+    }
+    if (member.isTotpEnabled()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "totp already enrolled");
+    }
+    if (!totpService.isValidEnrollmentToken(command.getLoginToken(), command.getEnrollmentToken())) {
+      throw new BusinessException(ErrorCode.AUTH_LOGIN_TOKEN_EXPIRED, "login token expired or invalid");
+    }
+    TotpService.TotpVerification verification = totpService.verifyPendingCode(member, command.getLoginToken(), command.getOtpCode());
+    if (!verification.matched()) {
+      otpVerifyRateLimitService.recordFailure(command.getLoginToken());
+      throw invalidOtp(member.getId(), clientIp, userAgent);
+    }
+
+    totpReplayGuardService.claim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
+    totpService.promotePendingSecret(member, command.getLoginToken());
+    member.enableTotpEnrollment();
+    otpVerifyRateLimitService.clear(command.getLoginToken());
+    auditLogRepository.save(AuditLog.of(
+        member.getId(),
+        AuditAction.AUTH_TOTP_ENROLLMENT_CONFIRMED,
+        "TOTP",
+        member.getMemberNo(),
+        "totp enrollment confirmed",
+        clientIp,
+        userAgent,
+        correlationId
+    ));
+    return completeAuthenticatedLogin(member, request, correlationId, clientIp, userAgent, command.getLoginToken());
+  }
+
+  private OtpVerifyResult completeAuthenticatedLogin(
+      Member member,
+      HttpServletRequest request,
+      String correlationId,
+      String clientIp,
+      String userAgent,
+      String loginToken
+  ) {
+    Instant mfaVerifiedAt = Instant.now();
+    HttpSession session = establishAuthenticatedSession(member, request, correlationId, mfaVerifiedAt);
+
+    auditLogRepository.save(AuditLog.of(
+        member.getId(),
+        AuditAction.AUTH_LOGIN_SUCCESS,
+        "SESSION",
+        session.getId(),
+        "email=" + member.getEmail(),
+        clientIp,
+        userAgent,
+        correlationId
+    ));
+
+    String accountId = resolveSessionAccountId(session, member, request);
+    if (accountId == null && member.getAccountId() != null) {
+      accountId = String.valueOf(member.getAccountId());
+    }
+
+    loginTokenService.consume(loginToken);
+    return OtpVerifyResult.verified(
+        member.getMemberNo(),
+        member.getEmail(),
+        member.getName(),
+        member.getRole(),
+        member.isTotpEnabled(),
+        accountId,
+        member.getAccountNumber(),
+        mfaVerifiedAt
+    );
+  }
+
+  private HttpSession establishAuthenticatedSession(
+      Member member,
+      HttpServletRequest request,
+      String correlationId,
+      Instant mfaVerifiedAt
+  ) {
+    HttpSession existingSession = request.getSession(false);
+    if (existingSession != null) {
+      existingSession.invalidate();
+    }
+
+    HttpSession session = request.getSession(true);
+    session.setAttribute("AUTH_MEMBER_ID", member.getId());
+    session.setAttribute("AUTH_MEMBER_NAME", member.getName());
+    session.setAttribute(AUTH_LAST_MFA_VERIFIED_AT, mfaVerifiedAt.toString());
+    session.setAttribute(
+        FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME,
+        member.getEmail()
+    );
+    hydrateSessionAccountId(session, member, correlationId);
+
+    SecurityContext context = SecurityContextHolder.createEmptyContext();
+    context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+        member.getEmail(),
+        null,
+        List.of(new SimpleGrantedAuthority(member.getRole()))
+    ));
+    session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
+
+    expireOtherSessions(member.getEmail(), session.getId());
+    return session;
+  }
+
+  private BusinessException invalidOtp(Long memberId, String clientIp, String userAgent) {
+    securityEventRepository.save(SecurityEvent.of(
+        memberId,
+        "OTP_VERIFY_FAILED",
+        clientIp,
+        userAgent,
+        "MEDIUM"
+    ));
+    return new BusinessException(ErrorCode.AUTH_OTP_INVALID, "otp code mismatch");
   }
 
   private ResponseCookie expiredSessionCookie() {

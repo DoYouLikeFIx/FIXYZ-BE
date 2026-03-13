@@ -9,3 +9,7 @@ server:
     session:
       cookie:
         secure: true
+
+auth:
+  totp:
+    secret-store: vault

@@ -57,6 +57,20 @@ class CoreCommonContractTest {
   }
 
   @Test
+  void shouldExposeAdditionalErrorPropertiesWhenPresent() {
+    ApiErrorResponse error = ApiErrorResponse.from(
+        ErrorCode.AUTH_TOTP_ENROLLMENT_REQUIRED,
+        "",
+        "/api/v1/auth/otp/verify",
+        "corr-3",
+        new ErrorMetadata(null, null, java.util.Map.of("enrollUrl", "/settings/totp/enroll"))
+    );
+
+    assertEquals("/settings/totp/enroll", error.getAdditionalProperties().get("enrollUrl"));
+    assertTrue(error.getAdditionalProperties().containsKey("enrollUrl"));
+  }
+
+  @Test
   void shouldIncludeStructuredErrorDetailsWhenPresent() {
     ApiErrorResponse error = ApiErrorResponse.from(
         ErrorCode.ORD_INVALID_REQUEST,

@@ -37,6 +37,7 @@ class FepSimulatorOpenApiCompatibilityTest {
             "details",
             "timestamp"
         );
+    assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();
 
     assertThat(ruleResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");

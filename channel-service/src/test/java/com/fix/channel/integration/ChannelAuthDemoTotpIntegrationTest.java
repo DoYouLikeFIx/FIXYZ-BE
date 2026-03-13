@@ -15,8 +15,10 @@ import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import jakarta.servlet.http.Cookie;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +55,9 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
 
   @Autowired
   private StringRedisTemplate stringRedisTemplate;
+
+  @Autowired
+  private TotpService totpService;
 
   @MockitoBean
   private CorebankProvisioningClient corebankProvisioningClient;
@@ -128,10 +133,31 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
   }
 
   private AuthSession login(String email, String password) throws Exception {
-    MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
-            .with(csrf())
+    var member = memberRepository.findByEmail(email).orElseThrow();
+    PreAuthSession preAuthSession = bootstrapPreAuthSession();
+
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
             .param("email", email)
             .param("password", password))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.nextAction").value("VERIFY_TOTP"))
+        .andReturn();
+
+    String loginToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    MvcResult result = mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "loginToken", loginToken,
+                "otpCode", totpService.currentCode(member)
+            ))))
         .andExpect(status().isOk())
         .andReturn();
 
@@ -155,7 +181,26 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
     return csrfToken;
   }
 
+  private PreAuthSession bootstrapPreAuthSession() throws Exception {
+    MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    Cookie sessionCookie = result.getResponse().getCookie("SESSION");
+    assertThat(sessionCookie).isNotNull();
+    JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
+    String csrfToken = root.path("data").path("token").asText();
+    assertThat(csrfToken).isNotBlank();
+    return new PreAuthSession(sessionCookie.getValue(), csrfToken);
+  }
+
   private record AuthSession(String sessionId, String csrfToken) {
+  }
+
+  private record PreAuthSession(String sessionId, String csrfToken) {
+    private Cookie sessionCookie() {
+      return new Cookie("SESSION", sessionId);
+    }
   }
 
   private record OrderSessionPayload(

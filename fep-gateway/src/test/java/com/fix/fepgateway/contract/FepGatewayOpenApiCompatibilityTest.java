@@ -54,11 +54,11 @@ class FepGatewayOpenApiCompatibilityTest {
     JsonNode cancelOperation = contract.path("paths").path("/fep/v1/orders/{clOrdId}/cancel").path("post");
     JsonNode replayOperation = contract.path("paths").path("/fep/v1/orders/{clOrdId}/replay").path("post");
     JsonNode internalStatusOperation = contract.path("paths").path("/fep-internal/v1/orders/{clOrdId}/status").path("post");
+    JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode submitSchema = contract.path("components").path("schemas").path("FepOrderSubmitRequest");
     JsonNode cancelSchema = contract.path("components").path("schemas").path("FepOrderCancelRequest");
     JsonNode replaySchema = contract.path("components").path("schemas").path("FepOrderReplayRequest");
     JsonNode internalStatusSchema = contract.path("components").path("schemas").path("FepInternalOrderStatusRequest");
-    JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode statusResponseSchema = contract.path("components").path("schemas").path("FepOrderResponse");
     JsonNode cancelResponseSchema = contract.path("components").path("schemas").path("FepOrderCancelResponse");
     JsonNode replayResponseSchema = contract.path("components").path("schemas").path("FepOrderReplayResponse");
@@ -90,6 +90,7 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(schemaRef(internalStatusOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
     assertThat(cancelOperation.path("responses").path("504").path("description").asText()).contains("9004");
     assertThat(replayOperation.path("responses").path("409").path("description").asText()).contains("9009");
+    assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();
 
     assertThat(submitOperation.path("requestBody").path("required").asBoolean()).isTrue();
     assertThat(cancelOperation.path("requestBody").path("required").asBoolean()).isTrue();

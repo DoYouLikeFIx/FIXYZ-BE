@@ -1,11 +1,13 @@
 package com.fix.common.error;
 
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(additionalProperties = Schema.AdditionalPropertiesValue.TRUE)
 public class ApiErrorResponse {
 
   private final String code;
@@ -16,6 +18,7 @@ public class ApiErrorResponse {
   private final String operatorCode;
   @Schema(type = "object", additionalProperties = Schema.AdditionalPropertiesValue.TRUE)
   private final Map<String, Object> details;
+  private final Map<String, Object> additionalProperties;
   private final Instant timestamp;
 
   private ApiErrorResponse(
@@ -26,6 +29,7 @@ public class ApiErrorResponse {
       String userMessageKey,
       String operatorCode,
       Map<String, Object> details,
+      Map<String, Object> additionalProperties,
       Instant timestamp
   ) {
     this.code = code;
@@ -34,7 +38,8 @@ public class ApiErrorResponse {
     this.correlationId = correlationId;
     this.userMessageKey = userMessageKey;
     this.operatorCode = operatorCode;
-    this.details = details;
+    this.details = details == null || details.isEmpty() ? null : Map.copyOf(details);
+    this.additionalProperties = additionalProperties == null ? Map.of() : Map.copyOf(additionalProperties);
     this.timestamp = timestamp;
   }
 
@@ -65,7 +70,6 @@ public class ApiErrorResponse {
       Map<String, Object> details
   ) {
     String resolvedMessage = (message == null || message.isBlank()) ? errorCode.defaultMessage() : message;
-    Map<String, Object> resolvedDetails = details == null || details.isEmpty() ? null : Map.copyOf(details);
     return new ApiErrorResponse(
         errorCode.code(),
         resolvedMessage,
@@ -73,7 +77,8 @@ public class ApiErrorResponse {
         correlationId,
         metadata != null ? metadata.userMessageKey() : null,
         metadata != null ? metadata.operatorCode() : null,
-        resolvedDetails,
+        details,
+        metadata != null ? metadata.additionalProperties() : Map.of(),
         Instant.now()
     );
   }
@@ -104,6 +109,11 @@ public class ApiErrorResponse {
 
   public Map<String, Object> getDetails() {
     return details;
+  }
+
+  @JsonAnyGetter
+  public Map<String, Object> getAdditionalProperties() {
+    return additionalProperties;
   }
 
   public Instant getTimestamp() {

@@ -52,14 +52,32 @@ management:
         enabled: true
 
 auth:
+  login-token:
+    ttl: ${AUTH_LOGIN_TOKEN_TTL:5m}
   demo:
     auto-totp-enrolled: ${AUTH_DEMO_AUTO_TOTP_ENROLLED:false}
   guardrails:
     ip-rate-limit:
       max-failed-attempts: ${AUTH_IP_RATE_LIMIT_MAX_FAILED_ATTEMPTS:5}
       window-seconds: ${AUTH_IP_RATE_LIMIT_WINDOW_SECONDS:60}
+    otp-verify:
+      max-attempts: ${AUTH_OTP_VERIFY_MAX_ATTEMPTS:3}
+      window-seconds: ${AUTH_OTP_VERIFY_WINDOW_SECONDS:300}
+    totp-enroll:
+      max-attempts: ${AUTH_TOTP_ENROLL_MAX_ATTEMPTS:5}
+      window-seconds: ${AUTH_TOTP_ENROLL_WINDOW_SECONDS:300}
     account-lockout:
       max-failed-attempts: ${AUTH_ACCOUNT_LOCKOUT_MAX_FAILED_ATTEMPTS:5}
+  totp:
+    issuer: ${AUTH_TOTP_ISSUER:FIXYZ}
+    enrollment-pepper: ${AUTH_TOTP_ENROLLMENT_PEPPER:dev-totp-enrollment-pepper}
+    secret-store: ${AUTH_TOTP_SECRET_STORE:in-memory}
+    vault:
+      base-url: ${AUTH_TOTP_VAULT_BASE_URL:${VAULT_ADDR:http://localhost:8200}}
+      token: ${AUTH_TOTP_VAULT_TOKEN:${VAULT_TOKEN:root-token}}
+      mount: ${AUTH_TOTP_VAULT_MOUNT:secret}
+      connect-timeout: ${AUTH_TOTP_VAULT_CONNECT_TIMEOUT:2s}
+      read-timeout: ${AUTH_TOTP_VAULT_READ_TIMEOUT:5s}
   password-recovery:
     forgot:
       ip:

@@ -94,6 +94,66 @@
         }
       }
     },
+    "/api/v1/members/me/totp/enroll": {
+      "post": {
+        "tags": [
+          "member-controller"
+        ],
+        "operationId": "enrollTotp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpEnrollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseTotpEnrollResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/me/totp/confirm": {
+      "post": {
+        "tags": [
+          "member-controller"
+        ],
+        "operationId": "confirmTotp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOtpVerifyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/register": {
       "post": {
         "tags": [
@@ -213,16 +273,16 @@
           "auth-controller"
         ],
         "operationId": "verifyOtp",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/OtpVerifyRequest"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OtpVerifyRequest"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -806,7 +866,8 @@
             "type": "string",
             "format": "date-time"
           }
-        }
+        },
+        "additionalProperties": true
       },
       "ApiResponseOrderResponse": {
         "type": "object",
@@ -978,6 +1039,127 @@
           "remainingSeconds": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "TotpEnrollRequest": {
+        "required": [
+          "loginToken"
+        ],
+        "type": "object",
+        "properties": {
+          "loginToken": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseTotpEnrollResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TotpEnrollResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TotpEnrollResponse": {
+        "type": "object",
+        "properties": {
+          "manualEntryKey": {
+            "type": "string"
+          },
+          "qrUri": {
+            "type": "string"
+          },
+          "enrollmentToken": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TotpConfirmRequest": {
+        "required": [
+          "enrollmentToken",
+          "loginToken",
+          "otpCode"
+        ],
+        "type": "object",
+        "properties": {
+          "loginToken": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "enrollmentToken": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "otpCode": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseOtpVerifyResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OtpVerifyResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OtpVerifyResponse": {
+        "type": "object",
+        "properties": {
+          "verified": {
+            "type": "boolean"
+          },
+          "memberUuid": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "totpEnrolled": {
+            "type": "boolean"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "mfaVerifiedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -1171,44 +1353,18 @@
       },
       "OtpVerifyRequest": {
         "required": [
-          "memberId",
+          "loginToken",
           "otpCode"
         ],
         "type": "object",
         "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
+          "loginToken": {
+            "minLength": 1,
+            "type": "string"
           },
           "otpCode": {
             "minLength": 1,
             "type": "string"
-          }
-        }
-      },
-      "ApiResponseOtpVerifyResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/OtpVerifyResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "OtpVerifyResponse": {
-        "type": "object",
-        "properties": {
-          "verified": {
-            "type": "boolean"
           }
         }
       },
@@ -1277,15 +1433,18 @@
       "AuthLoginResponse": {
         "type": "object",
         "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "email": {
+          "loginToken": {
             "type": "string"
           },
-          "name": {
+          "nextAction": {
             "type": "string"
+          },
+          "totpEnrolled": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

@@ -9,22 +9,31 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.client.CorebankProvisioningClient;
 import com.fix.channel.client.CorebankLinkedAccountProfile;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.service.TotpService;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import jakarta.servlet.http.HttpSession;
+import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
@@ -54,7 +63,13 @@ class ChannelAuthFlowTest {
   private MemberRepository memberRepository;
 
   @Autowired
+  private ObjectMapper objectMapper;
+
+  @Autowired
   private PasswordEncoder passwordEncoder;
+
+  @Autowired
+  private TotpService totpService;
 
   @MockitoBean
   private CorebankProvisioningClient corebankProvisioningClient;
@@ -111,25 +126,291 @@ class ChannelAuthFlowTest {
   }
 
   @Test
-  void shouldLoginAndCreateHttpSession() throws Exception {
+  void shouldLoginReturnPreAuthStateAndIssueSessionAfterOtpVerification() throws Exception {
     Member member = saveMember("M-LOGIN-001", "login.user@fixyz.com", "Abcd1234!", "Login User");
+    enableTotp(member);
+    PreAuthSession preAuthSession = bootstrapPreAuthSession();
 
-    MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
-            .with(csrf())
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
             .param("email", "LOGIN.USER@fixyz.com")
             .param("password", "Abcd1234!"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.memberId").value(member.getId()))
+        .andExpect(jsonPath("$.data.loginToken").isString())
+        .andExpect(jsonPath("$.data.nextAction").value("VERIFY_TOTP"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(true))
+        .andReturn();
+
+    String loginToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+    assertThat(loginToken).isNotBlank();
+    assertThat(loginResult.getRequest().getSession(false)).isNotNull();
+
+    MvcResult verifyResult = mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", loginToken,
+                "otpCode", totpService.currentCode(member)
+            ))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.verified").value(true))
+        .andExpect(jsonPath("$.data.memberUuid").value(member.getMemberNo()))
         .andExpect(jsonPath("$.data.email").value("login.user@fixyz.com"))
         .andExpect(jsonPath("$.data.name").value("Login User"))
         .andReturn();
 
-    HttpSession session = result.getRequest().getSession(false);
+    HttpSession session = verifyResult.getRequest().getSession(false);
     assertThat(session).isNotNull();
     assertThat(session.getAttribute("AUTH_MEMBER_ID")).isEqualTo(member.getId());
     assertThat(session.getAttribute("AUTH_MEMBER_NAME")).isEqualTo("Login User");
     assertThat(session.getAttribute("AUTH_ACCOUNT_ID")).isEqualTo("1001");
+  }
+
+  @Test
+  void shouldRequireTotpEnrollmentBeforeIssuingSessionForFirstLogin() throws Exception {
+    Member member = saveMember("M-LOGIN-003", "enroll.user@fixyz.com", "Abcd1234!", "Enroll User");
+    PreAuthSession preAuthSession = bootstrapPreAuthSession();
+
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .param("email", "enroll.user@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.nextAction").value("ENROLL_TOTP"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false))
+        .andReturn();
+
+    String loginToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    MvcResult enrollResult = mockMvc.perform(post("/api/v1/members/me/totp/enroll")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of("loginToken", loginToken))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.manualEntryKey").isString())
+        .andExpect(jsonPath("$.data.qrUri").isString())
+        .andExpect(jsonPath("$.data.enrollmentToken").isString())
+        .andReturn();
+
+    JsonNode enrollmentData = objectMapper.readTree(enrollResult.getResponse().getContentAsString()).path("data");
+    String enrollmentToken = enrollmentData.path("enrollmentToken").asText();
+    String manualEntryKey = enrollmentData.path("manualEntryKey").asText();
+
+    MvcResult confirmResult = mockMvc.perform(post("/api/v1/members/me/totp/confirm")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", loginToken,
+                "enrollmentToken", enrollmentToken,
+                "otpCode", totpService.currentCodeForManualEntryKey(manualEntryKey)
+            ))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.verified").value(true))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(true))
+        .andReturn();
+
+    HttpSession session = confirmResult.getRequest().getSession(false);
+    assertThat(session).isNotNull();
+
+    Member enrolled = memberRepository.findByEmail("enroll.user@fixyz.com").orElseThrow();
+    assertThat(enrolled.isTotpEnabled()).isTrue();
+    assertThat(enrolled.getTotpEnrolledAt()).isNotNull();
+  }
+
+  @Test
+  void shouldRequireTotpEnrollmentAgainOnLaterLoginWhenRegistrationWasNotCompleted() throws Exception {
+    saveMember("M-LOGIN-003B", "resume.enroll@fixyz.com", "Abcd1234!", "Resume Enroll");
+
+    PreAuthSession firstSession = bootstrapPreAuthSession();
+    MvcResult firstLogin = mockMvc.perform(post("/api/v1/auth/login")
+            .session(firstSession.session())
+            .header("X-CSRF-TOKEN", firstSession.csrfToken())
+            .param("email", "resume.enroll@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.nextAction").value("ENROLL_TOTP"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false))
+        .andReturn();
+
+    String firstLoginToken = objectMapper.readTree(firstLogin.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    mockMvc.perform(post("/api/v1/members/me/totp/enroll")
+            .session(firstSession.session())
+            .header("X-CSRF-TOKEN", firstSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of("loginToken", firstLoginToken))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.manualEntryKey").isString())
+        .andExpect(jsonPath("$.data.enrollmentToken").isString());
+
+    PreAuthSession secondSession = bootstrapPreAuthSession();
+    mockMvc.perform(post("/api/v1/auth/login")
+            .session(secondSession.session())
+            .header("X-CSRF-TOKEN", secondSession.csrfToken())
+            .param("email", "resume.enroll@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.nextAction").value("ENROLL_TOTP"))
+        .andExpect(jsonPath("$.data.totpEnrolled").value(false));
+  }
+
+  @Test
+  void shouldThrottleOtpVerificationAttemptsPerLoginToken() throws Exception {
+    Member member = saveMember("M-LOGIN-004", "otp.limit@fixyz.com", "Abcd1234!", "Otp Limit");
+    enableTotp(member);
+    PreAuthSession preAuthSession = bootstrapPreAuthSession();
+
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .param("email", "otp.limit@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    String loginToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    for (int attempt = 0; attempt < 3; attempt++) {
+      mockMvc.perform(post("/api/v1/auth/otp/verify")
+              .session(preAuthSession.session())
+              .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+              .contentType(MediaType.APPLICATION_JSON)
+              .content(json(Map.of(
+                  "loginToken", loginToken,
+                  "otpCode", "000000"
+              ))))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("AUTH-010"));
+    }
+
+    mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", loginToken,
+                "otpCode", totpService.currentCode(member)
+            ))))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("RATE_001"))
+        .andExpect(jsonPath("$.message").value("rate limit exceeded"))
+        .andExpect(header().exists("Retry-After"));
+  }
+
+  @Test
+  void shouldRejectOtpVerifyFromDifferentPreAuthSession() throws Exception {
+    Member member = saveMember("M-LOGIN-005", "bound.user@fixyz.com", "Abcd1234!", "Bound User");
+    enableTotp(member);
+
+    PreAuthSession loginSession = bootstrapPreAuthSession();
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .session(loginSession.session())
+            .header("X-CSRF-TOKEN", loginSession.csrfToken())
+            .param("email", "bound.user@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    String loginToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    PreAuthSession attackerSession = bootstrapPreAuthSession();
+    mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .session(attackerSession.session())
+            .header("X-CSRF-TOKEN", attackerSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", loginToken,
+                "otpCode", totpService.currentCode(member)
+            ))))
+        .andExpect(status().isGone())
+        .andExpect(jsonPath("$.code").value("AUTH-018"));
+  }
+
+  @Test
+  void shouldReturnEnrollUrlWhenOtpVerifyIsCalledBeforeEnrollment() throws Exception {
+    saveMember("M-LOGIN-006", "not.enrolled@fixyz.com", "Abcd1234!", "Not Enrolled");
+    PreAuthSession preAuthSession = bootstrapPreAuthSession();
+
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .param("email", "not.enrolled@fixyz.com")
+            .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.nextAction").value("ENROLL_TOTP"))
+        .andReturn();
+
+    String loginToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", loginToken,
+                "otpCode", "000000"
+            ))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("AUTH-009"))
+        .andExpect(jsonPath("$.enrollUrl").value("/settings/totp/enroll"));
+  }
+
+  @Test
+  void shouldRejectTotpReplayWithinSameWindowAcrossSeparateLoginAttempts() throws Exception {
+    Member member = saveMember("M-LOGIN-007", "replay.user@fixyz.com", "Abcd1234!", "Replay User");
+    enableTotp(member);
+    waitForStableTotpWindow();
+
+    String replayCode = totpService.currentCode(member);
+
+    PreAuthSession firstSession = bootstrapPreAuthSession();
+    String firstToken = loginTokenFor(firstSession, "replay.user@fixyz.com", "Abcd1234!");
+    mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .session(firstSession.session())
+            .header("X-CSRF-TOKEN", firstSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", firstToken,
+                "otpCode", replayCode
+            ))))
+        .andExpect(status().isOk());
+
+    PreAuthSession secondSession = bootstrapPreAuthSession();
+    String secondToken = loginTokenFor(secondSession, "replay.user@fixyz.com", "Abcd1234!");
+    mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .session(secondSession.session())
+            .header("X-CSRF-TOKEN", secondSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", secondToken,
+                "otpCode", replayCode
+            ))))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-011"));
   }
 
   @Test
@@ -176,5 +457,51 @@ class ChannelAuthFlowTest {
 
   private Member saveMember(String memberNo, String email, String rawPassword, String name) {
     return memberRepository.save(Member.registerUser(memberNo, email, passwordEncoder.encode(rawPassword), name));
+  }
+
+  private void enableTotp(Member member) {
+    member.enableTotpEnrollment();
+    memberRepository.saveAndFlush(member);
+    totpService.provisionActiveSecret(member);
+  }
+
+  private PreAuthSession bootstrapPreAuthSession() throws Exception {
+    MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
+    HttpSession session = result.getRequest().getSession(false);
+    assertThat(session).isInstanceOf(MockHttpSession.class);
+    return new PreAuthSession((MockHttpSession) session, root.path("data").path("token").asText());
+  }
+
+  private String loginTokenFor(PreAuthSession preAuthSession, String email, String password) throws Exception {
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .session(preAuthSession.session())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .param("email", email)
+            .param("password", password))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    return objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+  }
+
+  private String json(Object payload) throws Exception {
+    return objectMapper.writeValueAsString(payload);
+  }
+
+  private void waitForStableTotpWindow() throws InterruptedException {
+    long offset = Instant.now().getEpochSecond() % 30L;
+    if (offset >= 25L) {
+      Thread.sleep((31L - offset) * 1000L);
+    }
+  }
+
+  private record PreAuthSession(MockHttpSession session, String csrfToken) {
   }
 }
