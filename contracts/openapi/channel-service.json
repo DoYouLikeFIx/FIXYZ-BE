@@ -94,6 +94,36 @@
         }
       }
     },
+    "/api/v1/members/me/totp/rebind": {
+      "post": {
+        "tags": [
+          "member-controller"
+        ],
+        "operationId": "rebindTotp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberTotpRebindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseTotpRebindBootstrapResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/members/me/totp/enroll": {
       "post": {
         "tags": [
@@ -290,6 +320,66 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseOtpVerifyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa-recovery/rebind": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "bootstrapMfaRecoveryRebind",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaRecoveryRebindRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseTotpRebindBootstrapResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/mfa-recovery/rebind/confirm": {
+      "post": {
+        "tags": [
+          "auth-controller"
+        ],
+        "operationId": "confirmMfaRecoveryRebind",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaRecoveryRebindConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMfaRecoveryRebindConfirmResponse"
                 }
               }
             }
@@ -1042,6 +1132,57 @@
           }
         }
       },
+      "MemberTotpRebindRequest": {
+        "required": [
+          "currentPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseTotpRebindBootstrapResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TotpRebindBootstrapResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TotpRebindBootstrapResponse": {
+        "type": "object",
+        "properties": {
+          "rebindToken": {
+            "type": "string"
+          },
+          "manualEntryKey": {
+            "type": "string"
+          },
+          "qrUri": {
+            "type": "string"
+          },
+          "enrollmentToken": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "TotpEnrollRequest": {
         "required": [
           "loginToken"
@@ -1365,6 +1506,69 @@
           "otpCode": {
             "minLength": 1,
             "type": "string"
+          }
+        }
+      },
+      "MfaRecoveryRebindRequest": {
+        "required": [
+          "recoveryProof"
+        ],
+        "type": "object",
+        "properties": {
+          "recoveryProof": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "MfaRecoveryRebindConfirmRequest": {
+        "required": [
+          "enrollmentToken",
+          "otpCode",
+          "rebindToken"
+        ],
+        "type": "object",
+        "properties": {
+          "rebindToken": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "enrollmentToken": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "otpCode": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseMfaRecoveryRebindConfirmResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MfaRecoveryRebindConfirmResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MfaRecoveryRebindConfirmResponse": {
+        "type": "object",
+        "properties": {
+          "rebindCompleted": {
+            "type": "boolean"
+          },
+          "reauthRequired": {
+            "type": "boolean"
           }
         }
       },
