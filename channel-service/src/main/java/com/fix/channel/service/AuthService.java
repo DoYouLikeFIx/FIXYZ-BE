@@ -58,6 +58,8 @@ public class AuthService {
   private static final String ACCOUNT_LOCKED_SEVERITY = "HIGH";
   private static final String AUTH_ACCOUNT_ID = "AUTH_ACCOUNT_ID";
   private static final String AUTH_LAST_MFA_VERIFIED_AT = "AUTH_LAST_MFA_VERIFIED_AT";
+  private static final String AUTH_LOGIN_CLIENT_IP = "AUTH_LOGIN_CLIENT_IP";
+  private static final String AUTH_LOGIN_USER_AGENT = "AUTH_LOGIN_USER_AGENT";
   private static final String NEXT_ACTION_VERIFY_TOTP = "VERIFY_TOTP";
   private static final String NEXT_ACTION_ENROLL_TOTP = "ENROLL_TOTP";
 
@@ -508,7 +510,7 @@ public class AuthService {
       String loginToken
   ) {
     Instant mfaVerifiedAt = Instant.now();
-    HttpSession session = establishAuthenticatedSession(member, request, correlationId, mfaVerifiedAt);
+    HttpSession session = establishAuthenticatedSession(member, request, correlationId, mfaVerifiedAt, clientIp, userAgent);
 
     auditLogRepository.save(AuditLog.of(
         member.getId(),
@@ -543,7 +545,9 @@ public class AuthService {
       Member member,
       HttpServletRequest request,
       String correlationId,
-      Instant mfaVerifiedAt
+      Instant mfaVerifiedAt,
+      String clientIp,
+      String userAgent
   ) {
     HttpSession existingSession = request.getSession(false);
     if (existingSession != null) {
@@ -554,6 +558,8 @@ public class AuthService {
     session.setAttribute("AUTH_MEMBER_ID", member.getId());
     session.setAttribute("AUTH_MEMBER_NAME", member.getName());
     session.setAttribute(AUTH_LAST_MFA_VERIFIED_AT, mfaVerifiedAt.toString());
+    session.setAttribute(AUTH_LOGIN_CLIENT_IP, clientIp);
+    session.setAttribute(AUTH_LOGIN_USER_AGENT, userAgent);
     session.setAttribute(
         FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME,
         member.getEmail()
