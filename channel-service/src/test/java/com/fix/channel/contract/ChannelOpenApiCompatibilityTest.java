@@ -26,9 +26,20 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode otpVerifySchema = contract.path("components").path("schemas").path("OtpVerifyResponse");
     JsonNode totpEnrollResponse = contract.path("components").path("schemas").path("ApiResponseTotpEnrollResponse");
     JsonNode totpEnrollSchema = contract.path("components").path("schemas").path("TotpEnrollResponse");
+    JsonNode totpRebindBootstrapResponse = contract.path("components").path("schemas")
+        .path("ApiResponseTotpRebindBootstrapResponse");
+    JsonNode totpRebindBootstrapSchema = contract.path("components").path("schemas").path("TotpRebindBootstrapResponse");
+    JsonNode mfaRecoveryRebindConfirmResponse = contract.path("components").path("schemas")
+        .path("ApiResponseMfaRecoveryRebindConfirmResponse");
+    JsonNode mfaRecoveryRebindConfirmSchema = contract.path("components").path("schemas")
+        .path("MfaRecoveryRebindConfirmResponse");
     JsonNode totpEnrollRequestSchema = contract.path("components").path("schemas").path("TotpEnrollRequest");
     JsonNode totpConfirmRequestSchema = contract.path("components").path("schemas").path("TotpConfirmRequest");
     JsonNode otpVerifyRequestSchema = contract.path("components").path("schemas").path("OtpVerifyRequest");
+    JsonNode memberTotpRebindRequestSchema = contract.path("components").path("schemas").path("MemberTotpRebindRequest");
+    JsonNode mfaRecoveryRebindRequestSchema = contract.path("components").path("schemas").path("MfaRecoveryRebindRequest");
+    JsonNode mfaRecoveryRebindConfirmRequestSchema = contract.path("components").path("schemas")
+        .path("MfaRecoveryRebindConfirmRequest");
     JsonNode authSessionResponse = contract.path("components").path("schemas")
         .path("ApiResponseAuthSessionResponse");
     JsonNode authSessionSchema = contract.path("components").path("schemas").path("AuthSessionResponse");
@@ -63,6 +74,9 @@ class ChannelOpenApiCompatibilityTest {
             "/api/v1/auth/login",
             "/api/v1/members/me/totp/enroll",
             "/api/v1/members/me/totp/confirm",
+            "/api/v1/members/me/totp/rebind",
+            "/api/v1/auth/mfa-recovery/rebind",
+            "/api/v1/auth/mfa-recovery/rebind/confirm",
             "/api/v1/orders",
             "/api/v1/orders/sessions",
             "/api/v1/orders/sessions/{orderSessionId}",
@@ -90,6 +104,10 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(totpEnrollResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(totpRebindBootstrapResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(mfaRecoveryRebindConfirmResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(otpVerifyResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(authSessionResponse.path("properties").path("error").path("$ref").asText())
@@ -116,8 +134,18 @@ class ChannelOpenApiCompatibilityTest {
         .contains("loginToken", "enrollmentToken", "otpCode");
     assertThat(fieldNames(otpVerifyRequestSchema.path("properties")))
         .contains("loginToken", "otpCode");
+    assertThat(fieldNames(memberTotpRebindRequestSchema.path("properties")))
+        .contains("currentPassword");
+    assertThat(fieldNames(mfaRecoveryRebindRequestSchema.path("properties")))
+        .contains("recoveryProof");
+    assertThat(fieldNames(mfaRecoveryRebindConfirmRequestSchema.path("properties")))
+        .contains("rebindToken", "enrollmentToken", "otpCode");
     assertThat(fieldNames(totpEnrollSchema.path("properties")))
         .contains("manualEntryKey", "qrUri", "enrollmentToken", "expiresAt");
+    assertThat(fieldNames(totpRebindBootstrapSchema.path("properties")))
+        .contains("rebindToken", "manualEntryKey", "qrUri", "enrollmentToken", "expiresAt");
+    assertThat(fieldNames(mfaRecoveryRebindConfirmSchema.path("properties")))
+        .contains("rebindCompleted", "reauthRequired");
     assertThat(fieldNames(otpVerifySchema.path("properties")))
         .contains("verified", "memberUuid", "email", "name", "role", "totpEnrolled", "accountId", "accountNumber", "mfaVerifiedAt");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
@@ -150,6 +178,15 @@ class ChannelOpenApiCompatibilityTest {
     assertThat(paths.path("/api/v1/members/me/totp/confirm").path("post").path("requestBody").path("content")
         .path("application/json").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/TotpConfirmRequest");
+    assertThat(paths.path("/api/v1/members/me/totp/rebind").path("post").path("requestBody").path("content")
+        .path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/MemberTotpRebindRequest");
+    assertThat(paths.path("/api/v1/auth/mfa-recovery/rebind").path("post").path("requestBody").path("content")
+        .path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/MfaRecoveryRebindRequest");
+    assertThat(paths.path("/api/v1/auth/mfa-recovery/rebind/confirm").path("post").path("requestBody").path("content")
+        .path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/MfaRecoveryRebindConfirmRequest");
     assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
     assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
