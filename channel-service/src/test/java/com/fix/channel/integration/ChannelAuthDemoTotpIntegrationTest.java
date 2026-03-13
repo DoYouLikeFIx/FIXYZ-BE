@@ -15,15 +15,22 @@ import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.service.AccountPositionService;
 import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
+import com.fix.channel.vo.AccountPositionResult;
 import jakarta.servlet.http.Cookie;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
@@ -62,6 +69,9 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
   @MockitoBean
   private CorebankProvisioningClient corebankProvisioningClient;
 
+  @Autowired
+  private StubAccountPositionService accountPositionService;
+
   @BeforeEach
   void setUp() {
     orderSessionRepository.deleteAll();
@@ -83,6 +93,7 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
             org.mockito.ArgumentMatchers.any(),
             org.mockito.ArgumentMatchers.any()
         );
+    accountPositionService.reset();
   }
 
   @Test
@@ -126,7 +137,9 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
                 71000L
             ))))
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.data.status").value("PENDING_NEW"))
+        .andExpect(jsonPath("$.data.status").value("AUTHED"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(false))
+        .andExpect(jsonPath("$.data.authorizationReason").value("RECENT_LOGIN_MFA"))
         .andExpect(jsonPath("$.data.symbol").value("005930"))
         .andExpect(jsonPath("$.data.qty").value(2))
         .andExpect(jsonPath("$.data.price").value(71000));
@@ -211,5 +224,58 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
       Integer qty,
       Long price
   ) {
+  }
+
+  @TestConfiguration
+  static class TestConfig {
+
+    @Bean
+    @Primary
+    StubAccountPositionService stubAccountPositionService() {
+      return new StubAccountPositionService();
+    }
+  }
+
+  static class StubAccountPositionService extends AccountPositionService {
+
+    private BigDecimal availableBalance = BigDecimal.valueOf(5_000_000);
+    private BigDecimal availableQuantity = BigDecimal.valueOf(500);
+
+    StubAccountPositionService() {
+      super(null);
+    }
+
+    @Override
+    public AccountPositionResult getAccountSummary(com.fix.channel.vo.AccountSummaryQueryCommand command) {
+      return AccountPositionResult.of(
+          command.getAccountId(),
+          command.getMemberId(),
+          "",
+          BigDecimal.ZERO,
+          BigDecimal.ZERO,
+          availableBalance,
+          "KRW",
+          Instant.parse("2026-03-13T00:00:00Z")
+      );
+    }
+
+    @Override
+    public AccountPositionResult getAccountPosition(com.fix.channel.vo.AccountPositionQueryCommand command) {
+      return AccountPositionResult.of(
+          command.getAccountId(),
+          command.getMemberId(),
+          command.getSymbol(),
+          availableQuantity,
+          availableQuantity,
+          BigDecimal.ZERO,
+          "KRW",
+          Instant.parse("2026-03-13T00:00:00Z")
+      );
+    }
+
+    void reset() {
+      availableBalance = BigDecimal.valueOf(5_000_000);
+      availableQuantity = BigDecimal.valueOf(500);
+    }
   }
 }
