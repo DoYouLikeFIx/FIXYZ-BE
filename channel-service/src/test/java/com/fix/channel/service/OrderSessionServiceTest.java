@@ -2,13 +2,17 @@ package com.fix.channel.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 import com.fix.channel.entity.Member;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
+import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.vo.AccountPositionQueryCommand;
+import com.fix.channel.vo.AccountPositionResult;
+import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import com.fix.channel.vo.OrderSessionQueryCommand;
 import com.fix.common.error.BusinessException;
@@ -61,6 +65,9 @@ class OrderSessionServiceTest {
   private AuditLogRepository auditLogRepository;
 
   @Autowired
+  private SecurityEventRepository securityEventRepository;
+
+  @Autowired
   private InMemoryOrderSessionTtlStore orderSessionTtlStore;
 
   @Autowired
@@ -69,11 +76,15 @@ class OrderSessionServiceTest {
   @Autowired
   private RecordingOrderSessionRateLimitService orderSessionRateLimitService;
 
+  @Autowired
+  private StubAccountPositionService accountPositionService;
+
   private Member ownerMember;
   private Member otherMember;
 
   @BeforeEach
   void setUp() {
+    securityEventRepository.deleteAll();
     auditLogRepository.deleteAll();
     orderSessionRepository.deleteAll();
     memberRepository.deleteAll();
@@ -82,6 +93,7 @@ class OrderSessionServiceTest {
     orderSessionRateLimitService.reset();
     ownerMember = saveLinkedMember("M-ORD-SVC-001", "svc-owner@fixyz.com", "Service Owner", 101L, "12345678901234");
     otherMember = saveLinkedMember("M-ORD-SVC-002", "svc-other@fixyz.com", "Service Other", 202L, "43210987654321");
+    accountPositionService.reset(ownerMember.getAccountId(), ownerMember.getId());
   }
 
   @Test
@@ -95,6 +107,8 @@ class OrderSessionServiceTest {
     assertThat(result.isCreated()).isTrue();
     assertThat(result.getOrderSessionId()).isNotBlank();
     assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("ELEVATED_ORDER_RISK");
     assertThat(result.getAccountId()).isEqualTo(101L);
     assertThat(result.getSymbol()).isEqualTo("005930");
     assertThat(result.getSide()).isEqualTo("BUY");
@@ -111,7 +125,132 @@ class OrderSessionServiceTest {
           assertThat(session.getExpiresAt()).isEqualTo(result.getExpiresAt());
           assertThat(session.getAccountId()).isEqualTo(101L);
           assertThat(session.getSymbol()).isEqualTo("005930");
+          assertThat(session.isChallengeRequired()).isTrue();
+          assertThat(session.getAuthorizationReason()).isEqualTo("ELEVATED_ORDER_RISK");
         });
+  }
+
+  @Test
+  void shouldAutoAuthorizeLowRiskSessionWhenRecentLoginMfaIsFresh() {
+    Instant freshMfaVerifiedAt = Instant.now().minusSeconds(30);
+
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174270",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(10000),
+        freshMfaVerifiedAt,
+        "127.0.0.1",
+        "MockMvc",
+        "127.0.0.1",
+        "MockMvc"
+    ));
+
+    assertThat(result.isCreated()).isTrue();
+    assertThat(result.getStatus()).isEqualTo("AUTHED");
+    assertThat(result.isChallengeRequired()).isFalse();
+    assertThat(result.getAuthorizationReason()).isEqualTo("RECENT_LOGIN_MFA");
+    assertThat(orderSessionRepository.findByOrderSessionId(result.getOrderSessionId()))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED);
+          assertThat(session.isChallengeRequired()).isFalse();
+          assertThat(session.getAuthorizationReason()).isEqualTo("RECENT_LOGIN_MFA");
+        });
+  }
+
+  @Test
+  void shouldRequireStepUpWhenLoginContextChangesEvenForLowRiskOrder() {
+    Instant freshMfaVerifiedAt = Instant.now().minusSeconds(30);
+
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174271",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(10000),
+        freshMfaVerifiedAt,
+        "127.0.0.1",
+        "MockMvc",
+        "10.0.0.44",
+        "DifferentDevice"
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+    assertThat(result.getAuthorizationReason()).isEqualTo("ELEVATED_ORDER_RISK");
+  }
+
+  @Test
+  void shouldRequireStepUpWhenRecentSecurityEventExists() {
+    Instant freshMfaVerifiedAt = Instant.now().minusSeconds(30);
+    memberRepository.flush();
+
+    securityEventRepository.save(SecurityEvent.of(
+        ownerMember.getId(),
+        "MFA_REBIND_COMPLETED",
+        "127.0.0.1",
+        "MockMvc",
+        "HIGH"
+    ));
+
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174272",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(10000),
+        freshMfaVerifiedAt,
+        "127.0.0.1",
+        "MockMvc",
+        "127.0.0.1",
+        "MockMvc"
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(result.isChallengeRequired()).isTrue();
+  }
+
+  @Test
+  void shouldRejectCreateWhenAvailableCashIsInsufficient() {
+    accountPositionService.setAvailableBalance(BigDecimal.valueOf(50_000));
+
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(ownerLimitCommand(
+        "123e4567-e89b-42d3-a456-426614174273",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.ORD_INSUFFICIENT_CASH));
+  }
+
+  @Test
+  void shouldRejectSellCreateWhenAvailableQuantityIsInsufficient() {
+    accountPositionService.setAvailableQuantity(BigDecimal.valueOf(5));
+
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174274",
+        "005930",
+        "SELL",
+        "LIMIT",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION));
   }
 
   @Test
@@ -148,7 +287,27 @@ class OrderSessionServiceTest {
     assertThat(replayed.isCreated()).isFalse();
     assertThat(replayed.getOrderSessionId()).isEqualTo(created.getOrderSessionId());
     assertThat(replayed.getExpiresAt()).isEqualTo(created.getExpiresAt());
+    assertThat(replayed.isChallengeRequired()).isTrue();
+    assertThat(replayed.getAuthorizationReason()).isEqualTo("ELEVATED_ORDER_RISK");
     assertThat(auditLogRepository.count()).isEqualTo(1L);
+  }
+
+  @Test
+  void shouldReturnAuthorizationDecisionMetadataOnOwnedStatusLookup() {
+    var created = orderSessionService.createOrderSession(ownerLimitCommand(
+        "123e4567-e89b-42d3-a456-426614174271",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    ));
+
+    var loaded = orderSessionService.getOrderSession(
+        OrderSessionQueryCommand.of(ownerMember.getId(), created.getOrderSessionId())
+    );
+
+    assertThat(loaded.getOrderSessionId()).isEqualTo(created.getOrderSessionId());
+    assertThat(loaded.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(loaded.isChallengeRequired()).isTrue();
+    assertThat(loaded.getAuthorizationReason()).isEqualTo("ELEVATED_ORDER_RISK");
   }
 
   @Test
@@ -269,6 +428,8 @@ class OrderSessionServiceTest {
     assertThat(replayed.isCreated()).isFalse();
     assertThat(replayed.getOrderSessionId()).isNotBlank();
     assertThat(replayed.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(replayed.isChallengeRequired()).isTrue();
+    assertThat(replayed.getAuthorizationReason()).isEqualTo("ELEVATED_ORDER_RISK");
     assertThat(orderSessionRateLimitService.enforcementCount(ownerMember.getId())).isEqualTo(1);
     assertThat(orderSessionRateLimitService.refundCount(ownerMember.getId())).isEqualTo(1);
     assertThat(auditLogRepository.count()).isEqualTo(1L);
@@ -339,6 +500,12 @@ class OrderSessionServiceTest {
     @Primary
     RecordingOrderSessionRateLimitService testOrderSessionRateLimitService() {
       return new RecordingOrderSessionRateLimitService();
+    }
+
+    @Bean
+    @Primary
+    StubAccountPositionService stubAccountPositionService() {
+      return new StubAccountPositionService();
     }
   }
 
@@ -419,7 +586,12 @@ class OrderSessionServiceTest {
     }
 
     @Override
-    public OrderSession createPendingNewSession(OrderSessionCreateCommand command, Instant expiresAt) {
+    public OrderSession createSession(
+        OrderSessionCreateCommand command,
+        boolean challengeRequired,
+        String authorizationReason,
+        Instant expiresAt
+    ) {
       if (failNextCreateWithDuplicateWithoutInsert) {
         failNextCreateWithDuplicateWithoutInsert = false;
         throw new DataIntegrityViolationException("simulated duplicate create race without persisted session");
@@ -427,14 +599,16 @@ class OrderSessionServiceTest {
       if (failNextCreateWithDuplicateAfterInsert) {
         failNextCreateWithDuplicateAfterInsert = false;
         OrderSession concurrentSession =
-            requiresNewTransactionTemplate.execute(status -> super.createPendingNewSession(command, expiresAt));
+            requiresNewTransactionTemplate.execute(
+                status -> super.createSession(command, challengeRequired, authorizationReason, expiresAt)
+            );
         if (concurrentSession == null) {
           throw new IllegalStateException("simulated duplicate create race did not persist a session");
         }
         orderSessionTtlStore.activate(concurrentSession.getOrderSessionId(), concurrentSession.getExpiresAt());
         throw new DataIntegrityViolationException("simulated duplicate create race");
       }
-      return super.createPendingNewSession(command, expiresAt);
+      return super.createSession(command, challengeRequired, authorizationReason, expiresAt);
     }
 
     void failNextCreateWithDuplicateAfterInsert() {
@@ -481,6 +655,61 @@ class OrderSessionServiceTest {
     void reset() {
       enforcementCounts.clear();
       refundCounts.clear();
+    }
+  }
+
+  static class StubAccountPositionService extends AccountPositionService {
+
+    private Long accountId = 0L;
+    private Long memberId = 0L;
+    private BigDecimal availableBalance = BigDecimal.valueOf(5_000_000);
+    private BigDecimal availableQuantity = BigDecimal.valueOf(500);
+
+    StubAccountPositionService() {
+      super(null);
+    }
+
+    @Override
+    public AccountPositionResult getAccountSummary(AccountSummaryQueryCommand command) {
+      return AccountPositionResult.of(
+          command.getAccountId(),
+          command.getMemberId(),
+          "",
+          BigDecimal.ZERO,
+          BigDecimal.ZERO,
+          availableBalance,
+          "KRW",
+          Instant.now()
+      );
+    }
+
+    @Override
+    public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command) {
+      return AccountPositionResult.of(
+          command.getAccountId(),
+          command.getMemberId(),
+          command.getSymbol(),
+          availableQuantity,
+          availableQuantity,
+          BigDecimal.ZERO,
+          "KRW",
+          Instant.now()
+      );
+    }
+
+    void reset(Long accountId, Long memberId) {
+      this.accountId = accountId;
+      this.memberId = memberId;
+      this.availableBalance = BigDecimal.valueOf(5_000_000);
+      this.availableQuantity = BigDecimal.valueOf(500);
+    }
+
+    void setAvailableBalance(BigDecimal availableBalance) {
+      this.availableBalance = availableBalance;
+    }
+
+    void setAvailableQuantity(BigDecimal availableQuantity) {
+      this.availableQuantity = availableQuantity;
     }
   }
 }
