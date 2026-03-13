@@ -8,12 +8,18 @@ public class OrderSessionResult {
   private final String orderSessionId;
   private final String clOrdId;
   private final String status;
+  private final boolean challengeRequired;
+  private final String authorizationReason;
   private final Long accountId;
   private final String symbol;
   private final String side;
   private final String orderType;
   private final BigDecimal qty;
   private final BigDecimal price;
+  private final String quoteSnapshotId;
+  private final Instant quoteAsOf;
+  private final String quoteSourceMode;
+  private final BigDecimal preTradePrice;
   private final Instant expiresAt;
   private final Long remainingSeconds;
   private final String executionResult;
@@ -32,12 +38,18 @@ public class OrderSessionResult {
       String orderSessionId,
       String clOrdId,
       String status,
+      boolean challengeRequired,
+      String authorizationReason,
       Long accountId,
       String symbol,
       String side,
       String orderType,
       BigDecimal qty,
       BigDecimal price,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      String quoteSourceMode,
+      BigDecimal preTradePrice,
       Instant expiresAt,
       Long remainingSeconds,
       String executionResult,
@@ -55,12 +67,18 @@ public class OrderSessionResult {
     this.orderSessionId = orderSessionId;
     this.clOrdId = clOrdId;
     this.status = status;
+    this.challengeRequired = challengeRequired;
+    this.authorizationReason = authorizationReason;
     this.accountId = accountId;
     this.symbol = symbol;
     this.side = side;
     this.orderType = orderType;
     this.qty = qty;
     this.price = price;
+    this.quoteSnapshotId = quoteSnapshotId;
+    this.quoteAsOf = quoteAsOf;
+    this.quoteSourceMode = quoteSourceMode;
+    this.preTradePrice = preTradePrice;
     this.expiresAt = expiresAt;
     this.remainingSeconds = remainingSeconds;
     this.executionResult = executionResult;
@@ -80,12 +98,18 @@ public class OrderSessionResult {
       String orderSessionId,
       String clOrdId,
       String status,
+      boolean challengeRequired,
+      String authorizationReason,
       Long accountId,
       String symbol,
       String side,
       String orderType,
       BigDecimal qty,
       BigDecimal price,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      String quoteSourceMode,
+      BigDecimal preTradePrice,
       Instant expiresAt,
       Long remainingSeconds,
       String executionResult,
@@ -104,12 +128,18 @@ public class OrderSessionResult {
         orderSessionId,
         clOrdId,
         status,
+        challengeRequired,
+        authorizationReason,
         accountId,
         symbol,
         side,
         orderType,
         qty,
         price,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode,
+        preTradePrice,
         expiresAt,
         remainingSeconds,
         executionResult,
@@ -138,6 +168,14 @@ public class OrderSessionResult {
     return status;
   }
 
+  public boolean isChallengeRequired() {
+    return challengeRequired;
+  }
+
+  public String getAuthorizationReason() {
+    return authorizationReason;
+  }
+
   public Long getAccountId() {
     return accountId;
   }
@@ -160,6 +198,22 @@ public class OrderSessionResult {
 
   public BigDecimal getPrice() {
     return price;
+  }
+
+  public String getQuoteSnapshotId() {
+    return quoteSnapshotId;
+  }
+
+  public Instant getQuoteAsOf() {
+    return quoteAsOf;
+  }
+
+  public String getQuoteSourceMode() {
+    return quoteSourceMode;
+  }
+
+  public BigDecimal getPreTradePrice() {
+    return preTradePrice;
   }
 
   public Instant getExpiresAt() {

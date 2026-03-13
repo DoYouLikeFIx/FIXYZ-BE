@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 
 public class OrderSessionCreateCommand {
 
@@ -15,6 +16,11 @@ public class OrderSessionCreateCommand {
   private final String orderType;
   private final BigDecimal qty;
   private final BigDecimal price;
+  private final Instant lastMfaVerifiedAt;
+  private final String loginClientIp;
+  private final String loginUserAgent;
+  private final String requestClientIp;
+  private final String requestUserAgent;
 
   private OrderSessionCreateCommand(
       Long memberId,
@@ -24,7 +30,12 @@ public class OrderSessionCreateCommand {
       String side,
       String orderType,
       BigDecimal qty,
-      BigDecimal price
+      BigDecimal price,
+      Instant lastMfaVerifiedAt,
+      String loginClientIp,
+      String loginUserAgent,
+      String requestClientIp,
+      String requestUserAgent
   ) {
     this.memberId = memberId;
     this.accountId = accountId;
@@ -34,6 +45,11 @@ public class OrderSessionCreateCommand {
     this.orderType = orderType;
     this.qty = qty;
     this.price = price;
+    this.lastMfaVerifiedAt = lastMfaVerifiedAt;
+    this.loginClientIp = loginClientIp;
+    this.loginUserAgent = loginUserAgent;
+    this.requestClientIp = requestClientIp;
+    this.requestUserAgent = requestUserAgent;
   }
 
   public static OrderSessionCreateCommand of(
@@ -46,7 +62,53 @@ public class OrderSessionCreateCommand {
       BigDecimal qty,
       BigDecimal price
   ) {
-    return new OrderSessionCreateCommand(memberId, accountId, clOrdId, symbol, side, orderType, qty, price);
+    return of(memberId, accountId, clOrdId, symbol, side, orderType, qty, price, null, null, null, null, null);
+  }
+
+  public static OrderSessionCreateCommand of(
+      Long memberId,
+      Long accountId,
+      String clOrdId,
+      String symbol,
+      String side,
+      String orderType,
+      BigDecimal qty,
+      BigDecimal price,
+      Instant lastMfaVerifiedAt
+  ) {
+    return of(memberId, accountId, clOrdId, symbol, side, orderType, qty, price, lastMfaVerifiedAt, null, null, null, null);
+  }
+
+  public static OrderSessionCreateCommand of(
+      Long memberId,
+      Long accountId,
+      String clOrdId,
+      String symbol,
+      String side,
+      String orderType,
+      BigDecimal qty,
+      BigDecimal price,
+      Instant lastMfaVerifiedAt,
+      String loginClientIp,
+      String loginUserAgent,
+      String requestClientIp,
+      String requestUserAgent
+  ) {
+    return new OrderSessionCreateCommand(
+        memberId,
+        accountId,
+        clOrdId,
+        symbol,
+        side,
+        orderType,
+        qty,
+        price,
+        lastMfaVerifiedAt,
+        loginClientIp,
+        loginUserAgent,
+        requestClientIp,
+        requestUserAgent
+    );
   }
 
   public Long getMemberId() {
@@ -79,6 +141,26 @@ public class OrderSessionCreateCommand {
 
   public BigDecimal getPrice() {
     return price;
+  }
+
+  public Instant getLastMfaVerifiedAt() {
+    return lastMfaVerifiedAt;
+  }
+
+  public String getLoginClientIp() {
+    return loginClientIp;
+  }
+
+  public String getLoginUserAgent() {
+    return loginUserAgent;
+  }
+
+  public String getRequestClientIp() {
+    return requestClientIp;
+  }
+
+  public String getRequestUserAgent() {
+    return requestUserAgent;
   }
 
   public String replayFingerprint() {
