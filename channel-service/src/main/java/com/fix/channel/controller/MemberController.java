@@ -2,12 +2,16 @@ package com.fix.channel.controller;
 
 import com.fix.channel.dto.request.MemberPasswordUpdateRequest;
 import com.fix.channel.dto.request.MemberProfileUpdateRequest;
+import com.fix.channel.dto.request.MemberTotpRebindRequest;
 import com.fix.channel.dto.request.TotpConfirmRequest;
 import com.fix.channel.dto.request.TotpEnrollRequest;
+import com.fix.channel.dto.response.MfaRecoveryRebindConfirmResponse;
 import com.fix.channel.dto.response.MemberProfileResponse;
 import com.fix.channel.dto.response.OtpVerifyResponse;
+import com.fix.channel.dto.response.TotpRebindBootstrapResponse;
 import com.fix.channel.dto.response.TotpEnrollResponse;
 import com.fix.channel.service.AuthService;
+import com.fix.channel.service.MfaRecoveryService;
 import com.fix.channel.service.MemberService;
 import com.fix.common.error.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,10 +32,12 @@ public class MemberController {
 
   private final MemberService memberService;
   private final AuthService authService;
+  private final MfaRecoveryService mfaRecoveryService;
 
-  public MemberController(MemberService memberService, AuthService authService) {
+  public MemberController(MemberService memberService, AuthService authService, MfaRecoveryService mfaRecoveryService) {
     this.memberService = memberService;
     this.authService = authService;
+    this.mfaRecoveryService = mfaRecoveryService;
   }
 
   @GetMapping("/me")
@@ -72,5 +78,15 @@ public class MemberController {
       HttpServletRequest httpServletRequest
   ) {
     return ApiResponse.success(OtpVerifyResponse.from(authService.confirmTotp(request.toVo(), httpServletRequest)));
+  }
+
+  @PostMapping("/me/totp/rebind")
+  public ApiResponse<TotpRebindBootstrapResponse> rebindTotp(
+      @Valid @RequestBody MemberTotpRebindRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    return ApiResponse.success(TotpRebindBootstrapResponse.from(
+        mfaRecoveryService.bootstrapAuthenticated(request.toVo(), httpServletRequest)
+    ));
   }
 }
