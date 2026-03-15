@@ -25,3 +25,10 @@ springdoc:
     version: OPENAPI_3_0
   swagger-ui:
     path: /swagger-ui/index.html
+
+corebank:
+  provisioning:
+    # Local live QA/openapi sessions need immediately orderable accounts without
+    # borrowing the static seed account; keep this profile-specific and verified
+    # by AccountProvisioningOpenapiProfileIntegrationTest.
+    default-cash-balance: 100000000.0000
