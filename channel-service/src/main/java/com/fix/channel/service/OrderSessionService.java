@@ -1,8 +1,9 @@
 package com.fix.channel.service;
 
+import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
-import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.Member;
+import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
@@ -40,10 +41,10 @@ public class OrderSessionService {
   private static final String AUTHORIZATION_REASON_ELEVATED_ORDER_RISK = "ELEVATED_ORDER_RISK";
   private static final String AUTHORIZATION_REASON_TRUSTED_AUTH_SESSION = "TRUSTED_AUTH_SESSION";
   private static final String ORDER_SESSION_TARGET_TYPE = "ORDER_SESSION";
-  private static final String OTP_DEBOUNCE_AUDIT_ACTION = "ORDER_SESSION_OTP_RATE_LIMITED";
-  private static final String OTP_DEBOUNCE_EVENT_TYPE = "ORDER_SESSION_OTP_RATE_LIMITED";
-  private static final String OTP_REPLAY_AUDIT_ACTION = "ORDER_SESSION_OTP_REPLAYED";
-  private static final String OTP_REPLAY_EVENT_TYPE = "ORDER_SESSION_OTP_REPLAYED";
+  private static final AuditAction OTP_DEBOUNCE_AUDIT_ACTION = AuditAction.ORDER_SESSION_OTP_RATE_LIMITED;
+  private static final String OTP_DEBOUNCE_EVENT_TYPE = OTP_DEBOUNCE_AUDIT_ACTION.value();
+  private static final AuditAction OTP_REPLAY_AUDIT_ACTION = AuditAction.ORDER_SESSION_OTP_REPLAYED;
+  private static final String OTP_REPLAY_EVENT_TYPE = OTP_REPLAY_AUDIT_ACTION.value();
   private static final Set<String> RECENT_RISK_SECURITY_EVENTS = Set.of(
       "ACCOUNT_LOCKED",
       "MFA_RECOVERY_PROOF_ISSUED",
