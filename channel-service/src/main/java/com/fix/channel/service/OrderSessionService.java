@@ -119,7 +119,7 @@ public class OrderSessionService {
     // Extension preserves an already-active order session. It does not replay
     // create-time auto-authorization gates such as recent MFA freshness.
     Instant previousExpiresAt = resolveExpiresAt(session);
-    Instant nextExpiresAt = Instant.now(clock).plus(orderSessionTtlStore.ttl());
+    Instant nextExpiresAt = resolveNextExpiry(previousExpiresAt);
     OrderSession extendedSession = orderSessionPersistenceService.extendSession(session, nextExpiresAt);
     try {
       orderSessionTtlStore.refresh(extendedSession.getOrderSessionId(), nextExpiresAt);
@@ -212,6 +212,11 @@ public class OrderSessionService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session expiration timestamp missing");
     }
     return expiresAt;
+  }
+
+  private Instant resolveNextExpiry(Instant previousExpiresAt) {
+    Instant candidateExpiresAt = Instant.now(clock).plus(orderSessionTtlStore.ttl());
+    return candidateExpiresAt.isAfter(previousExpiresAt) ? candidateExpiresAt : previousExpiresAt;
   }
 
   private OrderSessionResult buildResult(OrderSession session, Long remainingSeconds, boolean created) {
