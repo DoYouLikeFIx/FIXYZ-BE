@@ -106,6 +106,38 @@
         }
       }
     },
+    "/api/v1/orders/sessions/{orderSessionId}/extend": {
+      "post": {
+        "tags": [
+          "order-session-controller"
+        ],
+        "summary": "Extend an active order session to the full 60-minute window",
+        "operationId": "extend",
+        "parameters": [
+          {
+            "name": "orderSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orders/sessions/{orderSessionId}/execute": {
       "post": {
         "tags": [
