@@ -66,7 +66,7 @@ public class OrderSessionController {
       @Valid @RequestBody OrderSessionCreateRequest request,
       HttpServletRequest httpServletRequest
   ) {
-    var response = orderSessionService.createOrderSessionResponse(
+    var result = orderSessionService.createOrderSession(
         request.toVo(
             resolveAuthenticatedMemberId(httpServletRequest),
             clOrdId,
@@ -77,9 +77,9 @@ public class OrderSessionController {
             resolveUserAgent(httpServletRequest)
         )
     );
-    HttpStatus status = response.created() ? HttpStatus.CREATED : HttpStatus.OK;
+    HttpStatus status = result.isCreated() ? HttpStatus.CREATED : HttpStatus.OK;
     return ResponseEntity.status(status)
-        .body(ApiResponse.success(response.response()));
+        .body(ApiResponse.success(OrderSessionResponse.from(result)));
   }
 
   @Operation(summary = "Get an order session")
@@ -91,10 +91,10 @@ public class OrderSessionController {
       String orderSessionId,
       HttpServletRequest httpServletRequest
   ) {
-    return ApiResponse.success(orderSessionService.getOrderSessionResponse(OrderSessionQueryCommand.of(
+    return ApiResponse.success(OrderSessionResponse.from(orderSessionService.getOrderSession(OrderSessionQueryCommand.of(
         resolveAuthenticatedMemberId(httpServletRequest),
         orderSessionId
-    )));
+    ))));
   }
 
   @Operation(summary = "Verify step-up OTP for an order session")
@@ -107,9 +107,9 @@ public class OrderSessionController {
       @Valid @RequestBody OrderSessionOtpVerifyRequest request,
       HttpServletRequest httpServletRequest
   ) {
-    return ApiResponse.success(orderSessionService.verifyOtpResponse(
+    return ApiResponse.success(OrderSessionResponse.from(orderSessionService.verifyOtp(
         request.toVo(resolveAuthenticatedMemberId(httpServletRequest), orderSessionId)
-    ));
+    )));
   }
 
   @Operation(summary = "Extend an active order session to the full 60-minute window")
@@ -121,10 +121,10 @@ public class OrderSessionController {
       String orderSessionId,
       HttpServletRequest httpServletRequest
   ) {
-    return ApiResponse.success(orderSessionService.extendOrderSessionResponse(OrderSessionQueryCommand.of(
+    return ApiResponse.success(OrderSessionResponse.from(orderSessionService.extendOrderSession(OrderSessionQueryCommand.of(
         resolveAuthenticatedMemberId(httpServletRequest),
         orderSessionId
-    )));
+    ))));
   }
 
   @Operation(summary = "Execute an authorized order session")
@@ -136,9 +136,9 @@ public class OrderSessionController {
       String orderSessionId,
       HttpServletRequest httpServletRequest
   ) {
-    return ApiResponse.success(
-        orderExecutionService.executeResponse(resolveAuthenticatedMemberId(httpServletRequest), orderSessionId)
-    );
+    return ApiResponse.success(OrderSessionResponse.from(
+        orderExecutionService.execute(resolveAuthenticatedMemberId(httpServletRequest), orderSessionId)
+    ));
   }
 
   private Long resolveAuthenticatedMemberId(HttpServletRequest request) {

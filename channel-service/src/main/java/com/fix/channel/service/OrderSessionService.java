@@ -6,7 +6,6 @@ import com.fix.channel.entity.Member;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
-import com.fix.channel.dto.response.OrderSessionResponse;
 import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.OrderSessionCreateCommand;
@@ -102,18 +101,9 @@ public class OrderSessionService {
     return buildResult(savedSession, requireRemainingSeconds(savedSession), true);
   }
 
-  public OrderSessionCreateResponse createOrderSessionResponse(OrderSessionCreateCommand command) {
-    OrderSessionResult result = createOrderSession(command);
-    return new OrderSessionCreateResponse(OrderSessionResponse.from(result), result.isCreated());
-  }
-
   public OrderSessionResult getOrderSession(OrderSessionQueryCommand command) {
     OrderSession session = requireOwnedSession(command.getMemberId(), command.getOrderSessionId());
     return buildResult(session, requireRemainingSeconds(session), false);
-  }
-
-  public OrderSessionResponse getOrderSessionResponse(OrderSessionQueryCommand command) {
-    return OrderSessionResponse.from(getOrderSession(command));
   }
 
   public OrderSessionResult extendOrderSession(OrderSessionQueryCommand command) {
@@ -138,10 +128,6 @@ public class OrderSessionService {
       throw ex;
     }
     return buildResult(extendedSession, requireRemainingSeconds(extendedSession), false);
-  }
-
-  public OrderSessionResponse extendOrderSessionResponse(OrderSessionQueryCommand command) {
-    return OrderSessionResponse.from(extendOrderSession(command));
   }
 
   @Transactional(noRollbackFor = BusinessException.class)
@@ -206,11 +192,6 @@ public class OrderSessionService {
         verification.normalizedOtp()
     );
     return buildResult(authorizedSession, remainingSeconds, false);
-  }
-
-  @Transactional(noRollbackFor = BusinessException.class)
-  public OrderSessionResponse verifyOtpResponse(OrderSessionOtpVerifyCommand command) {
-    return OrderSessionResponse.from(verifyOtp(command));
   }
 
   public OrderSession authorize(OrderSession session) {
@@ -511,8 +492,5 @@ public class OrderSessionService {
   }
 
   private record AuthorizationDecision(boolean challengeRequired, String authorizationReason) {
-  }
-
-  public record OrderSessionCreateResponse(OrderSessionResponse response, boolean created) {
   }
 }

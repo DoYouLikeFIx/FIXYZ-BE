@@ -1,7 +1,6 @@
 package com.fix.channel.service;
 
 import com.fix.channel.client.CorebankClient;
-import com.fix.channel.dto.response.OrderSessionResponse;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.vo.OrderExecuteCommand;
@@ -97,10 +96,6 @@ public class OrderExecutionService {
     } finally {
       orderSessionExecutionLockService.release(orderSessionId);
     }
-  }
-
-  public OrderSessionResponse executeResponse(Long memberId, String orderSessionId) {
-    return OrderSessionResponse.from(execute(memberId, orderSessionId));
   }
 
   private OrderExecuteCommand toCommand(OrderSession session) {
