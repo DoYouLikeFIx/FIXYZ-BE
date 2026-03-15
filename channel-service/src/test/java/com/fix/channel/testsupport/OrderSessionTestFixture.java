@@ -2,18 +2,25 @@ package com.fix.channel.testsupport;
 
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.service.OrderSessionTtlStore;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.test.context.TestComponent;
 
 @TestComponent
 public class OrderSessionTestFixture {
 
   private final OrderSessionRepository orderSessionRepository;
+  private final ObjectProvider<OrderSessionTtlStore> orderSessionTtlStoreProvider;
 
-  public OrderSessionTestFixture(OrderSessionRepository orderSessionRepository) {
+  public OrderSessionTestFixture(
+      OrderSessionRepository orderSessionRepository,
+      ObjectProvider<OrderSessionTtlStore> orderSessionTtlStoreProvider
+  ) {
     this.orderSessionRepository = orderSessionRepository;
+    this.orderSessionTtlStoreProvider = orderSessionTtlStoreProvider;
   }
 
   public void reset() {
@@ -33,7 +40,7 @@ public class OrderSessionTestFixture {
       String authorizationReason,
       Instant expiresAt
   ) {
-    return orderSessionRepository.saveAndFlush(OrderSession.initiated(
+    OrderSession session = orderSessionRepository.saveAndFlush(OrderSession.initiated(
         memberId,
         accountId,
         clOrdId,
@@ -47,6 +54,8 @@ public class OrderSessionTestFixture {
         authorizationReason,
         expiresAt
     ));
+    activateTtl(session);
+    return session;
   }
 
   public String createInitiatedSessionId(
@@ -117,6 +126,14 @@ public class OrderSessionTestFixture {
     return orderSessionRepository.findByOrderSessionId(orderSessionId)
         .map(OrderSession::getFailureReason)
         .orElse(null);
+  }
+
+  private void activateTtl(OrderSession session) {
+    OrderSessionTtlStore orderSessionTtlStore = orderSessionTtlStoreProvider.getIfAvailable();
+    if (orderSessionTtlStore == null) {
+      return;
+    }
+    orderSessionTtlStore.activate(session.getOrderSessionId(), session.getExpiresAt());
   }
 
   private String replayFingerprint(

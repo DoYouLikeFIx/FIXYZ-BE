@@ -243,6 +243,43 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
+  void shouldRejectExecuteWhenAuthedSessionRedisTtlHasAlreadyDisappeared() throws Exception {
+    saveLinkedMember("M-ORD-002AAB", "execute-expired.user@fixyz.com", "Execute Expired User", 131L, "12345678901264");
+
+    AuthSession authSession = login("execute-expired.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174398",
+        131L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        1,
+        10000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    assertThat(created.path("data").path("status").asText()).isEqualTo("AUTHED");
+    stringRedisTemplate.delete("ch:order-session:" + orderSessionId);
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.code").value("ORD-008"))
+        .andExpect(jsonPath("$.message").value("Order session not found."));
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.EXPIRED));
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_EXPIRED");
+          assertThat(log.getTargetId()).isEqualTo(orderSessionId);
+        });
+  }
+
+  @Test
   void shouldVerifyOtpAndAuthorizePendingOrderSession() throws Exception {
     Member member = saveLinkedMember("M-ORD-002AB", "otp.user@fixyz.com", "Otp User", 122L, "12345678901255");
 
@@ -639,6 +676,50 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .contentType(MediaType.APPLICATION_JSON))
         .andExpect(status().isConflict())
         .andExpect(jsonPath("$.code").value("ORD-009"));
+  }
+
+  @Test
+  void shouldSerializeFailedOtpExceededLookupWithoutActiveWindowMetadata() throws Exception {
+    saveLinkedMember("M-ORD-002ABX", "otp.failed.contract@fixyz.com", "Otp Failed Contract", 133L, "12345678901266");
+
+    AuthSession authSession = login("otp.failed.contract@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174400",
+        133L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    for (int attempt = 0; attempt < 3; attempt += 1) {
+      mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+              .cookie(sessionCookie(authSession))
+              .header("X-CSRF-TOKEN", authSession.csrfToken())
+              .contentType(MediaType.APPLICATION_JSON)
+              .content(objectMapper.writeValueAsString(Map.of(
+                  "otpCode", "000000"
+              ))))
+          .andExpect(attempt < 2 ? status().isUnprocessableEntity() : status().isForbidden());
+      stringRedisTemplate.delete("ch:otp-attempt-ts:" + orderSessionId);
+    }
+
+    MvcResult result = mockMvc.perform(get("/api/v1/orders/sessions/{orderSessionId}", orderSessionId)
+            .cookie(sessionCookie(authSession)))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
+    assertThat(data.path("status").asText()).isEqualTo("FAILED");
+    assertThat(data.has("expiresAt")).isFalse();
+    assertThat(data.has("remainingSeconds")).isFalse();
+    assertThat(data.path("failureReason").asText()).isEqualTo("OTP_EXCEEDED");
+    assertThat(data.path("executionResult").isNull()).isTrue();
+    assertThat(data.path("externalOrderId").isNull()).isTrue();
+    assertThat(data.path("canceledAt").isNull()).isTrue();
   }
 
   @Test
