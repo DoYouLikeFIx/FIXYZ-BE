@@ -21,7 +21,8 @@ public enum AuditAction {
   ORDER_SESSION_EXTENDED,
   ORDER_SESSION_OTP_VERIFIED,
   ORDER_SESSION_EXECUTED,
-  ORDER_SESSION_FAILED;
+  ORDER_SESSION_FAILED,
+  ORDER_SESSION_EXPIRED;
 
   public String value() {
     return name();
