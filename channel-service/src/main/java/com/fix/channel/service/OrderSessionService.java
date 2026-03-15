@@ -209,21 +209,30 @@ public class OrderSessionService {
       return buildResult(session, remainingSeconds, false);
     }
 
+    boolean replayGuardClaimed = false;
     try {
       totpReplayGuardService.claim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
+      replayGuardClaimed = true;
     } catch (BusinessException ex) {
       if (ex.getErrorCode() == ErrorCode.AUTH_OTP_REPLAYED) {
         recordOtpReplayEvidence(session);
       }
       throw ex;
     }
-    OrderSession authorizedSession = authorize(session);
-    orderSessionOtpChallengeService.recordSuccess(
-        authorizedSession.getOrderSessionId(),
-        verification.windowIndex(),
-        verification.normalizedOtp()
-    );
-    return buildResult(authorizedSession, remainingSeconds, false);
+    try {
+      OrderSession authorizedSession = authorize(session);
+      orderSessionOtpChallengeService.recordSuccess(
+          authorizedSession.getOrderSessionId(),
+          verification.windowIndex(),
+          verification.normalizedOtp()
+      );
+      return buildResult(authorizedSession, remainingSeconds, false);
+    } catch (RuntimeException ex) {
+      if (replayGuardClaimed) {
+        totpReplayGuardService.releaseClaim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
+      }
+      throw ex;
+    }
   }
 
   public OrderSession authorize(OrderSession session) {
