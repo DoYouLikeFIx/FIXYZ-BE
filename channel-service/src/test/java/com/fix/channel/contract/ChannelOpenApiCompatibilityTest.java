@@ -43,12 +43,13 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode authSessionResponse = contract.path("components").path("schemas")
         .path("ApiResponseAuthSessionResponse");
     JsonNode authSessionSchema = contract.path("components").path("schemas").path("AuthSessionResponse");
-    JsonNode orderResponse = contract.path("components").path("schemas").path("ApiResponseOrderResponse");
     JsonNode sessionResponse = contract.path("components").path("schemas").path("ApiResponseOrderSessionResponse");
     JsonNode accountPositionResponse = contract.path("components").path("schemas")
         .path("ApiResponseAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas").path("AccountPositionResponse");
     JsonNode orderSessionCreateRequestSchema = contract.path("components").path("schemas").path("OrderSessionCreateRequest");
+    JsonNode orderSessionOtpVerifyRequestSchema = contract.path("components").path("schemas")
+        .path("OrderSessionOtpVerifyRequest");
     JsonNode orderSessionSchema = contract.path("components").path("schemas").path("OrderSessionResponse");
     JsonNode accountPositionListResponse = contract.path("components").path("schemas")
         .path("ApiResponseListAccountPositionResponse");
@@ -77,15 +78,18 @@ class ChannelOpenApiCompatibilityTest {
             "/api/v1/members/me/totp/rebind",
             "/api/v1/auth/mfa-recovery/rebind",
             "/api/v1/auth/mfa-recovery/rebind/confirm",
-            "/api/v1/orders",
             "/api/v1/orders/sessions",
             "/api/v1/orders/sessions/{orderSessionId}",
+            "/api/v1/orders/sessions/{orderSessionId}/otp/verify",
+            "/api/v1/orders/sessions/{orderSessionId}/execute",
+            "/api/v1/orders/sessions/{orderSessionId}/extend",
             "/api/v1/accounts/{accountId}/positions",
             "/api/v1/accounts/{accountId}/summary",
             "/api/v1/accounts/{accountId}/positions/list",
             "/api/v1/accounts/{accountId}/orders",
             "/api/v1/admin/accounts/{accountId}/status"
-        );
+        )
+        .doesNotContain("/api/v1/orders");
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
         .contains(
@@ -111,8 +115,6 @@ class ChannelOpenApiCompatibilityTest {
     assertThat(otpVerifyResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(authSessionResponse.path("properties").path("error").path("$ref").asText())
-        .isEqualTo("#/components/schemas/ApiErrorResponse");
-    assertThat(orderResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(sessionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
@@ -152,16 +154,33 @@ class ChannelOpenApiCompatibilityTest {
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
     assertThat(fieldNames(orderSessionCreateRequestSchema.path("properties")))
         .contains("accountId", "symbol", "side", "orderType", "qty", "price");
+    assertThat(fieldNames(orderSessionOtpVerifyRequestSchema.path("properties")))
+        .contains("otpCode");
     assertThat(fieldNames(orderSessionSchema.path("properties")))
         .contains(
             "orderSessionId",
             "clOrdId",
+            "status",
+            "challengeRequired",
+            "authorizationReason",
             "accountId",
             "symbol",
             "side",
             "orderType",
             "qty",
             "price",
+            "quoteSnapshotId",
+            "quoteAsOf",
+            "quoteSourceMode",
+            "preTradePrice",
+            "executionResult",
+            "executedQty",
+            "leavesQty",
+            "executedPrice",
+            "externalOrderId",
+            "failureReason",
+            "executedAt",
+            "canceledAt",
             "createdAt",
             "updatedAt",
             "expiresAt",
@@ -169,6 +188,9 @@ class ChannelOpenApiCompatibilityTest {
         );
     assertThat(parameterNames(paths.path("/api/v1/orders/sessions").path("post").path("parameters")))
         .contains("X-ClOrdID");
+    assertThat(paths.path("/api/v1/orders/sessions/{orderSessionId}/otp/verify").path("post")
+        .path("requestBody").path("content").path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/OrderSessionOtpVerifyRequest");
     assertThat(paths.path("/api/v1/auth/otp/verify").path("post").path("requestBody").path("content")
         .path("application/json").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/OtpVerifyRequest");

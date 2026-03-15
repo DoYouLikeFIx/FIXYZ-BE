@@ -14,15 +14,22 @@ import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.service.AccountPositionService;
 import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
+import com.fix.channel.vo.AccountPositionResult;
 import jakarta.servlet.http.Cookie;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
@@ -59,6 +66,9 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   @Autowired
   private TotpService totpService;
 
+  @Autowired
+  private StubAccountPositionService accountPositionService;
+
   @BeforeEach
   void setUp() {
     orderSessionRepository.deleteAll();
@@ -68,6 +78,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
       connection.serverCommands().flushDb();
       return null;
     });
+    accountPositionService.reset();
   }
 
   @Test
@@ -92,6 +103,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     assertThat(orderSessionId).isNotBlank();
     assertThat(response.path("data").path("clOrdId").asText()).isEqualTo("123e4567-e89b-42d3-a456-426614174260");
     assertThat(response.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
+    assertThat(response.path("data").path("challengeRequired").asBoolean()).isTrue();
+    assertThat(response.path("data").path("authorizationReason").asText()).isEqualTo("ELEVATED_ORDER_RISK");
     assertThat(response.path("data").path("accountId").asLong()).isEqualTo(101L);
     assertThat(response.path("data").path("symbol").asText()).isEqualTo("005930");
     assertThat(response.path("data").path("side").asText()).isEqualTo("BUY");
@@ -101,7 +114,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     assertThat(response.path("data").path("createdAt").asText()).isNotBlank();
     assertThat(response.path("data").path("updatedAt").asText()).isNotBlank();
     assertThat(response.path("data").path("expiresAt").asText()).isNotBlank();
-    assertThat(remainingSeconds).isBetween(1L, 600L);
+    assertThat(remainingSeconds).isBetween(1L, 3600L);
     assertThat(stringRedisTemplate.hasKey("ch:order-session:" + orderSessionId)).isTrue();
     assertThat(stringRedisTemplate.getExpire("ch:order-session:" + orderSessionId)).isPositive();
     assertThat(stringRedisTemplate.opsForValue().get("ch:otp-attempts:" + orderSessionId)).isEqualTo("3");
@@ -143,8 +156,202 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
         .andExpect(jsonPath("$.data.qty").value(10))
         .andExpect(jsonPath("$.data.price").value(72000))
         .andExpect(jsonPath("$.data.status").value("PENDING_NEW"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(true))
+        .andExpect(jsonPath("$.data.authorizationReason").value("ELEVATED_ORDER_RISK"))
         .andExpect(jsonPath("$.data.remainingSeconds").isNumber())
         .andExpect(jsonPath("$.data.expiresAt").value(createdExpiresAt));
+  }
+
+  @Test
+  void shouldAutoAuthorizeLowRiskOrderWhenTrustedAuthSessionWindowIsFresh() throws Exception {
+    saveLinkedMember("M-ORD-002AA", "authed.user@fixyz.com", "Authed User", 121L, "12345678901254");
+
+    AuthSession authSession = login("authed.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174290",
+        121L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        1,
+        10000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    assertThat(created.path("data").path("status").asText()).isEqualTo("AUTHED");
+    assertThat(created.path("data").path("challengeRequired").asBoolean()).isFalse();
+    assertThat(created.path("data").path("authorizationReason").asText()).isEqualTo("TRUSTED_AUTH_SESSION");
+
+    mockMvc.perform(get("/api/v1/orders/sessions/{orderSessionId}", orderSessionId)
+            .cookie(sessionCookie(authSession)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("AUTHED"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(false))
+        .andExpect(jsonPath("$.data.authorizationReason").value("TRUSTED_AUTH_SESSION"));
+  }
+
+  @Test
+  void shouldExtendOwnedOrderSessionToFullWindow() throws Exception {
+    saveLinkedMember("M-ORD-002AAA", "extend.user@fixyz.com", "Extend User", 124L, "12345678901257");
+
+    AuthSession authSession = login("extend.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174296",
+        124L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+    String createdExpiresAt = created.path("data").path("expiresAt").asText();
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/extend", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.orderSessionId").value(orderSessionId))
+        .andExpect(jsonPath("$.data.remainingSeconds").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3590)))
+        .andExpect(result -> {
+          JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+          assertThat(Instant.parse(body.path("data").path("expiresAt").asText()))
+              .isAfterOrEqualTo(Instant.parse(createdExpiresAt));
+        });
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> assertThat(session.getExpiresAt()).isAfterOrEqualTo(Instant.parse(createdExpiresAt)));
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> assertThat(log.getAction()).isEqualTo("ORDER_SESSION_EXTENDED"));
+  }
+
+  @Test
+  void shouldVerifyOtpAndAuthorizePendingOrderSession() throws Exception {
+    Member member = saveLinkedMember("M-ORD-002AB", "otp.user@fixyz.com", "Otp User", 122L, "12345678901255");
+
+    AuthSession authSession = login("otp.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174295",
+        122L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", totpService.currentCode(member)
+            ))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.orderSessionId").value(orderSessionId))
+        .andExpect(jsonPath("$.data.status").value("AUTHED"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(true))
+        .andExpect(jsonPath("$.data.authorizationReason").value("ELEVATED_ORDER_RISK"));
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED));
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_OTP_VERIFIED");
+          assertThat(log.getTargetId()).isEqualTo(orderSessionId);
+        });
+  }
+
+  @Test
+  void shouldRejectInvalidOtpAndExposeRemainingAttempts() throws Exception {
+    saveLinkedMember("M-ORD-002AC", "otp-fail.user@fixyz.com", "Otp Fail User", 123L, "12345678901256");
+
+    AuthSession authSession = login("otp-fail.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174296",
+        123L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", "000000"
+            ))))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("CHANNEL-002"))
+        .andExpect(jsonPath("$.message").value("otp code mismatch"))
+        .andExpect(jsonPath("$.remainingAttempts").value(2));
+  }
+
+  @Test
+  void shouldRejectCreateWhenAvailableCashIsInsufficient() throws Exception {
+    accountPositionService.setAvailableBalance(BigDecimal.valueOf(10_000));
+    saveLinkedMember("M-ORD-002AB", "cash.user@fixyz.com", "Cash User", 122L, "12345678901255");
+
+    AuthSession authSession = login("cash.user@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(post("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174291")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(orderSessionPayload(122L, "005930", "BUY", "LIMIT", 10, 72000L)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("ORD-001"))
+        .andExpect(jsonPath("$.message").value("available cash is insufficient"));
+  }
+
+  @Test
+  void shouldRejectCreateWhenAvailableQuantityIsInsufficient() throws Exception {
+    accountPositionService.setAvailableQuantity(BigDecimal.valueOf(5));
+    saveLinkedMember("M-ORD-002AC", "position.user@fixyz.com", "Position User", 123L, "12345678901256");
+
+    AuthSession authSession = login("position.user@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(post("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174292")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(orderSessionPayload(123L, "005930", "SELL", "LIMIT", 10, 72000L)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("ORD-003"))
+        .andExpect(jsonPath("$.message").value("insufficient position quantity"));
+  }
+
+  @Test
+  void shouldRequireStepUpWhenRequestDeviceContextDiffersFromLogin() throws Exception {
+    saveLinkedMember("M-ORD-002AD", "context.user@fixyz.com", "Context User", 124L, "12345678901257");
+
+    AuthSession authSession = login("context.user@fixyz.com", "Abcd1234!");
+
+    mockMvc.perform(post("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .header("User-Agent", "Different-Device/1.0")
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174293")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(orderSessionPayload(124L, "005930", "BUY", "LIMIT", 1, 10000L)))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.status").value("PENDING_NEW"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(true))
+        .andExpect(jsonPath("$.data.authorizationReason").value("ELEVATED_ORDER_RISK"));
   }
 
   @Test
@@ -180,6 +387,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     assertThat(recreated.path("data").path("orderSessionId").asText()).isEqualTo(orderSessionId);
     assertThat(recreated.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
+    assertThat(recreated.path("data").path("challengeRequired").asBoolean()).isTrue();
+    assertThat(recreated.path("data").path("authorizationReason").asText()).isEqualTo("ELEVATED_ORDER_RISK");
     assertThat(recreated.path("data").path("expiresAt").asText()).isEqualTo(expiresAt);
     assertThat(recreated.path("data").path("remainingSeconds").asLong()).isBetween(1L, firstRemainingSeconds);
     assertThat(auditLogRepository.count()).isEqualTo(1L);
@@ -711,5 +920,66 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
       Integer qty,
       Long price
   ) {
+  }
+
+  @TestConfiguration
+  static class TestConfig {
+
+    @Bean
+    @Primary
+    StubAccountPositionService stubAccountPositionService() {
+      return new StubAccountPositionService();
+    }
+  }
+
+  static class StubAccountPositionService extends AccountPositionService {
+
+    private BigDecimal availableBalance = BigDecimal.valueOf(5_000_000);
+    private BigDecimal availableQuantity = BigDecimal.valueOf(500);
+
+    StubAccountPositionService() {
+      super(null);
+    }
+
+    @Override
+    public AccountPositionResult getAccountSummary(com.fix.channel.vo.AccountSummaryQueryCommand command) {
+      return AccountPositionResult.of(
+          command.getAccountId(),
+          command.getMemberId(),
+          "",
+          BigDecimal.ZERO,
+          BigDecimal.ZERO,
+          availableBalance,
+          "KRW",
+          Instant.parse("2026-03-13T00:00:00Z")
+      );
+    }
+
+    @Override
+    public AccountPositionResult getAccountPosition(com.fix.channel.vo.AccountPositionQueryCommand command) {
+      return AccountPositionResult.of(
+          command.getAccountId(),
+          command.getMemberId(),
+          command.getSymbol(),
+          availableQuantity,
+          availableQuantity,
+          BigDecimal.ZERO,
+          "KRW",
+          Instant.parse("2026-03-13T00:00:00Z")
+      );
+    }
+
+    void reset() {
+      availableBalance = BigDecimal.valueOf(5_000_000);
+      availableQuantity = BigDecimal.valueOf(500);
+    }
+
+    void setAvailableBalance(BigDecimal availableBalance) {
+      this.availableBalance = availableBalance;
+    }
+
+    void setAvailableQuantity(BigDecimal availableQuantity) {
+      this.availableQuantity = availableQuantity;
+    }
   }
 }

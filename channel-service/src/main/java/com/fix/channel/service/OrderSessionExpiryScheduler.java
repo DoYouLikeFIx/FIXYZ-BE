@@ -18,18 +18,18 @@ import org.springframework.stereotype.Component;
 )
 public class OrderSessionExpiryScheduler {
 
-  private final OrderSessionPersistenceService orderSessionPersistenceService;
+  private final OrderSessionService orderSessionService;
   private final OrderSessionTtlStore orderSessionTtlStore;
   private final Clock clock;
   private final int reconciliationBatchSize;
 
   public OrderSessionExpiryScheduler(
-      OrderSessionPersistenceService orderSessionPersistenceService,
+      OrderSessionService orderSessionService,
       OrderSessionTtlStore orderSessionTtlStore,
       Clock clock,
       @Value("${order.session.expiry-reconciliation.batch-size:100}") int reconciliationBatchSize
   ) {
-    this.orderSessionPersistenceService = orderSessionPersistenceService;
+    this.orderSessionService = orderSessionService;
     this.orderSessionTtlStore = orderSessionTtlStore;
     this.clock = clock;
     this.reconciliationBatchSize = reconciliationBatchSize;
@@ -41,7 +41,7 @@ public class OrderSessionExpiryScheduler {
     int batchSize = Math.max(1, reconciliationBatchSize);
     List<String> expiredSessionIds;
     do {
-      expiredSessionIds = orderSessionPersistenceService.expireOverdueSessionBatch(cutoff, batchSize);
+      expiredSessionIds = orderSessionService.expireOverdueSessionBatch(cutoff, batchSize);
       expiredSessionIds.forEach(this::clearRedisStateSafely);
     } while (expiredSessionIds.size() == batchSize);
   }

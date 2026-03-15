@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import db.migration.V8__backfill_order_session_uuid_contract;
 import db.migration.V10__add_order_session_expires_at_contract;
 import db.migration.V11__add_order_session_prepare_contract_columns;
+import db.migration.V13__add_order_session_authorization_decision_columns;
+import db.migration.V14__add_order_session_execution_columns;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
@@ -61,6 +63,26 @@ class ChannelFlywayMigrationTest {
             + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'SYMBOL'",
         Integer.class
     );
+    Integer orderSessionChallengeRequiredColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'CHALLENGE_REQUIRED'",
+        Integer.class
+    );
+    Integer orderSessionAuthorizationReasonColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'AUTHORIZATION_REASON'",
+        Integer.class
+    );
+    Integer orderSessionExecutionResultColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXECUTION_RESULT'",
+        Integer.class
+    );
+    Integer orderSessionExecutedAtColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXECUTED_AT'",
+        Integer.class
+    );
     Integer membersTableCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MEMBERS'",
         Integer.class
@@ -78,6 +100,14 @@ class ChannelFlywayMigrationTest {
     assertThat(orderSessionAccountIdColumnCount).isEqualTo(1);
     assertThat(orderSessionSymbolColumnCount).isNotNull();
     assertThat(orderSessionSymbolColumnCount).isEqualTo(1);
+    assertThat(orderSessionChallengeRequiredColumnCount).isNotNull();
+    assertThat(orderSessionChallengeRequiredColumnCount).isEqualTo(1);
+    assertThat(orderSessionAuthorizationReasonColumnCount).isNotNull();
+    assertThat(orderSessionAuthorizationReasonColumnCount).isEqualTo(1);
+    assertThat(orderSessionExecutionResultColumnCount).isNotNull();
+    assertThat(orderSessionExecutionResultColumnCount).isEqualTo(1);
+    assertThat(orderSessionExecutedAtColumnCount).isNotNull();
+    assertThat(orderSessionExecutedAtColumnCount).isEqualTo(1);
     assertThat(membersTableCount).isNotNull();
     assertThat(membersTableCount).isEqualTo(1);
   }
@@ -243,6 +273,145 @@ class ChannelFlywayMigrationTest {
     assertThat(accountIdColumnCount).isEqualTo(1);
     assertThat(symbolColumnCount).isEqualTo(1);
     assertThat(qtyColumnCount).isEqualTo(1);
+  }
+
+  @Test
+  void shouldAddAuthorizationDecisionColumnsAndBackfillLegacySessions() throws Exception {
+    String jdbcUrl = "jdbc:h2:mem:channel_migration_authorization_contract;MODE=MySQL;DB_CLOSE_DELAY=-1";
+
+    try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+         Statement statement = connection.createStatement()) {
+      statement.execute("""
+          CREATE TABLE order_sessions (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_session_id CHAR(36) NOT NULL,
+            member_id BIGINT NOT NULL,
+            cl_ord_id VARCHAR(64) NOT NULL UNIQUE,
+            order_ref VARCHAR(64) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            account_id BIGINT,
+            symbol VARCHAR(16),
+            side VARCHAR(16),
+            order_type VARCHAR(16),
+            qty DECIMAL(19, 4),
+            price DECIMAL(19, 4),
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            version BIGINT
+          )
+          """);
+      statement.execute("""
+          INSERT INTO order_sessions(
+            order_session_id,
+            member_id,
+            cl_ord_id,
+            order_ref,
+            status,
+            expires_at,
+            created_at,
+            updated_at,
+            version
+          )
+          VALUES (
+            '123e4567-e89b-42d3-a456-426614174262',
+            301,
+            '123e4567-e89b-42d3-a456-426614174263',
+            'ORD-REF-LEGACY',
+            'PENDING_NEW',
+            TIMESTAMP '2026-03-12 00:10:00',
+            TIMESTAMP '2026-03-12 00:00:00',
+            TIMESTAMP '2026-03-12 00:00:00',
+            0
+          )
+          """);
+
+      Context context = new TestFlywayContext(connection);
+      V13__add_order_session_authorization_decision_columns migration =
+          new V13__add_order_session_authorization_decision_columns();
+
+      migration.migrate(context);
+      migration.migrate(context);
+    }
+
+    JdbcTemplate authorizationJdbcTemplate = new JdbcTemplate(
+        new org.springframework.jdbc.datasource.DriverManagerDataSource(jdbcUrl, "sa", "")
+    );
+
+    Boolean challengeRequired = authorizationJdbcTemplate.queryForObject(
+        "SELECT challenge_required FROM order_sessions "
+            + "WHERE cl_ord_id = '123e4567-e89b-42d3-a456-426614174263'",
+        Boolean.class
+    );
+    String authorizationReason = authorizationJdbcTemplate.queryForObject(
+        "SELECT authorization_reason FROM order_sessions "
+            + "WHERE cl_ord_id = '123e4567-e89b-42d3-a456-426614174263'",
+        String.class
+    );
+
+    assertThat(challengeRequired).isTrue();
+    assertThat(authorizationReason).isEqualTo("ELEVATED_ORDER_RISK");
+  }
+
+  @Test
+  void shouldAddExecutionColumnsAndRemainIdempotent() throws Exception {
+    String jdbcUrl = "jdbc:h2:mem:channel_migration_execution_contract;MODE=MySQL;DB_CLOSE_DELAY=-1";
+
+    try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+         Statement statement = connection.createStatement()) {
+      statement.execute("""
+          CREATE TABLE order_sessions (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_session_id CHAR(36) NOT NULL,
+            member_id BIGINT NOT NULL,
+            cl_ord_id VARCHAR(64) NOT NULL UNIQUE,
+            order_ref VARCHAR(64) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            account_id BIGINT,
+            symbol VARCHAR(16),
+            side VARCHAR(16),
+            order_type VARCHAR(16),
+            qty DECIMAL(19, 4),
+            price DECIMAL(19, 4),
+            challenge_required BOOLEAN NOT NULL,
+            authorization_reason VARCHAR(64) NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            version BIGINT
+          )
+          """);
+
+      Context context = new TestFlywayContext(connection);
+      V14__add_order_session_execution_columns migration = new V14__add_order_session_execution_columns();
+
+      migration.migrate(context);
+      migration.migrate(context);
+    }
+
+    JdbcTemplate executionJdbcTemplate = new JdbcTemplate(
+        new org.springframework.jdbc.datasource.DriverManagerDataSource(jdbcUrl, "sa", "")
+    );
+
+    Integer executionResultColumnCount = executionJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXECUTION_RESULT'",
+        Integer.class
+    );
+    Integer executedQtyColumnCount = executionJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXECUTED_QTY'",
+        Integer.class
+    );
+    Integer failureReasonColumnCount = executionJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'FAILURE_REASON'",
+        Integer.class
+    );
+
+    assertThat(executionResultColumnCount).isEqualTo(1);
+    assertThat(executedQtyColumnCount).isEqualTo(1);
+    assertThat(failureReasonColumnCount).isEqualTo(1);
   }
 
   private record TestFlywayContext(Connection connection) implements Context {

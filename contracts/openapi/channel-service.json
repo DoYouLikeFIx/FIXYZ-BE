@@ -11,43 +11,13 @@
     }
   ],
   "paths": {
-    "/api/v1/orders": {
-      "post": {
-        "tags": [
-          "order-controller"
-        ],
-        "operationId": "create",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/OrderCreateRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseOrderResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/orders/sessions": {
       "post": {
         "tags": [
           "order-session-controller"
         ],
         "summary": "Create or replay an order session",
-        "operationId": "create_1",
+        "operationId": "create",
         "parameters": [
           {
             "name": "X-ClOrdID",
@@ -83,6 +53,112 @@
           },
           "200": {
             "description": "Existing active session replayed",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/sessions/{orderSessionId}/otp/verify": {
+      "post": {
+        "tags": [
+          "order-session-controller"
+        ],
+        "summary": "Verify step-up OTP for an order session",
+        "operationId": "verifyOtp",
+        "parameters": [
+          {
+            "name": "orderSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderSessionOtpVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/sessions/{orderSessionId}/extend": {
+      "post": {
+        "tags": [
+          "order-session-controller"
+        ],
+        "summary": "Extend an active order session to the full 60-minute window",
+        "operationId": "extend",
+        "parameters": [
+          {
+            "name": "orderSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/sessions/{orderSessionId}/execute": {
+      "post": {
+        "tags": [
+          "order-session-controller"
+        ],
+        "summary": "Execute an authorized order session",
+        "operationId": "execute",
+        "parameters": [
+          {
+            "name": "orderSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
             "content": {
               "*/*": {
                 "schema": {
@@ -302,7 +378,7 @@
         "tags": [
           "auth-controller"
         ],
-        "operationId": "verifyOtp",
+        "operationId": "verifyOtp_1",
         "requestBody": {
           "content": {
             "application/json": {
@@ -887,117 +963,6 @@
   },
   "components": {
     "schemas": {
-      "OrderCreateRequest": {
-        "required": [
-          "accountId",
-          "clOrdId",
-          "price",
-          "quantity",
-          "side",
-          "symbol"
-        ],
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "clOrdId": {
-            "minLength": 1,
-            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-            "type": "string"
-          },
-          "symbol": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "side": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "quantity": {
-            "minimum": 0.0001,
-            "exclusiveMinimum": false,
-            "type": "number"
-          },
-          "price": {
-            "minimum": 0.0001,
-            "exclusiveMinimum": false,
-            "type": "number"
-          }
-        }
-      },
-      "ApiErrorResponse": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "correlationId": {
-            "type": "string"
-          },
-          "userMessageKey": {
-            "type": "string"
-          },
-          "operatorCode": {
-            "type": "string"
-          },
-          "details": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": true
-      },
-      "ApiResponseOrderResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/OrderResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "OrderResponse": {
-        "type": "object",
-        "properties": {
-          "orderId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "clOrdId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "idempotent": {
-            "type": "boolean"
-          },
-          "orderQuantity": {
-            "type": "number"
-          }
-        }
-      },
       "OrderSessionCreateRequest": {
         "required": [
           "accountId",
@@ -1039,6 +1004,38 @@
           }
         }
       },
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "userMessageKey": {
+            "type": "string"
+          },
+          "operatorCode": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      },
       "ApiResponseOrderSessionResponse": {
         "type": "object",
         "properties": {
@@ -1069,6 +1066,12 @@
           "status": {
             "type": "string"
           },
+          "challengeRequired": {
+            "type": "boolean"
+          },
+          "authorizationReason": {
+            "type": "string"
+          },
           "accountId": {
             "type": "integer",
             "format": "int64"
@@ -1086,6 +1089,19 @@
             "type": "number"
           },
           "price": {
+            "type": "number"
+          },
+          "quoteSnapshotId": {
+            "type": "string"
+          },
+          "quoteAsOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quoteSourceMode": {
+            "type": "string"
+          },
+          "preTradePrice": {
             "type": "number"
           },
           "executionResult": {
@@ -1129,6 +1145,19 @@
           "remainingSeconds": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "OrderSessionOtpVerifyRequest": {
+        "required": [
+          "otpCode"
+        ],
+        "type": "object",
+        "properties": {
+          "otpCode": {
+            "minLength": 1,
+            "pattern": "^\\d{6}$",
+            "type": "string"
           }
         }
       },

@@ -3,89 +3,53 @@ package com.fix.channel.vo;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-public class OrderSessionResult {
-
-  private final String orderSessionId;
-  private final String clOrdId;
-  private final String status;
-  private final Long accountId;
-  private final String symbol;
-  private final String side;
-  private final String orderType;
-  private final BigDecimal qty;
-  private final BigDecimal price;
-  private final Instant expiresAt;
-  private final Long remainingSeconds;
-  private final String executionResult;
-  private final BigDecimal executedQty;
-  private final BigDecimal leavesQty;
-  private final BigDecimal executedPrice;
-  private final String externalOrderId;
-  private final String failureReason;
-  private final Instant executedAt;
-  private final Instant canceledAt;
-  private final Instant createdAt;
-  private final Instant updatedAt;
-  private final boolean created;
-
-  private OrderSessionResult(
-      String orderSessionId,
-      String clOrdId,
-      String status,
-      Long accountId,
-      String symbol,
-      String side,
-      String orderType,
-      BigDecimal qty,
-      BigDecimal price,
-      Instant expiresAt,
-      Long remainingSeconds,
-      String executionResult,
-      BigDecimal executedQty,
-      BigDecimal leavesQty,
-      BigDecimal executedPrice,
-      String externalOrderId,
-      String failureReason,
-      Instant executedAt,
-      Instant canceledAt,
-      Instant createdAt,
-      Instant updatedAt,
-      boolean created
-  ) {
-    this.orderSessionId = orderSessionId;
-    this.clOrdId = clOrdId;
-    this.status = status;
-    this.accountId = accountId;
-    this.symbol = symbol;
-    this.side = side;
-    this.orderType = orderType;
-    this.qty = qty;
-    this.price = price;
-    this.expiresAt = expiresAt;
-    this.remainingSeconds = remainingSeconds;
-    this.executionResult = executionResult;
-    this.executedQty = executedQty;
-    this.leavesQty = leavesQty;
-    this.executedPrice = executedPrice;
-    this.externalOrderId = externalOrderId;
-    this.failureReason = failureReason;
-    this.executedAt = executedAt;
-    this.canceledAt = canceledAt;
-    this.createdAt = createdAt;
-    this.updatedAt = updatedAt;
-    this.created = created;
-  }
+public record OrderSessionResult(
+    String orderSessionId,
+    String clOrdId,
+    String status,
+    boolean challengeRequired,
+    String authorizationReason,
+    Long accountId,
+    String symbol,
+    String side,
+    String orderType,
+    BigDecimal qty,
+    BigDecimal price,
+    String quoteSnapshotId,
+    Instant quoteAsOf,
+    String quoteSourceMode,
+    BigDecimal preTradePrice,
+    Instant expiresAt,
+    Long remainingSeconds,
+    String executionResult,
+    BigDecimal executedQty,
+    BigDecimal leavesQty,
+    BigDecimal executedPrice,
+    String externalOrderId,
+    String failureReason,
+    Instant executedAt,
+    Instant canceledAt,
+    Instant createdAt,
+    Instant updatedAt,
+    boolean created
+) {
 
   public static OrderSessionResult of(
       String orderSessionId,
       String clOrdId,
       String status,
+      boolean challengeRequired,
+      String authorizationReason,
       Long accountId,
       String symbol,
       String side,
       String orderType,
       BigDecimal qty,
       BigDecimal price,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      String quoteSourceMode,
+      BigDecimal preTradePrice,
       Instant expiresAt,
       Long remainingSeconds,
       String executionResult,
@@ -104,12 +68,18 @@ public class OrderSessionResult {
         orderSessionId,
         clOrdId,
         status,
+        challengeRequired,
+        authorizationReason,
         accountId,
         symbol,
         side,
         orderType,
         qty,
         price,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode,
+        preTradePrice,
         expiresAt,
         remainingSeconds,
         executionResult,
@@ -138,6 +108,14 @@ public class OrderSessionResult {
     return status;
   }
 
+  public boolean isChallengeRequired() {
+    return challengeRequired;
+  }
+
+  public String getAuthorizationReason() {
+    return authorizationReason;
+  }
+
   public Long getAccountId() {
     return accountId;
   }
@@ -160,6 +138,22 @@ public class OrderSessionResult {
 
   public BigDecimal getPrice() {
     return price;
+  }
+
+  public String getQuoteSnapshotId() {
+    return quoteSnapshotId;
+  }
+
+  public Instant getQuoteAsOf() {
+    return quoteAsOf;
+  }
+
+  public String getQuoteSourceMode() {
+    return quoteSourceMode;
+  }
+
+  public BigDecimal getPreTradePrice() {
+    return preTradePrice;
   }
 
   public Instant getExpiresAt() {

@@ -7,13 +7,13 @@ DELETE FROM positions;
 DELETE FROM accounts;
 DELETE FROM member;
 
-INSERT INTO member (id, member_no, email) VALUES (1, 'M-1001', 'seed@fix.local');
+INSERT INTO member (id, member_no, email) VALUES (${seed_member_id}, 'M-1001', 'seed@fix.local');
 
 INSERT INTO accounts (id, account_no, member_id, status, currency, cash_balance, daily_sell_limit, created_at, updated_at, version)
-VALUES (1, '110123456789', 1, 'ACTIVE', 'KRW', 100000000.0000, 500.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
+VALUES (${seed_account_id}, '110123456789', ${seed_member_id}, 'ACTIVE', 'KRW', 100000000.0000, 500.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
 
 INSERT INTO positions (id, account_id, symbol, qty, avg_price, created_at, updated_at, version)
-VALUES (1, 1, '005930', 120.0000, 70000.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
+VALUES (${seed_position_id}, ${seed_account_id}, '005930', 120.0000, 70000.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
 
 INSERT INTO executions (id, order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, executed_at, created_at, updated_at, version)
-VALUES (1, 0, 1, 'CL-SEED-SELL-001', '005930', 'SELL', 100.0000, 70000.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);
+VALUES (${seed_execution_id}, 0, ${seed_account_id}, 'CL-SEED-SELL-001', '005930', 'SELL', 100.0000, 70000.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0);

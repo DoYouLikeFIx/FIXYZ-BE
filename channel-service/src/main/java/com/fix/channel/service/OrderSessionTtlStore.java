@@ -7,6 +7,8 @@ public interface OrderSessionTtlStore {
 
   void activate(String orderSessionId, Instant expiresAt);
 
+  void refresh(String orderSessionId, Instant expiresAt);
+
   boolean isActive(String orderSessionId);
 
   void clear(String orderSessionId);

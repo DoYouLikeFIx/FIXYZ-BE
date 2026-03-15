@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Locale;
 
 public record OrderSessionCreateRequest(
@@ -61,6 +62,22 @@ public record OrderSessionCreateRequest(
   }
 
   public OrderSessionCreateCommand toVo(Long memberId, String clOrdId) {
+    return toVo(memberId, clOrdId, null, null, null, null, null);
+  }
+
+  public OrderSessionCreateCommand toVo(Long memberId, String clOrdId, Instant lastMfaVerifiedAt) {
+    return toVo(memberId, clOrdId, lastMfaVerifiedAt, null, null, null, null);
+  }
+
+  public OrderSessionCreateCommand toVo(
+      Long memberId,
+      String clOrdId,
+      Instant lastMfaVerifiedAt,
+      String loginClientIp,
+      String loginUserAgent,
+      String requestClientIp,
+      String requestUserAgent
+  ) {
     return OrderSessionCreateCommand.of(
         memberId,
         accountId,
@@ -69,7 +86,12 @@ public record OrderSessionCreateRequest(
         side.trim().toUpperCase(Locale.ROOT),
         orderType.trim().toUpperCase(Locale.ROOT),
         normalizeWholeNumber(qty),
-        price == null ? null : normalizeWholeNumber(price)
+        price == null ? null : normalizeWholeNumber(price),
+        lastMfaVerifiedAt,
+        loginClientIp,
+        loginUserAgent,
+        requestClientIp,
+        requestUserAgent
     );
   }
 

@@ -18,9 +18,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.testsupport.OrderSessionTestFixture;
 import com.fix.common.web.CommonHeaders;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.time.Instant;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,11 +33,13 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(OrderSessionTestFixture.class)
 @TestPropertySource(properties = {
     "spring.datasource.url=jdbc:h2:mem:channel_test;MODE=MySQL;DB_CLOSE_DELAY=-1",
     "spring.datasource.driver-class-name=org.h2.Driver",
@@ -61,6 +66,9 @@ class ChannelErrorContractTest {
 
   @Autowired
   private ObjectMapper objectMapper;
+
+  @Autowired
+  private OrderSessionTestFixture orderSessionTestFixture;
 
   @DynamicPropertySource
   static void registerProperties(DynamicPropertyRegistry registry) {
@@ -97,6 +105,20 @@ class ChannelErrorContractTest {
   @WithMockUser(username = "qa-user")
   void shouldExposeMappedExternalErrorMetadataAtRealChannelBoundary() throws Exception {
     WIRE_MOCK_SERVER.resetAll();
+    orderSessionTestFixture.reset();
+    String orderSessionId = orderSessionTestFixture.createInitiatedSessionId(
+        301L,
+        1L,
+        "123e4567-e89b-42d3-a456-426614174260",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(70100),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plusSeconds(3600)
+    );
     WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlEqualTo("/internal/v1/orders"))
         .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
             .withStatus(504)
@@ -118,20 +140,15 @@ class ChannelErrorContractTest {
                 }
                 """)));
 
-    mockMvc.perform(post("/api/v1/orders")
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
             .with(csrf())
-            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-timeout")
-            .param("accountId", "1")
-            .param("clOrdId", "123e4567-e89b-42d3-a456-426614174260")
-            .param("symbol", "005930")
-            .param("side", "BUY")
-            .param("quantity", "2.0000")
-            .param("price", "70100.0000"))
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-timeout"))
         .andExpect(status().isGatewayTimeout())
         .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-timeout"))
         .andExpect(jsonPath("$.code").value("FEP-002"))
         .andExpect(jsonPath("$.message").value("Exchange connectivity timeout"))
-        .andExpect(jsonPath("$.path").value("/api/v1/orders"))
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions/" + orderSessionId + "/execute"))
         .andExpect(jsonPath("$.userMessageKey").value("error.fep.timeout"))
         .andExpect(jsonPath("$.operatorCode").value("TIMEOUT"))
         .andExpect(jsonPath("$.details.symbol").value("005930"))
@@ -140,9 +157,75 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.correlationId").value("trace-channel-timeout"))
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
 
+    assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("FAILED");
+    assertThat(orderSessionTestFixture.failureReasonOf(orderSessionId)).isEqualTo("FEP-002");
+
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-timeout")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldRejectCanonicalExecuteWhenOrderSessionIsNotAuthorized() throws Exception {
+    orderSessionTestFixture.reset();
+    String orderSessionId = orderSessionTestFixture.createInitiatedSessionId(
+        301L,
+        1L,
+        "123e4567-e89b-42d3-a456-426614174261",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(70100),
+        true,
+        "ELEVATED_ORDER_RISK",
+        Instant.now().plusSeconds(600)
+    );
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .with(csrf())
+            .sessionAttr("AUTH_MEMBER_ID", 301L))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORD-009"))
+        .andExpect(jsonPath("$.message").value("order session is not authorized for execution"))
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions/" + orderSessionId + "/execute"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldReturnDedicatedErrorWhenCanonicalExecuteIsAlreadyInProgress() throws Exception {
+    orderSessionTestFixture.reset();
+    String orderSessionId = orderSessionTestFixture.createExecutingSessionId(
+        301L,
+        1L,
+        "123e4567-e89b-42d3-a456-426614174262",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(70100),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plusSeconds(3600)
+    );
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .with(csrf())
+            .sessionAttr("AUTH_MEMBER_ID", 301L))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORD-010"))
+        .andExpect(jsonPath("$.message").value("order session execution is already in progress"))
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions/" + orderSessionId + "/execute"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldNotExposeLegacyOrderExecutionEndpoint() throws Exception {
+    mockMvc.perform(post("/api/v1/orders")
+            .with(csrf())
+            .sessionAttr("AUTH_MEMBER_ID", 301L))
+        .andExpect(status().isNotFound());
   }
 
   @Test

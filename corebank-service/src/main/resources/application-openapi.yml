@@ -18,6 +18,11 @@ spring:
     enabled: true
     validate-on-migrate: true
     locations: classpath:db/migration,classpath:db/seed
+    placeholders:
+      seed_member_id: 900001
+      seed_account_id: 900001
+      seed_position_id: 900001
+      seed_execution_id: 900001
 
 springdoc:
   api-docs:
@@ -25,3 +30,10 @@ springdoc:
     version: OPENAPI_3_0
   swagger-ui:
     path: /swagger-ui/index.html
+
+corebank:
+  provisioning:
+    # Local live QA/openapi sessions need immediately orderable accounts without
+    # borrowing the static seed account; keep this profile-specific and verified
+    # by AccountProvisioningOpenapiProfileIntegrationTest.
+    default-cash-balance: 100000000.0000
