@@ -1,0 +1,7 @@
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+  jpa:
+    properties:
+      hibernate:
+        show_sql: false
