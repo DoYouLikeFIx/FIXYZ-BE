@@ -6,51 +6,21 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 
-public class OrderSessionCreateCommand {
-
-  private final Long memberId;
-  private final Long accountId;
-  private final String clOrdId;
-  private final String symbol;
-  private final String side;
-  private final String orderType;
-  private final BigDecimal qty;
-  private final BigDecimal price;
-  private final Instant lastMfaVerifiedAt;
-  private final String loginClientIp;
-  private final String loginUserAgent;
-  private final String requestClientIp;
-  private final String requestUserAgent;
-
-  private OrderSessionCreateCommand(
-      Long memberId,
-      Long accountId,
-      String clOrdId,
-      String symbol,
-      String side,
-      String orderType,
-      BigDecimal qty,
-      BigDecimal price,
-      Instant lastMfaVerifiedAt,
-      String loginClientIp,
-      String loginUserAgent,
-      String requestClientIp,
-      String requestUserAgent
-  ) {
-    this.memberId = memberId;
-    this.accountId = accountId;
-    this.clOrdId = clOrdId;
-    this.symbol = symbol;
-    this.side = side;
-    this.orderType = orderType;
-    this.qty = qty;
-    this.price = price;
-    this.lastMfaVerifiedAt = lastMfaVerifiedAt;
-    this.loginClientIp = loginClientIp;
-    this.loginUserAgent = loginUserAgent;
-    this.requestClientIp = requestClientIp;
-    this.requestUserAgent = requestUserAgent;
-  }
+public record OrderSessionCreateCommand(
+    Long memberId,
+    Long accountId,
+    String clOrdId,
+    String symbol,
+    String side,
+    String orderType,
+    BigDecimal qty,
+    BigDecimal price,
+    Instant lastMfaVerifiedAt,
+    String loginClientIp,
+    String loginUserAgent,
+    String requestClientIp,
+    String requestUserAgent
+) {
 
   public static OrderSessionCreateCommand of(
       Long memberId,
