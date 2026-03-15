@@ -259,6 +259,10 @@ public class OrderSession extends BaseTimeEntity {
     this.status = OrderSessionStatus.AUTHED;
   }
 
+  public void extendExpiry(Instant expiresAt) {
+    this.expiresAt = expiresAt;
+  }
+
   public void startExecuting() {
     this.status = OrderSessionStatus.EXECUTING;
   }
