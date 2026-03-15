@@ -32,7 +32,7 @@ public class OrderSessionPersistenceService {
   private EntityManager entityManager;
 
   @Transactional
-  public OrderSession createSession(
+  OrderSession createSession(
       OrderSessionCreateCommand command,
       boolean challengeRequired,
       String authorizationReason,
@@ -65,7 +65,7 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
-  public void expireSession(String orderSessionId) {
+  void expireSession(String orderSessionId) {
     orderSessionRepository.findByOrderSessionId(orderSessionId)
         .filter(session -> session.getStatus() != OrderSessionStatus.EXPIRED)
         .ifPresent(OrderSession::expire);
@@ -84,7 +84,7 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
-  public void deleteCreatedSession(String orderSessionId) {
+  void deleteCreatedSession(String orderSessionId) {
     auditLogRepository.deleteByActionAndTargetTypeAndTargetId(
         AuditAction.ORDER_SESSION_CREATE.value(),
         ORDER_SESSION_TARGET_TYPE,
@@ -94,7 +94,7 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
-  public OrderSession markAuthorized(OrderSession session) {
+  OrderSession markAuthorized(OrderSession session) {
     session.authorize();
     orderSessionRepository.flush();
     auditLogRepository.save(AuditLog.of(
@@ -108,7 +108,7 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
-  public OrderSession extendSession(OrderSession session, Instant expiresAt) {
+  OrderSession extendSession(OrderSession session, Instant expiresAt) {
     session.extendExpiry(expiresAt);
     orderSessionRepository.flush();
     auditLogRepository.save(AuditLog.of(
@@ -122,20 +122,20 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
-  public void restoreExpiry(OrderSession session, Instant expiresAt) {
+  void restoreExpiry(OrderSession session, Instant expiresAt) {
     session.extendExpiry(expiresAt);
     orderSessionRepository.flush();
   }
 
   @Transactional
-  public OrderSession markExecuting(OrderSession session) {
+  OrderSession markExecuting(OrderSession session) {
     session.startExecuting();
     orderSessionRepository.flush();
     return session;
   }
 
   @Transactional
-  public OrderSession markCompleted(
+  OrderSession markCompleted(
       OrderSession session,
       String executionResult,
       BigDecimal executedQty,
@@ -157,7 +157,7 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
-  public OrderSession markFailed(OrderSession session, String failureReason) {
+  OrderSession markFailed(OrderSession session, String failureReason) {
     session.fail(failureReason);
     orderSessionRepository.flush();
     auditLogRepository.save(AuditLog.of(

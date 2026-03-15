@@ -6,6 +6,7 @@ import com.fix.channel.entity.Member;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.dto.response.OrderSessionResponse;
 import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.OrderSessionCreateCommand;
@@ -101,9 +102,18 @@ public class OrderSessionService {
     return buildResult(savedSession, requireRemainingSeconds(savedSession), true);
   }
 
+  public OrderSessionCreateResponse createOrderSessionResponse(OrderSessionCreateCommand command) {
+    OrderSessionResult result = createOrderSession(command);
+    return new OrderSessionCreateResponse(OrderSessionResponse.from(result), result.isCreated());
+  }
+
   public OrderSessionResult getOrderSession(OrderSessionQueryCommand command) {
     OrderSession session = requireOwnedSession(command.getMemberId(), command.getOrderSessionId());
     return buildResult(session, requireRemainingSeconds(session), false);
+  }
+
+  public OrderSessionResponse getOrderSessionResponse(OrderSessionQueryCommand command) {
+    return OrderSessionResponse.from(getOrderSession(command));
   }
 
   public OrderSessionResult extendOrderSession(OrderSessionQueryCommand command) {
@@ -120,7 +130,7 @@ public class OrderSessionService {
     // create-time auto-authorization gates such as recent MFA freshness.
     Instant previousExpiresAt = resolveExpiresAt(session);
     Instant nextExpiresAt = resolveNextExpiry(previousExpiresAt);
-    OrderSession extendedSession = orderSessionPersistenceService.extendSession(session, nextExpiresAt);
+    OrderSession extendedSession = extendSession(session, nextExpiresAt);
     try {
       orderSessionTtlStore.refresh(extendedSession.getOrderSessionId(), nextExpiresAt);
     } catch (RuntimeException ex) {
@@ -128,6 +138,10 @@ public class OrderSessionService {
       throw ex;
     }
     return buildResult(extendedSession, requireRemainingSeconds(extendedSession), false);
+  }
+
+  public OrderSessionResponse extendOrderSessionResponse(OrderSessionQueryCommand command) {
+    return OrderSessionResponse.from(extendOrderSession(command));
   }
 
   @Transactional(noRollbackFor = BusinessException.class)
@@ -159,7 +173,7 @@ public class OrderSessionService {
 
     orderSessionOtpChallengeService.enforceDebounce(session.getOrderSessionId());
     if (orderSessionOtpChallengeService.remainingAttempts(session.getOrderSessionId()) < 1) {
-      orderSessionPersistenceService.markFailed(session, "OTP_EXCEEDED");
+      markFailed(session, "OTP_EXCEEDED");
       throw new BusinessException(ErrorCode.CHANNEL_OTP_ATTEMPTS_EXCEEDED, "otp attempts exceeded");
     }
 
@@ -167,7 +181,7 @@ public class OrderSessionService {
     if (!verification.matched()) {
       int remainingAttempts = orderSessionOtpChallengeService.consumeFailure(session.getOrderSessionId());
       if (remainingAttempts < 1) {
-        orderSessionPersistenceService.markFailed(session, "OTP_EXCEEDED");
+        markFailed(session, "OTP_EXCEEDED");
         throw new BusinessException(ErrorCode.CHANNEL_OTP_ATTEMPTS_EXCEEDED, "otp attempts exceeded");
       }
       throw new BusinessException(
@@ -185,13 +199,62 @@ public class OrderSessionService {
       return buildResult(reloadLatestSession(session), remainingSeconds, false);
     }
 
-    OrderSession authorizedSession = orderSessionPersistenceService.markAuthorized(session);
+    OrderSession authorizedSession = authorize(session);
     orderSessionOtpChallengeService.recordSuccess(
         authorizedSession.getOrderSessionId(),
         verification.windowIndex(),
         verification.normalizedOtp()
     );
     return buildResult(authorizedSession, remainingSeconds, false);
+  }
+
+  @Transactional(noRollbackFor = BusinessException.class)
+  public OrderSessionResponse verifyOtpResponse(OrderSessionOtpVerifyCommand command) {
+    return OrderSessionResponse.from(verifyOtp(command));
+  }
+
+  public OrderSession authorize(OrderSession session) {
+    return orderSessionPersistenceService.markAuthorized(session);
+  }
+
+  public OrderSession extendSession(OrderSession session, Instant expiresAt) {
+    return orderSessionPersistenceService.extendSession(session, expiresAt);
+  }
+
+  public OrderSession beginExecution(OrderSession session) {
+    return orderSessionPersistenceService.markExecuting(session);
+  }
+
+  public OrderSession completeExecution(
+      OrderSession session,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      Instant executedAt
+  ) {
+    return orderSessionPersistenceService.markCompleted(
+        session,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        executedAt
+    );
+  }
+
+  public OrderSession markFailed(OrderSession session, String failureReason) {
+    return orderSessionPersistenceService.markFailed(session, failureReason);
+  }
+
+  public void expireSession(String orderSessionId) {
+    orderSessionPersistenceService.expireSession(orderSessionId);
+  }
+
+  public java.util.List<String> expireOverdueSessionBatch(Instant referenceTime, int batchSize) {
+    return orderSessionPersistenceService.expireOverdueSessionBatch(referenceTime, batchSize);
   }
 
   private OrderSession resolveSession(OrderSessionQueryCommand command) {
@@ -387,7 +450,7 @@ public class OrderSessionService {
 
   private Long expireAndReturnMissing(OrderSession session) {
     safelyClearTtl(session.getOrderSessionId(), null, "missing session reconciliation");
-    orderSessionPersistenceService.expireSession(session.getOrderSessionId());
+    expireSession(session.getOrderSessionId());
     throw orderSessionNotFound();
   }
 
@@ -453,5 +516,8 @@ public class OrderSessionService {
   }
 
   private record AuthorizationDecision(boolean challengeRequired, String authorizationReason) {
+  }
+
+  public record OrderSessionCreateResponse(OrderSessionResponse response, boolean created) {
   }
 }

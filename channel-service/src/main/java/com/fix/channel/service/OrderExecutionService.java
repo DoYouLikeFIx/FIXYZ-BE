@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import com.fix.channel.client.CorebankClient;
+import com.fix.channel.dto.response.OrderSessionResponse;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.vo.OrderExecuteCommand;
@@ -20,7 +21,6 @@ public class OrderExecutionService {
 
   private final CorebankClient corebankClient;
   private final OrderSessionService orderSessionService;
-  private final OrderSessionPersistenceService orderSessionPersistenceService;
   private final OrderSessionExecutionLockService orderSessionExecutionLockService;
   private final Clock clock;
 
@@ -42,20 +42,20 @@ public class OrderExecutionService {
 
     orderSessionExecutionLockService.acquire(orderSessionId);
     try {
-      OrderSession executingSession = orderSessionPersistenceService.markExecuting(session);
+      OrderSession executingSession = orderSessionService.beginExecution(session);
       OrderExecuteResult result;
       try {
         result = corebankClient.executeOrder(toCommand(executingSession), CorrelationIdSupport.currentOrGenerate());
       } catch (RuntimeException ex) {
         try {
-          orderSessionPersistenceService.markFailed(executingSession, executionFailureReason(ex));
+          orderSessionService.markFailed(executingSession, executionFailureReason(ex));
         } catch (RuntimeException markFailedEx) {
           ex.addSuppressed(markFailedEx);
         }
         throw ex;
       }
 
-      OrderSession completedSession = orderSessionPersistenceService.markCompleted(
+      OrderSession completedSession = orderSessionService.completeExecution(
           executingSession,
           result.getStatus(),
           result.getOrderQuantity(),
@@ -99,6 +99,10 @@ public class OrderExecutionService {
     }
   }
 
+  public OrderSessionResponse executeResponse(Long memberId, String orderSessionId) {
+    return OrderSessionResponse.from(execute(memberId, orderSessionId));
+  }
+
   private OrderExecuteCommand toCommand(OrderSession session) {
     return OrderExecuteCommand.of(
         session.getAccountId(),
@@ -112,7 +116,7 @@ public class OrderExecutionService {
 
   private Long requireRemainingSeconds(OrderSession session) {
     if (session.getStatus() == OrderSessionStatus.EXPIRED || !resolveExpiresAt(session).isAfter(Instant.now(clock))) {
-      orderSessionPersistenceService.expireSession(session.getOrderSessionId());
+      orderSessionService.expireSession(session.getOrderSessionId());
       throw orderSessionNotFound();
     }
     long remainingMillis = java.time.Duration.between(Instant.now(clock), session.getExpiresAt()).toMillis();
