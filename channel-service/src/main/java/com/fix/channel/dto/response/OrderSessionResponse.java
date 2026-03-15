@@ -1,6 +1,7 @@
 package com.fix.channel.dto.response;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fix.channel.serialization.OrderSessionResponseSerializer;
 import com.fix.channel.vo.OrderSessionResult;
 import java.math.BigDecimal;
 import java.time.Instant;
