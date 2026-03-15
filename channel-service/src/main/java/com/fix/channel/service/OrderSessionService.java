@@ -36,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderSessionService {
 
   private static final String AUTHORIZATION_REASON_ELEVATED_ORDER_RISK = "ELEVATED_ORDER_RISK";
-  private static final String AUTHORIZATION_REASON_RECENT_LOGIN_MFA = "RECENT_LOGIN_MFA";
+  private static final String AUTHORIZATION_REASON_TRUSTED_AUTH_SESSION = "TRUSTED_AUTH_SESSION";
   private static final Set<String> RECENT_RISK_SECURITY_EVENTS = Set.of(
       "ACCOUNT_LOCKED",
       "MFA_RECOVERY_PROOF_ISSUED",
@@ -57,7 +57,7 @@ public class OrderSessionService {
   private final TotpService totpService;
   private final Clock clock;
 
-  @Value("${auth.guardrails.order-authorization.recent-login-mfa-window:5m}")
+  @Value("${auth.guardrails.order-authorization.recent-login-mfa-window:60m}")
   private Duration recentLoginMfaWindow;
 
   @Value("${auth.guardrails.order-authorization.auto-authorize.max-notional:500000}")
@@ -104,6 +104,30 @@ public class OrderSessionService {
   public OrderSessionResult getOrderSession(OrderSessionQueryCommand command) {
     OrderSession session = requireOwnedSession(command.getMemberId(), command.getOrderSessionId());
     return buildResult(session, requireRemainingSeconds(session), false);
+  }
+
+  public OrderSessionResult extendOrderSession(OrderSessionQueryCommand command) {
+    OrderSession session = requireOwnedSession(command.getMemberId(), command.getOrderSessionId());
+    requireRemainingSeconds(session);
+    if (!isExtendableStatus(session.getStatus())) {
+      throw new BusinessException(
+          ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
+          "order session cannot be extended in current state"
+      );
+    }
+
+    // Extension preserves an already-active order session. It does not replay
+    // create-time auto-authorization gates such as recent MFA freshness.
+    Instant previousExpiresAt = resolveExpiresAt(session);
+    Instant nextExpiresAt = Instant.now(clock).plus(orderSessionTtlStore.ttl());
+    OrderSession extendedSession = orderSessionPersistenceService.extendSession(session, nextExpiresAt);
+    try {
+      orderSessionTtlStore.refresh(extendedSession.getOrderSessionId(), nextExpiresAt);
+    } catch (RuntimeException ex) {
+      orderSessionPersistenceService.restoreExpiry(extendedSession, previousExpiresAt);
+      throw ex;
+    }
+    return buildResult(extendedSession, requireRemainingSeconds(extendedSession), false);
   }
 
   @Transactional(noRollbackFor = BusinessException.class)
@@ -225,15 +249,19 @@ public class OrderSessionService {
 
   private AuthorizationDecision resolveAuthorizationDecision(OrderSessionCreateCommand command) {
     if (isLowRiskOrder(command)
-        && hasFreshLoginMfa(command.getLastMfaVerifiedAt())
+        && hasFreshLoginMfaForCreateAutoAuth(command.getLastMfaVerifiedAt())
         && hasLoginContextContinuity(command)
         && !hasRecentRiskSecurityEvents(command.getMemberId())) {
-      return new AuthorizationDecision(false, AUTHORIZATION_REASON_RECENT_LOGIN_MFA);
+      return new AuthorizationDecision(false, AUTHORIZATION_REASON_TRUSTED_AUTH_SESSION);
     }
     return new AuthorizationDecision(true, AUTHORIZATION_REASON_ELEVATED_ORDER_RISK);
   }
 
-  private boolean hasFreshLoginMfa(Instant lastMfaVerifiedAt) {
+  private boolean isExtendableStatus(OrderSessionStatus status) {
+    return status == OrderSessionStatus.PENDING_NEW || status == OrderSessionStatus.AUTHED;
+  }
+
+  private boolean hasFreshLoginMfaForCreateAutoAuth(Instant lastMfaVerifiedAt) {
     if (lastMfaVerifiedAt == null) {
       return false;
     }

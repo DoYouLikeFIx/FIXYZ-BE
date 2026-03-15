@@ -108,6 +108,26 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
+  public OrderSession extendSession(OrderSession session, Instant expiresAt) {
+    session.extendExpiry(expiresAt);
+    orderSessionRepository.flush();
+    auditLogRepository.save(AuditLog.of(
+        session.getMemberId(),
+        AuditAction.ORDER_SESSION_EXTENDED,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        "clOrdId=" + session.getClOrdId() + ", expiresAt=" + expiresAt
+    ));
+    return session;
+  }
+
+  @Transactional
+  public void restoreExpiry(OrderSession session, Instant expiresAt) {
+    session.extendExpiry(expiresAt);
+    orderSessionRepository.flush();
+  }
+
+  @Transactional
   public OrderSession markExecuting(OrderSession session) {
     session.startExecuting();
     orderSessionRepository.flush();

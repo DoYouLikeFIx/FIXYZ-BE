@@ -17,12 +17,13 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class RedisOrderSessionTtlStore implements OrderSessionTtlStore {
 
-  private static final Duration ORDER_SESSION_TTL = Duration.ofMinutes(10);
+  private static final Duration ORDER_SESSION_TTL = Duration.ofMinutes(60);
   private static final String ORDER_SESSION_KEY_PREFIX = "ch:order-session:";
   private static final String OTP_ATTEMPTS_KEY_PREFIX = "ch:otp-attempts:";
   private static final String INITIAL_STATUS = "PENDING_NEW";
   private static final String INITIAL_OTP_ATTEMPTS = "3";
   private static final DefaultRedisScript<Long> ACTIVATE_SESSION_SCRIPT = createActivateSessionScript();
+  private static final DefaultRedisScript<Long> REFRESH_SESSION_SCRIPT = createRefreshSessionScript();
 
   private final ObjectProvider<StringRedisTemplate> redisTemplateProvider;
   private final Clock clock;
@@ -37,6 +38,19 @@ public class RedisOrderSessionTtlStore implements OrderSessionTtlStore {
     Long activated = executeActivation(redisTemplate, orderSessionId, ttlMillis);
     if (activated == null || activated != 1L) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session cache activation failed");
+    }
+  }
+
+  @Override
+  public void refresh(String orderSessionId, Instant expiresAt) {
+    long ttlMillis = Duration.between(Instant.now(clock), expiresAt).toMillis();
+    if (ttlMillis <= 0) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session expiration must be in the future");
+    }
+    StringRedisTemplate redisTemplate = requireRedis();
+    Long refreshed = executeRefresh(redisTemplate, orderSessionId, ttlMillis);
+    if (refreshed == null || refreshed != 1L) {
+      throw new BusinessException(ErrorCode.ORDER_SESSION_NOT_FOUND, "Order session not found.");
     }
   }
 
@@ -84,11 +98,35 @@ public class RedisOrderSessionTtlStore implements OrderSessionTtlStore {
     );
   }
 
+  protected Long executeRefresh(StringRedisTemplate redisTemplate, String orderSessionId, long ttlMillis) {
+    return redisTemplate.execute(
+        REFRESH_SESSION_SCRIPT,
+        List.of(orderSessionKey(orderSessionId), otpAttemptsKey(orderSessionId)),
+        String.valueOf(ttlMillis)
+    );
+  }
+
   private static DefaultRedisScript<Long> createActivateSessionScript() {
     DefaultRedisScript<Long> script = new DefaultRedisScript<>();
     script.setScriptText("""
         redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[1])
         redis.call('SET', KEYS[2], ARGV[3], 'PX', ARGV[1])
+        return 1
+        """);
+    script.setResultType(Long.class);
+    return script;
+  }
+
+  private static DefaultRedisScript<Long> createRefreshSessionScript() {
+    DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+    script.setScriptText("""
+        if redis.call('EXISTS', KEYS[1]) == 0 then
+          return 0
+        end
+        redis.call('PEXPIRE', KEYS[1], ARGV[1])
+        if redis.call('EXISTS', KEYS[2]) == 1 then
+          redis.call('PEXPIRE', KEYS[2], ARGV[1])
+        end
         return 1
         """);
     script.setResultType(Long.class);
