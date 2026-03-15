@@ -257,11 +257,6 @@ public class OrderSessionService {
     return orderSessionPersistenceService.expireOverdueSessionBatch(referenceTime, batchSize);
   }
 
-  private OrderSession resolveSession(OrderSessionQueryCommand command) {
-    return orderSessionRepository.findByOrderSessionId(command.getOrderSessionId())
-        .orElseThrow(this::orderSessionNotFound);
-  }
-
   OrderSession requireOwnedSession(Long memberId, String orderSessionId) {
     OrderSession session = orderSessionRepository.findByOrderSessionId(orderSessionId)
         .orElseThrow(this::orderSessionNotFound);

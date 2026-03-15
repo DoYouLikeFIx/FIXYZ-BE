@@ -82,6 +82,7 @@ class ChannelOpenApiCompatibilityTest {
             "/api/v1/orders/sessions/{orderSessionId}",
             "/api/v1/orders/sessions/{orderSessionId}/otp/verify",
             "/api/v1/orders/sessions/{orderSessionId}/execute",
+            "/api/v1/orders/sessions/{orderSessionId}/extend",
             "/api/v1/accounts/{accountId}/positions",
             "/api/v1/accounts/{accountId}/summary",
             "/api/v1/accounts/{accountId}/positions/list",
