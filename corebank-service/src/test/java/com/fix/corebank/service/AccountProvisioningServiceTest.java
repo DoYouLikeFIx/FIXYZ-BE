@@ -9,6 +9,7 @@ import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.MemberRepository;
 import com.fix.corebank.vo.AccountProvisioningCommand;
 import com.fix.corebank.vo.AccountProvisioningResult;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -42,7 +43,9 @@ class AccountProvisioningServiceTest {
     assertThat(result.isIdempotent()).isFalse();
     assertThat(result.getStatus()).isEqualTo("ACTIVE");
     assertThat(result.getAccountNumber()).isEqualTo("11000000000101");
-    assertThat(accountRepository.findByMemberId(101L)).isPresent();
+    assertThat(accountRepository.findByMemberId(101L)).hasValueSatisfying((account) -> {
+      assertThat(account.getCashBalance()).isEqualByComparingTo(new BigDecimal("100000000.0000"));
+    });
     assertThat(memberRepository.findById(101L)).isPresent();
   }
 
