@@ -1,4 +1,4 @@
-package com.fix.channel.dto.response;
+package com.fix.channel.serialization;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fix.channel.dto.response.OrderSessionResponse;
 import com.fix.channel.vo.OrderSessionResult;
 import java.math.BigDecimal;
 import java.time.Instant;
