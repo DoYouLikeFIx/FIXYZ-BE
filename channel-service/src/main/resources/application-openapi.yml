@@ -30,6 +30,6 @@ springdoc:
 
 auth:
   demo:
-    auto-totp-enrolled: true
+    auto-totp-enrolled: false
   totp:
     secret-store: in-memory
