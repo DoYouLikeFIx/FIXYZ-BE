@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -26,7 +27,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class AccountProvisioningService {
 
   private static final String DEFAULT_CURRENCY = "KRW";
-  private static final BigDecimal DEFAULT_CASH_BALANCE = new BigDecimal("0.0000");
   private static final BigDecimal DEFAULT_DAILY_SELL_LIMIT = new BigDecimal("500.0000");
 
   private final MemberRepository memberRepository;
@@ -35,6 +35,9 @@ public class AccountProvisioningService {
 
   @PersistenceContext
   private EntityManager entityManager;
+
+  @Value("${corebank.provisioning.default-cash-balance:0.0000}")
+  private BigDecimal defaultCashBalance;
 
   public AccountProvisioningResult provisionDefaultAccount(AccountProvisioningCommand command) {
     validateCommand(command);
@@ -107,7 +110,7 @@ public class AccountProvisioningService {
         generateAccountNo(member.getId()),
         member.getId(),
         DEFAULT_CURRENCY,
-        DEFAULT_CASH_BALANCE,
+        defaultCashBalance,
         DEFAULT_DAILY_SELL_LIMIT
     );
 
