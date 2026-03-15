@@ -90,6 +90,10 @@ class OrderSessionExpirySchedulerTest {
     }
 
     @Override
+    public void refresh(String orderSessionId, Instant expiresAt) {
+    }
+
+    @Override
     public boolean isActive(String orderSessionId) {
       return false;
     }
@@ -104,7 +108,7 @@ class OrderSessionExpirySchedulerTest {
 
     @Override
     public Duration ttl() {
-      return Duration.ofMinutes(10);
+      return Duration.ofMinutes(60);
     }
 
     void failOnClear(String orderSessionId) {

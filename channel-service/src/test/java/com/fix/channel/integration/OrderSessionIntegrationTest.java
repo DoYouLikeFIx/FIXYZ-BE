@@ -114,7 +114,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     assertThat(response.path("data").path("createdAt").asText()).isNotBlank();
     assertThat(response.path("data").path("updatedAt").asText()).isNotBlank();
     assertThat(response.path("data").path("expiresAt").asText()).isNotBlank();
-    assertThat(remainingSeconds).isBetween(1L, 600L);
+    assertThat(remainingSeconds).isBetween(1L, 3600L);
     assertThat(stringRedisTemplate.hasKey("ch:order-session:" + orderSessionId)).isTrue();
     assertThat(stringRedisTemplate.getExpire("ch:order-session:" + orderSessionId)).isPositive();
     assertThat(stringRedisTemplate.opsForValue().get("ch:otp-attempts:" + orderSessionId)).isEqualTo("3");
@@ -163,7 +163,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
-  void shouldAutoAuthorizeLowRiskOrderWhenLoginMfaIsFresh() throws Exception {
+  void shouldAutoAuthorizeLowRiskOrderWhenTrustedAuthSessionWindowIsFresh() throws Exception {
     saveLinkedMember("M-ORD-002AA", "authed.user@fixyz.com", "Authed User", 121L, "12345678901254");
 
     AuthSession authSession = login("authed.user@fixyz.com", "Abcd1234!");
@@ -181,14 +181,52 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     assertThat(created.path("data").path("status").asText()).isEqualTo("AUTHED");
     assertThat(created.path("data").path("challengeRequired").asBoolean()).isFalse();
-    assertThat(created.path("data").path("authorizationReason").asText()).isEqualTo("RECENT_LOGIN_MFA");
+    assertThat(created.path("data").path("authorizationReason").asText()).isEqualTo("TRUSTED_AUTH_SESSION");
 
     mockMvc.perform(get("/api/v1/orders/sessions/{orderSessionId}", orderSessionId)
             .cookie(sessionCookie(authSession)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("AUTHED"))
         .andExpect(jsonPath("$.data.challengeRequired").value(false))
-        .andExpect(jsonPath("$.data.authorizationReason").value("RECENT_LOGIN_MFA"));
+        .andExpect(jsonPath("$.data.authorizationReason").value("TRUSTED_AUTH_SESSION"));
+  }
+
+  @Test
+  void shouldExtendOwnedOrderSessionToFullWindow() throws Exception {
+    saveLinkedMember("M-ORD-002AAA", "extend.user@fixyz.com", "Extend User", 124L, "12345678901257");
+
+    AuthSession authSession = login("extend.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174296",
+        124L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+    String createdExpiresAt = created.path("data").path("expiresAt").asText();
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/extend", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.orderSessionId").value(orderSessionId))
+        .andExpect(jsonPath("$.data.remainingSeconds").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3590)))
+        .andExpect(result -> {
+          JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+          assertThat(Instant.parse(body.path("data").path("expiresAt").asText()))
+              .isAfterOrEqualTo(Instant.parse(createdExpiresAt));
+        });
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> assertThat(session.getExpiresAt()).isAfterOrEqualTo(Instant.parse(createdExpiresAt)));
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> assertThat(log.getAction()).isEqualTo("ORDER_SESSION_EXTENDED"));
   }
 
   @Test

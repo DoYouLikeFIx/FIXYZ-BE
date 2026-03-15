@@ -115,7 +115,7 @@ class OrderSessionServiceTest {
     assertThat(result.getOrderType()).isEqualTo("LIMIT");
     assertThat(result.getQty()).isEqualByComparingTo("10");
     assertThat(result.getPrice()).isEqualByComparingTo("72000");
-    assertThat(result.getRemainingSeconds()).isBetween(1L, 600L);
+    assertThat(result.getRemainingSeconds()).isBetween(1L, 3600L);
     assertThat(result.getExpiresAt()).isNotNull();
     assertThat(result.getCreatedAt()).isNotNull();
     assertThat(result.getUpdatedAt()).isNotNull();
@@ -131,7 +131,7 @@ class OrderSessionServiceTest {
   }
 
   @Test
-  void shouldAutoAuthorizeLowRiskSessionWhenRecentLoginMfaIsFresh() {
+  void shouldAutoAuthorizeLowRiskSessionWhenTrustedAuthSessionWindowIsFresh() {
     Instant freshMfaVerifiedAt = Instant.now().minusSeconds(30);
 
     var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
@@ -153,13 +153,68 @@ class OrderSessionServiceTest {
     assertThat(result.isCreated()).isTrue();
     assertThat(result.getStatus()).isEqualTo("AUTHED");
     assertThat(result.isChallengeRequired()).isFalse();
-    assertThat(result.getAuthorizationReason()).isEqualTo("RECENT_LOGIN_MFA");
+    assertThat(result.getAuthorizationReason()).isEqualTo("TRUSTED_AUTH_SESSION");
     assertThat(orderSessionRepository.findByOrderSessionId(result.getOrderSessionId()))
         .hasValueSatisfying(session -> {
           assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED);
           assertThat(session.isChallengeRequired()).isFalse();
-          assertThat(session.getAuthorizationReason()).isEqualTo("RECENT_LOGIN_MFA");
+          assertThat(session.getAuthorizationReason()).isEqualTo("TRUSTED_AUTH_SESSION");
         });
+  }
+
+  @Test
+  void shouldExtendOwnedActiveSessionToFullTtlWindow() {
+    var created = orderSessionService.createOrderSession(ownerLimitCommand(
+        "123e4567-e89b-42d3-a456-426614174280",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    ));
+
+    var extended = orderSessionService.extendOrderSession(
+        OrderSessionQueryCommand.of(ownerMember.getId(), created.getOrderSessionId())
+    );
+
+    assertThat(extended.getOrderSessionId()).isEqualTo(created.getOrderSessionId());
+    assertThat(extended.getRemainingSeconds()).isBetween(3590L, 3600L);
+    assertThat(extended.getExpiresAt()).isAfterOrEqualTo(created.getExpiresAt());
+    assertThat(orderSessionRepository.findByOrderSessionId(created.getOrderSessionId()))
+        .hasValueSatisfying(session -> assertThat(session.getExpiresAt()).isAfterOrEqualTo(created.getExpiresAt()));
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> assertThat(log.getAction()).isEqualTo("ORDER_SESSION_EXTENDED"));
+  }
+
+  @Test
+  void shouldExtendActiveSessionEvenWhenTrustedAuthWindowIsStale() {
+    Instant staleMfaVerifiedAt = Instant.now().minus(Duration.ofMinutes(61));
+
+    var created = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174281",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(10000),
+        staleMfaVerifiedAt,
+        "127.0.0.1",
+        "MockMvc",
+        "127.0.0.1",
+        "MockMvc"
+    ));
+
+    assertThat(created.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(created.isChallengeRequired()).isTrue();
+    assertThat(created.getAuthorizationReason()).isEqualTo("ELEVATED_ORDER_RISK");
+
+    var extended = orderSessionService.extendOrderSession(
+        OrderSessionQueryCommand.of(ownerMember.getId(), created.getOrderSessionId())
+    );
+
+    assertThat(extended.getOrderSessionId()).isEqualTo(created.getOrderSessionId());
+    assertThat(extended.getStatus()).isEqualTo("PENDING_NEW");
+    assertThat(extended.getRemainingSeconds()).isBetween(3590L, 3600L);
+    assertThat(extended.getExpiresAt()).isAfterOrEqualTo(created.getExpiresAt());
   }
 
   @Test
@@ -511,7 +566,7 @@ class OrderSessionServiceTest {
 
   static class InMemoryOrderSessionTtlStore implements OrderSessionTtlStore {
 
-    private static final Duration TTL = Duration.ofMinutes(10);
+    private static final Duration TTL = Duration.ofMinutes(60);
 
     private final Map<String, Instant> activeSessions = new ConcurrentHashMap<>();
     private volatile boolean failNextActivation;
@@ -535,6 +590,14 @@ class OrderSessionServiceTest {
     public boolean isActive(String orderSessionId) {
       Instant expiresAt = activeSessions.get(orderSessionId);
       return expiresAt != null && expiresAt.isAfter(Instant.now());
+    }
+
+    @Override
+    public void refresh(String orderSessionId, Instant expiresAt) {
+      if (!activeSessions.containsKey(orderSessionId)) {
+        throw new BusinessException(ErrorCode.ORDER_SESSION_NOT_FOUND, "Order session not found.");
+      }
+      activeSessions.put(orderSessionId, expiresAt);
     }
 
     @Override

@@ -116,8 +116,8 @@ class ChannelErrorContractTest {
         BigDecimal.valueOf(2),
         BigDecimal.valueOf(70100),
         false,
-        "RECENT_LOGIN_MFA",
-        Instant.now().plusSeconds(600)
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plusSeconds(3600)
     );
     WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlEqualTo("/internal/v1/orders"))
         .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
@@ -206,8 +206,8 @@ class ChannelErrorContractTest {
         BigDecimal.valueOf(2),
         BigDecimal.valueOf(70100),
         false,
-        "RECENT_LOGIN_MFA",
-        Instant.now().plusSeconds(600)
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plusSeconds(3600)
     );
 
     mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)

@@ -139,7 +139,7 @@ class ChannelAuthDemoTotpIntegrationTest extends ChannelContainersIntegrationTes
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.status").value("AUTHED"))
         .andExpect(jsonPath("$.data.challengeRequired").value(false))
-        .andExpect(jsonPath("$.data.authorizationReason").value("RECENT_LOGIN_MFA"))
+        .andExpect(jsonPath("$.data.authorizationReason").value("TRUSTED_AUTH_SESSION"))
         .andExpect(jsonPath("$.data.symbol").value("005930"))
         .andExpect(jsonPath("$.data.qty").value(2))
         .andExpect(jsonPath("$.data.price").value(71000));
