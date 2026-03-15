@@ -7,3 +7,9 @@ spring:
 fep:
   gateway:
     base-url: ${FEP_GATEWAY_BASE_URL:http://fep-gateway:8083}
+
+corebank:
+  provisioning:
+    # Local developer sessions should start with an immediately orderable
+    # balance even when the env var is omitted.
+    default-cash-balance: ${COREBANK_PROVISIONING_DEFAULT_CASH_BALANCE:100000000.0000}

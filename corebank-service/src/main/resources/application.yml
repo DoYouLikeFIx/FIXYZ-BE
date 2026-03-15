@@ -62,6 +62,6 @@ recovery:
 
 corebank:
   provisioning:
-    # Local/demo accounts should be immediately orderable unless an environment
-    # explicitly overrides this baseline.
-    default-cash-balance: ${COREBANK_PROVISIONING_DEFAULT_CASH_BALANCE:100000000.0000}
+    # Safe default for shared or misconfigured environments. Local/openapi
+    # profiles and explicit env overrides can opt into funded demo balances.
+    default-cash-balance: ${COREBANK_PROVISIONING_DEFAULT_CASH_BALANCE:0.0000}
