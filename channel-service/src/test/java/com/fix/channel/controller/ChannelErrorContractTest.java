@@ -19,27 +19,34 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.testsupport.OrderSessionTestFixture;
+import com.fix.channel.service.OrderSessionTtlStore;
 import com.fix.common.web.CommonHeaders;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(OrderSessionTestFixture.class)
+@Import({OrderSessionTestFixture.class, ChannelErrorContractTest.TestConfig.class})
 @TestPropertySource(properties = {
     "spring.datasource.url=jdbc:h2:mem:channel_test;MODE=MySQL;DB_CLOSE_DELAY=-1",
     "spring.datasource.driver-class-name=org.h2.Driver",
@@ -78,6 +85,47 @@ class ChannelErrorContractTest {
   @AfterAll
   static void stopWireMock() {
     WIRE_MOCK_SERVER.stop();
+  }
+
+  @TestConfiguration
+  static class TestConfig {
+
+    @Bean
+    @Primary
+    OrderSessionTtlStore orderSessionTtlStore() {
+      return new InMemoryOrderSessionTtlStore();
+    }
+  }
+
+  static class InMemoryOrderSessionTtlStore implements OrderSessionTtlStore {
+
+    private final ConcurrentMap<String, Instant> activeSessions = new ConcurrentHashMap<>();
+
+    @Override
+    public void activate(String orderSessionId, Instant expiresAt) {
+      activeSessions.put(orderSessionId, expiresAt);
+    }
+
+    @Override
+    public void refresh(String orderSessionId, Instant expiresAt) {
+      activeSessions.put(orderSessionId, expiresAt);
+    }
+
+    @Override
+    public boolean isActive(String orderSessionId) {
+      Instant expiresAt = activeSessions.get(orderSessionId);
+      return expiresAt != null && expiresAt.isAfter(Instant.now());
+    }
+
+    @Override
+    public void clear(String orderSessionId) {
+      activeSessions.remove(orderSessionId);
+    }
+
+    @Override
+    public Duration ttl() {
+      return Duration.ofHours(1);
+    }
   }
 
   @Test
@@ -163,6 +211,68 @@ class ChannelErrorContractTest {
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-timeout")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldSerializeSuccessfulExecuteResponseWithoutActiveWindowMetadata() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    orderSessionTestFixture.reset();
+    String orderSessionId = orderSessionTestFixture.createInitiatedSessionId(
+        301L,
+        1L,
+        "123e4567-e89b-42d3-a456-426614174260",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(70100),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plusSeconds(3600)
+    );
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlEqualTo("/internal/v1/orders"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "orderId": 90001,
+                    "clOrdId": "123e4567-e89b-42d3-a456-426614174260",
+                    "status": "FILLED",
+                    "idempotent": false,
+                    "orderQuantity": 2.0000
+                  }
+                }
+                """)));
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .with(csrf())
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-success"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-success"))
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
+        .andExpect(jsonPath("$.data.executedQty").value(2))
+        .andExpect(jsonPath("$.data.leavesQty").value(0))
+        .andExpect(jsonPath("$.data.executedPrice").value(70100))
+        .andExpect(jsonPath("$.data.externalOrderId").value("90001"))
+        .andExpect(jsonPath("$.data.failureReason").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.canceledAt").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.executedAt").isNotEmpty())
+        .andExpect(jsonPath("$.data.expiresAt").doesNotExist())
+        .andExpect(jsonPath("$.data.remainingSeconds").doesNotExist());
+
+    assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("COMPLETED");
+
+    WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-success")));
   }
 
   @Test
