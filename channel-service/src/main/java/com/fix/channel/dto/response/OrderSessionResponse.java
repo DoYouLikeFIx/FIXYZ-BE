@@ -1,9 +1,11 @@
 package com.fix.channel.dto.response;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fix.channel.vo.OrderSessionResult;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+@JsonSerialize(using = OrderSessionResponseSerializer.class)
 public record OrderSessionResponse(
     String orderSessionId,
     String clOrdId,
