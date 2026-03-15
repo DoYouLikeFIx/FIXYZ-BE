@@ -13,16 +13,16 @@ import org.junit.jupiter.api.Test;
 
 class OrderSessionExpirySchedulerTest {
 
-  private RecordingPersistenceService persistenceService;
+  private RecordingOrderSessionService orderSessionService;
   private RecordingTtlStore ttlStore;
   private OrderSessionExpiryScheduler scheduler;
 
   @BeforeEach
   void setUp() {
-    persistenceService = new RecordingPersistenceService();
+    orderSessionService = new RecordingOrderSessionService();
     ttlStore = new RecordingTtlStore();
     scheduler = new OrderSessionExpiryScheduler(
-        persistenceService,
+        orderSessionService,
         ttlStore,
         Clock.fixed(Instant.parse("2026-03-12T00:00:00Z"), ZoneOffset.UTC),
         2
@@ -31,21 +31,21 @@ class OrderSessionExpirySchedulerTest {
 
   @Test
   void shouldExpireOverdueSessionsInChunksAndClearRedisKeys() {
-    persistenceService.expiredSessionIdBatches = List.of(
+    orderSessionService.expiredSessionIdBatches = List.of(
         List.of("sess-1", "sess-2"),
         List.of("sess-3")
     );
 
     scheduler.expireOverdueSessions();
 
-    assertThat(persistenceService.referenceTime).isEqualTo(Instant.parse("2026-03-12T00:00:00Z"));
-    assertThat(persistenceService.requestedBatchSizes).containsExactly(2, 2);
+    assertThat(orderSessionService.referenceTime).isEqualTo(Instant.parse("2026-03-12T00:00:00Z"));
+    assertThat(orderSessionService.requestedBatchSizes).containsExactly(2, 2);
     assertThat(ttlStore.clearedSessionIds).containsExactly("sess-1", "sess-2", "sess-3");
   }
 
   @Test
   void shouldContinueWhenRedisCleanupFailsForSingleSession() {
-    persistenceService.expiredSessionIdBatches = List.of(
+    orderSessionService.expiredSessionIdBatches = List.of(
         List.of("sess-1", "sess-2"),
         List.of("sess-3")
     );
@@ -53,18 +53,18 @@ class OrderSessionExpirySchedulerTest {
 
     scheduler.expireOverdueSessions();
 
-    assertThat(persistenceService.requestedBatchSizes).containsExactly(2, 2);
+    assertThat(orderSessionService.requestedBatchSizes).containsExactly(2, 2);
     assertThat(ttlStore.clearedSessionIds).containsExactly("sess-1", "sess-2", "sess-3");
   }
 
-  private static class RecordingPersistenceService extends OrderSessionPersistenceService {
+  private static class RecordingOrderSessionService extends OrderSessionService {
 
     private Instant referenceTime;
     private List<List<String>> expiredSessionIdBatches = List.of();
     private final List<Integer> requestedBatchSizes = new ArrayList<>();
 
-    RecordingPersistenceService() {
-      super(null, null);
+    RecordingOrderSessionService() {
+      super(null, null, null, null, null, null, null, null, null, null, Clock.systemUTC());
     }
 
     @Override
