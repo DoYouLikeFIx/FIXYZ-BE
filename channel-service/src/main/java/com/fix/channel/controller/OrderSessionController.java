@@ -115,6 +115,23 @@ public class OrderSessionController {
     ));
   }
 
+  @Operation(summary = "Extend an active order session to the full 60-minute window")
+  @PostMapping("/{orderSessionId}/extend")
+  public ApiResponse<OrderSessionResponse> extend(
+      @PathVariable
+      @NotBlank(message = "orderSessionId is required")
+      @Pattern(regexp = ContractPatterns.UUID_V4, message = "orderSessionId must be UUID v4")
+      String orderSessionId,
+      HttpServletRequest httpServletRequest
+  ) {
+    return ApiResponse.success(OrderSessionResponse.from(
+        orderSessionService.extendOrderSession(OrderSessionQueryCommand.of(
+            resolveAuthenticatedMemberId(httpServletRequest),
+            orderSessionId
+        ))
+    ));
+  }
+
   @Operation(summary = "Execute an authorized order session")
   @PostMapping("/{orderSessionId}/execute")
   public ApiResponse<OrderSessionResponse> execute(
