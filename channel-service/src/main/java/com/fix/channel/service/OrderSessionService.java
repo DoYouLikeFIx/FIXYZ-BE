@@ -252,6 +252,10 @@ public class OrderSessionService {
     );
   }
 
+  public OrderSession markEscalated(OrderSession session, String failureReason) {
+    return orderSessionPersistenceService.markEscalated(session, failureReason);
+  }
+
   public OrderSession markFailed(OrderSession session, String failureReason) {
     return orderSessionPersistenceService.markFailed(session, failureReason);
   }

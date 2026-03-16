@@ -9,9 +9,6 @@ import com.fix.channel.vo.OrderSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CorrelationIdSupport;
-import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +19,7 @@ public class OrderExecutionService {
   private final CorebankClient corebankClient;
   private final OrderSessionService orderSessionService;
   private final OrderSessionExecutionLockService orderSessionExecutionLockService;
-  private final Clock clock;
+  private static final String EXTERNAL_SYNC_CONFIRMED = "CONFIRMED";
 
   public OrderSessionResult execute(Long memberId, String orderSessionId) {
     OrderSession session = orderSessionService.requireOwnedSession(memberId, orderSessionId);
@@ -48,21 +45,29 @@ public class OrderExecutionService {
         result = corebankClient.executeOrder(toCommand(executingSession), CorrelationIdSupport.currentOrGenerate());
       } catch (RuntimeException ex) {
         try {
-          orderSessionService.markFailed(executingSession, executionFailureReason(ex));
+          handleExecutionFailure(executingSession, ex);
         } catch (RuntimeException markFailedEx) {
           ex.addSuppressed(markFailedEx);
         }
         throw ex;
       }
 
+      if (requiresEscalation(result)) {
+        OrderSession escalatedSession = orderSessionService.markEscalated(
+            executingSession,
+            OrderSession.ESCALATED_MANUAL_REVIEW
+        );
+        return orderSessionService.toResult(escalatedSession, false);
+      }
+
       OrderSession completedSession = orderSessionService.completeExecution(
           executingSession,
-          executionResult(result),
-          executedQty(result),
-          leavesQty(result),
-          executedPrice(executingSession, result),
-          externalOrderId(result),
-          executedAt(result)
+          result.getExecutionResult(),
+          result.getExecutedQty(),
+          result.getLeavesQty(),
+          result.getExecutedPrice(),
+          result.getExternalOrderId(),
+          result.getExecutedAt()
       );
       return orderSessionService.toResult(completedSession, false);
     } finally {
@@ -92,46 +97,31 @@ public class OrderExecutionService {
     return "EXECUTION_FAILED";
   }
 
-  private String executionResult(OrderExecuteResult result) {
-    String executionResult = result.getExecutionResult();
-    if (executionResult != null && !executionResult.isBlank()) {
-      return executionResult;
+  private void handleExecutionFailure(OrderSession session, RuntimeException exception) {
+    if (requiresEscalation(exception)) {
+      orderSessionService.markEscalated(session, OrderSession.ESCALATED_MANUAL_REVIEW);
+      return;
     }
-    return result.getStatus();
+    orderSessionService.markFailed(session, executionFailureReason(exception));
   }
 
-  private BigDecimal executedQty(OrderExecuteResult result) {
-    if (result.getExecutedQty() != null) {
-      return result.getExecutedQty();
-    }
-    return result.getOrderQuantity();
+  private boolean requiresEscalation(OrderExecuteResult result) {
+    String externalSyncStatus = result.getExternalSyncStatus();
+    return externalSyncStatus != null && !EXTERNAL_SYNC_CONFIRMED.equalsIgnoreCase(externalSyncStatus);
   }
 
-  private BigDecimal leavesQty(OrderExecuteResult result) {
-    if (result.getLeavesQty() != null) {
-      return result.getLeavesQty();
+  private boolean requiresEscalation(RuntimeException exception) {
+    if (!(exception instanceof BusinessException businessException)) {
+      return false;
     }
-    return BigDecimal.ZERO;
-  }
-
-  private BigDecimal executedPrice(OrderSession session, OrderExecuteResult result) {
-    if (result.getExecutedPrice() != null) {
-      return result.getExecutedPrice();
-    }
-    return session.getPrice();
-  }
-
-  private String externalOrderId(OrderExecuteResult result) {
-    if (result.getExternalOrderId() != null && !result.getExternalOrderId().isBlank()) {
-      return result.getExternalOrderId();
-    }
-    return result.getOrderId() == null ? null : String.valueOf(result.getOrderId());
-  }
-
-  private Instant executedAt(OrderExecuteResult result) {
-    if (result.getExecutedAt() != null) {
-      return result.getExecutedAt();
-    }
-    return Instant.now(clock);
+    return switch (businessException.getErrorCode()) {
+      case CHANNEL_ROUTE_NOT_FOUND,
+           CORE_CONCURRENCY_CONFLICT,
+           FEP_GATEWAY_UNAVAILABLE,
+           FEP_GATEWAY_TIMEOUT,
+           FEP_ORDER_REJECTED,
+           FEP_UNKNOWN_EXTERNAL -> true;
+      default -> false;
+    };
   }
 }

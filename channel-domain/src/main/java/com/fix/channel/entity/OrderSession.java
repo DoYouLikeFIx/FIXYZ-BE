@@ -20,6 +20,8 @@ import java.util.UUID;
 @Table(name = "order_sessions")
 public class OrderSession extends BaseTimeEntity {
 
+  public static final String ESCALATED_MANUAL_REVIEW = "ESCALATED_MANUAL_REVIEW";
+
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
@@ -315,17 +317,18 @@ public class OrderSession extends BaseTimeEntity {
     this.failureReason = null;
   }
 
+  public void escalate(String failureReason) {
+    transitionTo(OrderSessionStatus.ESCALATED, transitionMessage(OrderSessionStatus.ESCALATED));
+    this.status = OrderSessionStatus.ESCALATED;
+    clearExecutionOutcome();
+    this.failureReason = requireFailureReason(failureReason);
+  }
+
   public void fail(String failureReason) {
     transitionTo(OrderSessionStatus.FAILED, transitionMessage(OrderSessionStatus.FAILED));
     this.status = OrderSessionStatus.FAILED;
-    this.executionResult = null;
-    this.executedQty = null;
-    this.leavesQty = null;
-    this.executedPrice = null;
-    this.externalOrderId = null;
-    this.executedAt = null;
-    this.canceledAt = null;
-    this.failureReason = failureReason;
+    clearExecutionOutcome();
+    this.failureReason = requireFailureReason(failureReason);
   }
 
   public void expire() {
@@ -339,6 +342,23 @@ public class OrderSession extends BaseTimeEntity {
     if (!this.status.canTransitionTo(nextStatus)) {
       throw invalidTransition(message);
     }
+  }
+
+  private void clearExecutionOutcome() {
+    this.executionResult = null;
+    this.executedQty = null;
+    this.leavesQty = null;
+    this.executedPrice = null;
+    this.externalOrderId = null;
+    this.executedAt = null;
+    this.canceledAt = null;
+  }
+
+  private String requireFailureReason(String failureReason) {
+    if (failureReason == null || failureReason.isBlank()) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "failureReason is required");
+    }
+    return failureReason;
   }
 
   private BusinessException invalidTransition(String message) {
