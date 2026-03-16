@@ -1,7 +1,8 @@
 package com.fix.fepsimulator.dto.response;
 
-import com.fix.fepsimulator.vo.SimulatorRuleResult;
 import java.time.Instant;
+
+import com.fix.fepsimulator.vo.SimulatorRuleResult;
 
 public class SimulatorRuleResponse {
 
