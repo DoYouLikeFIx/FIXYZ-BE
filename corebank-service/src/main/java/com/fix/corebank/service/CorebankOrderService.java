@@ -2,6 +2,7 @@ package com.fix.corebank.service;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.fep.FepOrderType;
 import com.fix.common.fep.FepSecurityExchange;
@@ -39,10 +40,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -287,8 +291,15 @@ public class CorebankOrderService {
 
   private InternalOrderResult createFreshOrder(InternalOrderCreateCommand command) {
     try {
-      CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder =
-          orderPersistenceService.prepareOrderSubmission(command);
+      CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder;
+      try {
+        pendingOrder = orderPersistenceService.prepareOrderSubmission(command);
+      } catch (RuntimeException ex) {
+        if (isPositionLockConflict(ex)) {
+          throw concurrencyConflict(command, ex);
+        }
+        throw ex;
+      }
       try {
         FepOrderResult gatewayOrder = fepClient.submitOrder(
             toFepPayload(pendingOrder),
@@ -318,6 +329,58 @@ public class CorebankOrderService {
           .map(existing -> mapToOrderResult(existing, true))
           .orElseThrow(() -> e);
     }
+  }
+
+  private BusinessException concurrencyConflict(InternalOrderCreateCommand command, RuntimeException ex) {
+    return new BusinessException(
+        ErrorCode.CORE_CONCURRENCY_CONFLICT,
+        ErrorCode.CORE_CONCURRENCY_CONFLICT.defaultMessage(),
+        ex,
+        new ErrorMetadata("error.core.concurrency_conflict", "CONCURRENCY_FAILURE"),
+        Map.of(
+            "accountId", command.getAccountId(),
+            "symbol", command.getSymbol(),
+            "clOrdId", command.getClOrdId(),
+            "failureReason", "POSITION_LOCK"
+        )
+    );
+  }
+
+  private boolean isPositionLockConflict(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof CannotAcquireLockException
+          || current instanceof PessimisticLockingFailureException
+          || current instanceof jakarta.persistence.LockTimeoutException
+          || current instanceof jakarta.persistence.PessimisticLockException
+          || isLockConflictClassName(current)
+          || isLockConflictMessage(current.getMessage())) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
+  }
+
+  private boolean isLockConflictClassName(Throwable throwable) {
+    String className = throwable.getClass().getName();
+    return "org.hibernate.exception.LockAcquisitionException".equals(className)
+        || "org.hibernate.PessimisticLockException".equals(className)
+        || "org.springframework.dao.DeadlockLoserDataAccessException".equals(className)
+        || "java.sql.SQLTransactionRollbackException".equals(className)
+        || "com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException".equals(className);
+  }
+
+  private boolean isLockConflictMessage(String message) {
+    if (message == null || message.isBlank()) {
+      return false;
+    }
+    String normalized = message.toLowerCase();
+    return normalized.contains("lock wait timeout")
+        || normalized.contains("could not obtain lock")
+        || normalized.contains("pessimistic lock")
+        || normalized.contains("deadlock found")
+        || normalized.contains("for update nowait");
   }
 
   private InternalOrderResult mapToOrderResult(CorebankOrderPersistenceService.OrderSnapshot order, boolean idempotent) {

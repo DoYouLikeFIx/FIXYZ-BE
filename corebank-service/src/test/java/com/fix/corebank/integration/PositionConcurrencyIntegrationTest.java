@@ -46,7 +46,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = {
     "spring.jpa.hibernate.ddl-auto=none",
-    "internal.secret=test-secret"
+    "internal.secret=test-secret",
+    "corebank.order.position-lock-timeout-millis=-1"
 })
 class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTestBase {
 

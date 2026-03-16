@@ -59,6 +59,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -867,6 +868,35 @@ class CorebankOrderServiceTest {
 
     verify(positionRepository, times(1)).findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930");
     assertThat(fepClient.submitCalls()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldTranslatePositionLockConflictToCore003() {
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930"))
+        .thenThrow(new CannotAcquireLockException("Lock wait timeout exceeded"));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.CORE_CONCURRENCY_CONFLICT);
+          assertThat(businessException.getMetadata()).isEqualTo(
+              new ErrorMetadata("error.core.concurrency_conflict", "CONCURRENCY_FAILURE")
+          );
+          assertThat(businessException.getDetails()).containsEntry("failureReason", "POSITION_LOCK");
+          assertThat(businessException.getDetails()).containsEntry("symbol", "005930");
+        });
+
+    assertThat(fepClient.submitCalls()).isZero();
   }
 
   @Test

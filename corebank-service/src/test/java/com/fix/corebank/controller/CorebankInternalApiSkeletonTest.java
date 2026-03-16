@@ -600,6 +600,39 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(jsonPath("$.details.requestedQty").value(2));
   }
 
+  @Test
+  void shouldExposeConflictEnvelopeForPositionLockContention() throws Exception {
+    corebankOrderService.setCreateOrderFailure(new BusinessException(
+        ErrorCode.CORE_CONCURRENCY_CONFLICT,
+        ErrorCode.CORE_CONCURRENCY_CONFLICT.defaultMessage(),
+        new ErrorMetadata("error.core.concurrency_conflict", "CONCURRENCY_FAILURE"),
+        Map.of(
+            "accountId", 1L,
+            "symbol", "005930",
+            "clOrdId", CORE_CL_ORD_ID_3,
+            "failureReason", "POSITION_LOCK"
+        )
+    ));
+
+    mockMvc.perform(post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-position-lock")
+            .param("accountId", "1")
+            .param("clOrdId", CORE_CL_ORD_ID_3)
+            .param("symbol", "005930")
+            .param("side", "SELL")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("CORE-003"))
+        .andExpect(jsonPath("$.message").value("Concurrent modification conflict"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.core.concurrency_conflict"))
+        .andExpect(jsonPath("$.operatorCode").value("CONCURRENCY_FAILURE"))
+        .andExpect(jsonPath("$.details.failureReason").value("POSITION_LOCK"))
+        .andExpect(jsonPath("$.details.symbol").value("005930"))
+        .andExpect(jsonPath("$.correlationId").value("trace-position-lock"));
+  }
+
   private static final class StubCorebankOrderService extends CorebankOrderService {
 
     private PortfolioResult portfolioResult;
