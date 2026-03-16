@@ -9,9 +9,7 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -35,6 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -67,6 +66,9 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
 
   @Autowired
   private MockMvc mockMvc;
+
+  @Autowired
+  private PrometheusMeterRegistry prometheusMeterRegistry;
 
   @MockBean
   private FepClient fepClient;
@@ -160,11 +162,10 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
       assertThat(count("ledger_entries")).isEqualTo(2);
       assertThat(count("ledger_entry_refs")).isEqualTo(2);
 
-      mockMvc.perform(get("/actuator/prometheus"))
-          .andExpect(status().isOk())
-          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_wait_seconds_count")))
-          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_hold_seconds_count")))
-          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_conflicts_total")));
+      String scrapedMetrics = prometheusMeterRegistry.scrape();
+      assertThat(scrapedMetrics).contains("corebank_order_position_lock_wait_seconds_count");
+      assertThat(scrapedMetrics).contains("corebank_order_position_lock_hold_seconds_count");
+      assertThat(scrapedMetrics).contains("corebank_order_position_lock_conflicts_total");
 
       verify(fepClient, times(1)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {
