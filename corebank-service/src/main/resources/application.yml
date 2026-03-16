@@ -32,10 +32,13 @@ springdoc:
     path: /swagger-ui/index.html
 
 management:
+  server:
+    port: 19081
+    address: 127.0.0.1
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus,circuitbreakers
   endpoint:
     health:
       probes:
@@ -61,6 +64,10 @@ resilience4j:
 
 recovery:
   max-retry-count: ${RECOVERY_MAX_RETRY_COUNT:5}
+  status-query:
+    # Total calls within one requery, including the first attempt.
+    max-attempts: ${RECOVERY_STATUS_QUERY_MAX_ATTEMPTS:2}
+    backoff-ms: ${RECOVERY_STATUS_QUERY_BACKOFF_MS:0}
 
 corebank:
   provisioning:

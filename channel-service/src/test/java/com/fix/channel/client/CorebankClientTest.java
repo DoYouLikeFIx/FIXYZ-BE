@@ -4,6 +4,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.patch;
 import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -20,6 +21,9 @@ import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.time.Instant;
@@ -405,6 +409,45 @@ class CorebankClientTest {
           assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP);
           assertThat(businessException.getMessage()).isEqualTo("forbidden account ownership");
         });
+  }
+
+  @Test
+  void shouldForwardTraceparentHeaderToCorebank() {
+    String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    TraceparentSupport.putInMdc(traceparent);
+    try {
+      wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+          .withQueryParam("memberId", equalTo("301"))
+          .withQueryParam("symbol", equalTo(SYMBOL))
+          .willReturn(aResponse()
+              .withStatus(200)
+              .withHeader("Content-Type", "application/json")
+              .withBody("""
+                  {
+                    "success": true,
+                    "data": {
+                      "accountId": 1,
+                      "memberId": 301,
+                      "symbol": "005930",
+                      "quantity": 120.0000,
+                      "availableQuantity": 90.0000,
+                      "balance": 500000.0000,
+                      "currency": "KRW",
+                      "asOf": "2026-03-10T00:00:00Z"
+                    }
+                  }
+                  """)));
+
+      corebankClient.getAccountPosition(command(), "trace-core-traceparent");
+
+      wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+          .withQueryParam("memberId", equalTo("301"))
+          .withQueryParam("symbol", equalTo(SYMBOL))
+          .withHeader(CommonHeaders.TRACEPARENT, matching("^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"))
+          .withHeader(CommonHeaders.TRACEPARENT, equalTo(traceparent)));
+    } finally {
+      CorrelationIdSupport.clearMdc();
+    }
   }
 
   private AccountPositionQueryCommand command() {

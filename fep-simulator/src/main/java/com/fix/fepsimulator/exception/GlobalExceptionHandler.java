@@ -6,6 +6,7 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.SystemException;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
@@ -59,6 +60,7 @@ public class GlobalExceptionHandler {
     return ResponseEntity
         .status(errorCode.httpStatus())
         .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+        .header(CommonHeaders.TRACEPARENT, TraceparentSupport.ensureTraceparent(request))
         .body(response);
   }
 

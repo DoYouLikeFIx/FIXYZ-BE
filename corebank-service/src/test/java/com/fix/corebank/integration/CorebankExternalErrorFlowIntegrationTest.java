@@ -5,7 +5,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.AfterAll;
@@ -37,6 +36,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -45,10 +45,11 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
   "internal.secret=test-secret",
   "resilience4j.circuitbreaker.instances.fep-submit.waitDurationInOpenState=1s",
-  "resilience4j.circuitbreaker.instances.fep-status.waitDurationInOpenState=1s"
+  "resilience4j.circuitbreaker.instances.fep-status.waitDurationInOpenState=1s",
+  "recovery.status-query.max-attempts=2",
+  "recovery.status-query.backoff-ms=0"
 })
 class CorebankExternalErrorFlowIntegrationTest {
 
@@ -284,6 +285,99 @@ class CorebankExternalErrorFlowIntegrationTest {
     WIRE_MOCK_SERVER.verify(getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY)))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-requery")));
+    WIRE_MOCK_SERVER.verify(1, getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY))));
+  }
+
+  @Test
+  void shouldRetryStatusQueryOnceBeforeReturningSuccessfulRequery() throws Exception {
+    Order order = Order.accepted(
+        1L,
+        CL_ORD_ID_REQUERY_TIMEOUT,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000")
+    );
+    order.updateStatus("PENDING");
+    orderRepository.saveAndFlush(order);
+
+    String retryScenario = "status-query-retry-success";
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .inScenario(retryScenario)
+        .whenScenarioStateIs(Scenario.STARTED)
+        .willSetStateTo("second-attempt")
+        .willReturn(canonicalGatewayError(504, "9004", "status timeout")));
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .inScenario(retryScenario)
+        .whenScenarioStateIs("second-attempt")
+        .willReturn(successfulStatusResponse(CL_ORD_ID_REQUERY_TIMEOUT)));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+            "/internal/v1/orders/{clOrdId}/requery",
+            CL_ORD_ID_REQUERY_TIMEOUT
+        )
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-retry-success")
+            .param("attemptCount", "1"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-retry-success"))
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT))
+        .andExpect(jsonPath("$.data.status").value("PENDING"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("FAILED"))
+        .andExpect(jsonPath("$.data.message").value("pending at exchange"))
+        .andExpect(jsonPath("$.data.retriable").value(true))
+        .andExpect(jsonPath("$.data.escalationRequired").value(false))
+        .andExpect(jsonPath("$.data.attemptCount").value(1))
+        .andExpect(jsonPath("$.data.maxRetryCount").value(5));
+
+    WIRE_MOCK_SERVER.verify(2, getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT))));
+  }
+
+  @Test
+  void shouldPreserveTimeoutSemanticsWhenRetryLaterHitsUnavailable() throws Exception {
+    Order order = Order.accepted(
+        1L,
+        CL_ORD_ID_REQUERY_TIMEOUT,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000")
+    );
+    order.updateStatus("UNKNOWN");
+    orderRepository.saveAndFlush(order);
+
+    String retryScenario = "status-query-timeout-then-unavailable";
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .inScenario(retryScenario)
+        .whenScenarioStateIs(Scenario.STARTED)
+        .willSetStateTo("second-attempt")
+        .willReturn(canonicalGatewayError(504, "9004", "status timeout")));
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .inScenario(retryScenario)
+        .whenScenarioStateIs("second-attempt")
+        .willReturn(canonicalGatewayError(503, "9098", "status breaker open")));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+            "/internal/v1/orders/{clOrdId}/requery",
+            CL_ORD_ID_REQUERY_TIMEOUT
+        )
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-timeout-then-unavailable")
+            .param("attemptCount", "1"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-timeout-then-unavailable"))
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT))
+        .andExpect(jsonPath("$.data.status").value("UNKNOWN"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("FAILED"))
+        .andExpect(jsonPath("$.data.message").value("Exchange connectivity timeout"))
+        .andExpect(jsonPath("$.data.retriable").value(true))
+        .andExpect(jsonPath("$.data.escalationRequired").value(false))
+        .andExpect(jsonPath("$.data.attemptCount").value(1))
+        .andExpect(jsonPath("$.data.maxRetryCount").value(5));
+
+    Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+    WIRE_MOCK_SERVER.verify(2, getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT))));
   }
 
   @Test
@@ -323,6 +417,66 @@ class CorebankExternalErrorFlowIntegrationTest {
     Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+    WIRE_MOCK_SERVER.verify(2, getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT))));
+  }
+
+  @Test
+  void shouldPreserveTerminalOrderWhenSeparateTransactionWinsDuringRequery() throws Exception {
+    Order order = Order.accepted(
+        1L,
+        CL_ORD_ID_REQUERY_TIMEOUT,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000")
+    );
+    order.updateStatus("PENDING");
+    orderRepository.saveAndFlush(order);
+
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .willReturn(canonicalGatewayError(504, "9004", "status timeout")
+            .withFixedDelay(1_500)));
+
+    ExecutorService executorService = Executors.newSingleThreadExecutor();
+    try {
+      Future<?> requeryCall = executorService.submit(() -> {
+        try {
+          mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                  "/internal/v1/orders/{clOrdId}/requery",
+                  CL_ORD_ID_REQUERY_TIMEOUT
+              )
+                  .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+                  .header(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-concurrent-terminal")
+                  .param("attemptCount", "1"))
+              .andExpect(status().isOk())
+              .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT))
+              .andExpect(jsonPath("$.data.status").value("FILLED"))
+              .andExpect(jsonPath("$.data.externalSyncStatus").value("CONFIRMED"))
+              .andExpect(jsonPath("$.data.message").value("Exchange connectivity timeout"))
+              .andExpect(jsonPath("$.data.retriable").value(false))
+              .andExpect(jsonPath("$.data.escalationRequired").value(false));
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      });
+
+      waitForStatusRequestObserved(CL_ORD_ID_REQUERY_TIMEOUT, 3_000L);
+
+      Order terminalOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
+      terminalOrder.updateState("FILLED", Order.EXTERNAL_SYNC_CONFIRMED, terminalOrder.getFepReferenceId(), null);
+      orderRepository.saveAndFlush(terminalOrder);
+
+      requeryCall.get(10, TimeUnit.SECONDS);
+    } finally {
+      executorService.shutdownNow();
+      executorService.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
+    assertThat(persistedOrder.getStatus()).isEqualTo("FILLED");
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_CONFIRMED);
+    assertThat(persistedOrder.getFailureReason()).isNull();
+    WIRE_MOCK_SERVER.verify(2, getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT))));
   }
 
   @Test
@@ -361,6 +515,7 @@ class CorebankExternalErrorFlowIntegrationTest {
     Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY_TIMEOUT).orElseThrow();
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+    WIRE_MOCK_SERVER.verify(2, getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT))));
   }
 
   @Test
@@ -713,10 +868,23 @@ class CorebankExternalErrorFlowIntegrationTest {
             .withHeader(CommonHeaders.X_CL_ORD_ID, equalTo(clOrdId)));
         return;
       } catch (AssertionError ignored) {
-        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(25));
+        Thread.sleep(25);
       }
     }
     throw new AssertionError("Timed out waiting for submit request observation: " + clOrdId);
+  }
+
+  private void waitForStatusRequestObserved(String clOrdId, long timeoutMillis) throws InterruptedException {
+    long deadline = System.currentTimeMillis() + timeoutMillis;
+    while (System.currentTimeMillis() < deadline) {
+      try {
+        WIRE_MOCK_SERVER.verify(getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(clOrdId))));
+        return;
+      } catch (AssertionError ignored) {
+        Thread.sleep(25);
+      }
+    }
+    throw new AssertionError("Timed out waiting for status request observation: " + clOrdId);
   }
 
   private void assertCircuitState(String breakerName, String expectedState) {
@@ -816,6 +984,7 @@ class CorebankExternalErrorFlowIntegrationTest {
     private static FepExternalError from(String externalRc) {
       return switch (externalRc) {
         case "9004" -> new FepExternalError("FEP-002", "TIMEOUT");
+        case "9098" -> new FepExternalError("FEP-001", "CIRCUIT_OPEN");
         case "9099" -> new FepExternalError("CORE-003", "CONCURRENCY_FAILURE");
         default -> new FepExternalError("FEP-999", "UNKNOWN_EXTERNAL_" + externalRc);
       };

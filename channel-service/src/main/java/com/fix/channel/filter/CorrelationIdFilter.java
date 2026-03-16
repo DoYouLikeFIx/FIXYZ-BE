@@ -2,6 +2,7 @@ package com.fix.channel.filter;
 
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,8 +21,11 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
   protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
     String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
+    String traceparent = TraceparentSupport.ensureTraceparent(request);
     response.setHeader(CommonHeaders.X_CORRELATION_ID, correlationId);
+    response.setHeader(CommonHeaders.TRACEPARENT, traceparent);
     CorrelationIdSupport.putInMdc(correlationId);
+    TraceparentSupport.putInMdc(traceparent);
     try {
       filterChain.doFilter(request, response);
     } finally {
