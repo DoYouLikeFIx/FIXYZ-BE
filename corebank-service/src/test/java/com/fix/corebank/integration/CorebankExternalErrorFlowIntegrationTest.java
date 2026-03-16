@@ -1,24 +1,13 @@
 package com.fix.corebank.integration;
 
-import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
-import static com.github.tomakehurst.wiremock.client.WireMock.get;
-import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.post;
-import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import com.fix.common.web.CommonHeaders;
-import com.fix.corebank.entity.Order;
-import com.fix.corebank.repository.OrderRepository;
-import com.github.tomakehurst.wiremock.WireMockServer;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.math.BigDecimal;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +19,24 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fix.common.web.CommonHeaders;
+import com.fix.corebank.entity.Order;
+import com.fix.corebank.repository.OrderRepository;
+import com.github.tomakehurst.wiremock.WireMockServer;
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -48,6 +55,13 @@ class CorebankExternalErrorFlowIntegrationTest {
   private static final String CL_ORD_ID_REQUERY = "123e4567-e89b-42d3-a456-426614174222";
   private static final String CL_ORD_ID_REQUERY_TIMEOUT = "123e4567-e89b-42d3-a456-426614174223";
   private static final String CL_ORD_ID_SUBMIT_AFTER_REQUERY_FAILURES = "123e4567-e89b-42d3-a456-426614174224";
+  private static final String CL_ORD_ID_CB_FAIL_1 = "123e4567-e89b-42d3-a456-426614174240";
+  private static final String CL_ORD_ID_CB_FAIL_2 = "123e4567-e89b-42d3-a456-426614174241";
+  private static final String CL_ORD_ID_CB_FAIL_3 = "123e4567-e89b-42d3-a456-426614174242";
+  private static final String CL_ORD_ID_CB_OPEN_CALL = "123e4567-e89b-42d3-a456-426614174243";
+  private static final String CL_ORD_ID_HALF_OPEN_PROBE = "123e4567-e89b-42d3-a456-426614174244";
+  private static final String CL_ORD_ID_HALF_OPEN_SECOND = "123e4567-e89b-42d3-a456-426614174245";
+  private static final long OPEN_STATE_WAIT_MILLIS = 10_500L;
   private static final WireMockServer WIRE_MOCK_SERVER = new WireMockServer(wireMockConfig().dynamicPort());
 
   static {
@@ -323,6 +337,8 @@ class CorebankExternalErrorFlowIntegrationTest {
           .andExpect(status().isOk());
     }
 
+          assertCircuitState("fep-status", "OPEN");
+
     WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(canonicalGatewayError(504, "9004", "submit timeout")));
 
@@ -344,6 +360,372 @@ class CorebankExternalErrorFlowIntegrationTest {
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-submit-after-status-open")));
+  }
+
+  @Test
+  void shouldKeepSubmitCircuitClosedBeforeFailureThresholdReached() throws Exception {
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(504, "9004", "submit timeout")));
+
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_1, "trace-core-threshold-fail-1");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_2, "trace-core-threshold-fail-2");
+    assertCircuitState("fep-submit", "CLOSED");
+    assertThat(circuitBreakerRegistry.circuitBreaker("fep-submit").getMetrics().getNumberOfFailedCalls()).isEqualTo(2);
+    assertThat(circuitBreakerRegistry.circuitBreaker("fep-submit").getMetrics().getNumberOfBufferedCalls()).isEqualTo(2);
+
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .withHeader(CommonHeaders.X_CL_ORD_ID, equalTo(CL_ORD_ID_CB_FAIL_3))
+        .willReturn(successfulSubmitResponse(CL_ORD_ID_CB_FAIL_3)));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-threshold-success")
+            .param("accountId", "1")
+            .param("clOrdId", CL_ORD_ID_CB_FAIL_3)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_CB_FAIL_3));
+
+    assertCircuitState("fep-submit", "CLOSED");
+    WIRE_MOCK_SERVER.verify(3, postRequestedFor(urlEqualTo("/fep/v1/orders")));
+  }
+
+  @Test
+  void shouldTransitionStatusBreakerFromOpenToClosedAfterSuccessfulProbe() throws Exception {
+    Order order = Order.accepted(
+        1L,
+        CL_ORD_ID_REQUERY_TIMEOUT,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000")
+      );
+    order.updateStatus("PENDING");
+    orderRepository.saveAndFlush(order);
+
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .willReturn(canonicalGatewayError(504, "9004", "status timeout")));
+
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+              "/internal/v1/orders/{clOrdId}/requery",
+              CL_ORD_ID_REQUERY_TIMEOUT
+          )
+              .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+              .header(CommonHeaders.X_CORRELATION_ID, "trace-core-status-open-" + attempt)
+              .param("attemptCount", String.valueOf(attempt)))
+          .andExpect(status().isOk());
+    }
+
+    assertCircuitState("fep-status", "OPEN");
+    waitForOpenStateCooldown();
+
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .willReturn(successfulStatusResponse(CL_ORD_ID_REQUERY_TIMEOUT)));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+            "/internal/v1/orders/{clOrdId}/requery",
+            CL_ORD_ID_REQUERY_TIMEOUT
+        )
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-status-half-open-success")
+            .param("attemptCount", "4"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT));
+
+    assertCircuitState("fep-status", "CLOSED");
+  }
+
+  @Test
+  void shouldReturnStatusBreakerToOpenWhenHalfOpenProbeFails() throws Exception {
+    Order order = Order.accepted(
+        1L,
+        CL_ORD_ID_REQUERY_TIMEOUT,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000")
+    );
+    order.updateStatus("PENDING");
+    orderRepository.saveAndFlush(order);
+
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .willReturn(canonicalGatewayError(504, "9004", "status timeout")));
+
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+              "/internal/v1/orders/{clOrdId}/requery",
+              CL_ORD_ID_REQUERY_TIMEOUT
+          )
+              .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+              .header(CommonHeaders.X_CORRELATION_ID, "trace-core-status-open-fail-" + attempt)
+              .param("attemptCount", String.valueOf(attempt)))
+          .andExpect(status().isOk());
+    }
+
+    assertCircuitState("fep-status", "OPEN");
+    waitForOpenStateCooldown();
+
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY_TIMEOUT)))
+        .willReturn(canonicalGatewayError(504, "9004", "status half-open probe timeout")));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+            "/internal/v1/orders/{clOrdId}/requery",
+            CL_ORD_ID_REQUERY_TIMEOUT
+        )
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-status-half-open-failure")
+            .param("attemptCount", "4"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY_TIMEOUT));
+
+    assertCircuitState("fep-status", "OPEN");
+  }
+
+  @Test
+  void shouldOpenCircuitAfterConsecutiveSubmitTimeoutsAndClassifyNextCallAsCircuitOpen() throws Exception {
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(504, "9004", "submit timeout")));
+
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_1, "trace-core-cb-fail-1");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_2, "trace-core-cb-fail-2");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_3, "trace-core-cb-fail-3");
+
+    assertThat(circuitBreakerRegistry.circuitBreaker("fep-submit").getState().name()).isEqualTo("OPEN");
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-cb-open-call")
+            .param("accountId", "1")
+            .param("clOrdId", CL_ORD_ID_CB_OPEN_CALL)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.code").value("FEP-001"))
+        .andExpect(jsonPath("$.operatorCode").value("CIRCUIT_OPEN"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.fep.unavailable"));
+
+    WIRE_MOCK_SERVER.verify(3, postRequestedFor(urlEqualTo("/fep/v1/orders")));
+  }
+
+  @Test
+  void shouldTransitionFromHalfOpenToClosedWhenProbeSucceeds() throws Exception {
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(504, "9004", "submit timeout")));
+
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_1, "trace-core-half-open-fail-1");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_2, "trace-core-half-open-fail-2");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_3, "trace-core-half-open-fail-3");
+    assertCircuitState("fep-submit", "OPEN");
+
+    waitForOpenStateCooldown();
+
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .withHeader(CommonHeaders.X_CL_ORD_ID, equalTo(CL_ORD_ID_HALF_OPEN_PROBE))
+        .willReturn(successfulSubmitResponse(CL_ORD_ID_HALF_OPEN_PROBE)));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-half-open-probe-success")
+            .param("accountId", "1")
+            .param("clOrdId", CL_ORD_ID_HALF_OPEN_PROBE)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_HALF_OPEN_PROBE));
+
+    assertCircuitState("fep-submit", "CLOSED");
+  }
+
+  @Test
+  void shouldReturnToOpenWhenHalfOpenProbeFails() throws Exception {
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(504, "9004", "submit timeout")));
+
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_1, "trace-core-half-open-return-fail-1");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_2, "trace-core-half-open-return-fail-2");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_3, "trace-core-half-open-return-fail-3");
+    assertCircuitState("fep-submit", "OPEN");
+
+    waitForOpenStateCooldown();
+
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .withHeader(CommonHeaders.X_CL_ORD_ID, equalTo(CL_ORD_ID_HALF_OPEN_PROBE))
+        .willReturn(canonicalGatewayError(504, "9004", "half-open probe timeout")));
+
+    submitOrderExpectingTimeout(CL_ORD_ID_HALF_OPEN_PROBE, "trace-core-half-open-probe-failure");
+    assertCircuitState("fep-submit", "OPEN");
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-half-open-back-to-open")
+            .param("accountId", "1")
+            .param("clOrdId", CL_ORD_ID_HALF_OPEN_SECOND)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(jsonPath("$.operatorCode").value("CIRCUIT_OPEN"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.fep.unavailable"));
+
+    WIRE_MOCK_SERVER.verify(4, postRequestedFor(urlEqualTo("/fep/v1/orders")));
+  }
+
+  @Test
+  void shouldAllowSingleProbeCallInHalfOpenState() throws Exception {
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(504, "9004", "submit timeout")));
+
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_1, "trace-core-half-open-single-probe-1");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_2, "trace-core-half-open-single-probe-2");
+    submitOrderExpectingTimeout(CL_ORD_ID_CB_FAIL_3, "trace-core-half-open-single-probe-3");
+    assertCircuitState("fep-submit", "OPEN");
+
+    waitForOpenStateCooldown();
+
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .withHeader(CommonHeaders.X_CL_ORD_ID, equalTo(CL_ORD_ID_HALF_OPEN_PROBE))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withFixedDelay(1500)
+            .withBody(successfulSubmitBody(CL_ORD_ID_HALF_OPEN_PROBE))));
+
+    ExecutorService executorService = Executors.newSingleThreadExecutor();
+    try {
+      Future<?> probeCall = executorService.submit(() -> {
+        try {
+          mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+                  .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+                  .header(CommonHeaders.X_CORRELATION_ID, "trace-core-half-open-first-probe")
+                  .param("accountId", "1")
+                  .param("clOrdId", CL_ORD_ID_HALF_OPEN_PROBE)
+                  .param("symbol", "005930")
+                  .param("side", "BUY")
+                  .param("quantity", "2.0000")
+                  .param("price", "70100.0000"))
+              .andExpect(status().isOk())
+              .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_HALF_OPEN_PROBE));
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      });
+
+      waitForSubmitRequestObserved(CL_ORD_ID_HALF_OPEN_PROBE, 3_000L);
+
+      mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+              .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+              .header(CommonHeaders.X_CORRELATION_ID, "trace-core-half-open-second-call")
+              .param("accountId", "1")
+              .param("clOrdId", CL_ORD_ID_HALF_OPEN_SECOND)
+              .param("symbol", "005930")
+              .param("side", "BUY")
+              .param("quantity", "2.0000")
+              .param("price", "70100.0000"))
+          .andExpect(status().isServiceUnavailable())
+          .andExpect(jsonPath("$.operatorCode").value("CIRCUIT_OPEN"))
+          .andExpect(jsonPath("$.userMessageKey").value("error.fep.unavailable"));
+
+      probeCall.get(10, TimeUnit.SECONDS);
+    } finally {
+      executorService.shutdownNow();
+    }
+
+    WIRE_MOCK_SERVER.verify(4, postRequestedFor(urlEqualTo("/fep/v1/orders")));
+    assertCircuitState("fep-submit", "CLOSED");
+  }
+
+  private void waitForOpenStateCooldown() throws InterruptedException {
+    Thread.sleep(OPEN_STATE_WAIT_MILLIS);
+  }
+
+  private void waitForSubmitRequestObserved(String clOrdId, long timeoutMillis) throws InterruptedException {
+    long deadline = System.currentTimeMillis() + timeoutMillis;
+    while (System.currentTimeMillis() < deadline) {
+      try {
+        WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
+            .withHeader(CommonHeaders.X_CL_ORD_ID, equalTo(clOrdId)));
+        return;
+      } catch (AssertionError ignored) {
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(25));
+      }
+    }
+    throw new AssertionError("Timed out waiting for submit request observation: " + clOrdId);
+  }
+
+  private void assertCircuitState(String breakerName, String expectedState) {
+    assertThat(circuitBreakerRegistry.circuitBreaker(breakerName).getState().name()).isEqualTo(expectedState);
+  }
+
+  private void submitOrderExpectingTimeout(String clOrdId, String correlationId) throws Exception {
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+            .param("accountId", "1")
+            .param("clOrdId", clOrdId)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isGatewayTimeout())
+        .andExpect(jsonPath("$.code").value("FEP-002"))
+        .andExpect(jsonPath("$.operatorCode").value("TIMEOUT"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.fep.timeout"));
+  }
+
+  private com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder successfulSubmitResponse(String clOrdId) {
+    return aResponse()
+        .withStatus(200)
+        .withHeader("Content-Type", "application/json")
+        .withBody(successfulSubmitBody(clOrdId));
+  }
+
+  private com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder successfulStatusResponse(String clOrdId) {
+    return aResponse()
+        .withStatus(200)
+        .withHeader("Content-Type", "application/json")
+        .withBody(successfulStatusBody(clOrdId));
+  }
+
+  private String successfulSubmitBody(String clOrdId) {
+    return """
+        {
+          "success": true,
+          "data": {
+            "clOrdId": "%s",
+            "fepOrderId": "FEP-KRX-%s",
+            "execType": "PENDING_NEW",
+            "ordStatus": "PENDING",
+            "leavesQty": 2,
+            "transactTime": "2026-03-01T10:00:00Z"
+          },
+          "error": null
+        }
+        """.formatted(clOrdId, clOrdId);
+  }
+
+  private String successfulStatusBody(String clOrdId) {
+    return """
+        {
+          "success": true,
+          "data": {
+            "clOrdId": "%s",
+            "fepOrderId": "FEP-KRX-%s",
+            "ordStatus": "PENDING",
+            "queryTime": "2026-03-01T10:10:00Z",
+            "message": "pending at exchange"
+          },
+          "error": null
+        }
+        """.formatted(clOrdId, clOrdId);
   }
 
   private com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder canonicalGatewayError(
