@@ -207,6 +207,9 @@ class ChannelErrorContractTest {
 
     assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("ESCALATED");
     assertThat(orderSessionTestFixture.failureReasonOf(orderSessionId)).isEqualTo("ESCALATED_MANUAL_REVIEW");
+    assertThat(orderSessionTestFixture.executionResultOf(orderSessionId)).isNull();
+    assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isNull();
+    assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isNull();
 
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
@@ -276,6 +279,11 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.data.remainingSeconds").doesNotExist());
 
     assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("COMPLETED");
+    assertThat(orderSessionTestFixture.executionResultOf(orderSessionId)).isEqualTo("FILLED");
+    assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isEqualByComparingTo("2");
+    assertThat(orderSessionTestFixture.leavesQtyOf(orderSessionId)).isEqualByComparingTo("0");
+    assertThat(orderSessionTestFixture.executedPriceOf(orderSessionId)).isEqualByComparingTo("70100");
+    assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isEqualTo("FEP-KRX-90001");
 
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
@@ -344,6 +352,9 @@ class ChannelErrorContractTest {
 
     assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("ESCALATED");
     assertThat(orderSessionTestFixture.failureReasonOf(orderSessionId)).isEqualTo("ESCALATED_MANUAL_REVIEW");
+    assertThat(orderSessionTestFixture.executionResultOf(orderSessionId)).isNull();
+    assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isNull();
+    assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isNull();
   }
 
   @Test

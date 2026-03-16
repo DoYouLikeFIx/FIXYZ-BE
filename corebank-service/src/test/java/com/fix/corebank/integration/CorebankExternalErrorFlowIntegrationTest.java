@@ -172,6 +172,8 @@ class CorebankExternalErrorFlowIntegrationTest {
     assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+    assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
+    assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
   }
 
   @Test
@@ -200,6 +202,8 @@ class CorebankExternalErrorFlowIntegrationTest {
     assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("UNKNOWN_EXTERNAL_9555");
+    assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
+    assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
   }
 
   @Test
@@ -227,6 +231,8 @@ class CorebankExternalErrorFlowIntegrationTest {
     assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("ORDER_REJECTED");
+    assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
+    assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
   }
 
   @Test
@@ -425,5 +431,17 @@ class CorebankExternalErrorFlowIntegrationTest {
         default -> new FepExternalError("FEP-999", "UNKNOWN_EXTERNAL_" + externalRc);
       };
     }
+  }
+
+  private BigDecimal accountCashBalance() {
+    return jdbcTemplate.queryForObject("SELECT cash_balance FROM accounts WHERE id = 1", BigDecimal.class);
+  }
+
+  private BigDecimal positionQuantity(String symbol) {
+    return jdbcTemplate.queryForObject(
+        "SELECT qty FROM positions WHERE account_id = 1 AND symbol = ?",
+        BigDecimal.class,
+        symbol
+    );
   }
 }
