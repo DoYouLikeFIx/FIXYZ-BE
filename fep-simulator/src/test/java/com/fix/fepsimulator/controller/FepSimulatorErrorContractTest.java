@@ -1,6 +1,15 @@
 package com.fix.fepsimulator.controller;
 
+import java.io.InputStream;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -10,14 +19,6 @@ import com.fix.fepsimulator.filter.CorrelationIdFilter;
 import com.fix.fepsimulator.repository.SimulatorRuleRepository;
 import com.fix.fepsimulator.service.FepSimulatorControlService;
 import com.fix.fepsimulator.support.FepSimulatorStandaloneMvcSupport;
-import java.io.InputStream;
-import java.util.List;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.test.web.servlet.MockMvc;
 
 @ExtendWith(MockitoExtension.class)
 class FepSimulatorErrorContractTest {
