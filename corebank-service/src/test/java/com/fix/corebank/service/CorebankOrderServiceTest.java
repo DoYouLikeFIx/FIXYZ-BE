@@ -3,7 +3,9 @@ package com.fix.corebank.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,6 +55,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.function.IntConsumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +63,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -105,10 +109,12 @@ class CorebankOrderServiceTest {
   private StubFepClient fepClient;
   private CorebankOrderPersistenceService corebankOrderPersistenceService;
   private CorebankOrderService corebankOrderService;
+  private PositionLockMetrics positionLockMetrics;
 
   @BeforeEach
   void setUp() {
     fepClient = new StubFepClient();
+    positionLockMetrics = new PositionLockMetrics(new SimpleMeterRegistry());
     corebankOrderPersistenceService = new CorebankOrderPersistenceService(
         accountRepository,
         accountStatusEventRepository,
@@ -118,15 +124,23 @@ class CorebankOrderServiceTest {
         journalEntryRepository,
         ledgerEntryRepository,
         ledgerEntryRefRepository,
+        positionLockMetrics,
+        (accountId, symbol) -> {
+        },
         (order, account, position) -> {
         }
     );
+    lenient().when(accountRepository.findByIdForUpdate(anyLong()))
+        .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)));
+    lenient().when(accountRepository.existsById(anyLong()))
+        .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)).isPresent());
     corebankOrderService = new CorebankOrderService(
         accountRepository,
         positionRepository,
         executionRepository,
         corebankOrderPersistenceService,
-        fepClient
+        fepClient,
+        positionLockMetrics
     );
     ReflectionTestUtils.setField(corebankOrderService, "statusQueryMaxAttempts", 2);
     ReflectionTestUtils.setField(corebankOrderService, "statusQueryBackoffMs", 0L);
@@ -913,6 +927,65 @@ class CorebankOrderServiceTest {
 
     verify(positionRepository, times(1)).findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930");
     assertThat(fepClient.submitCalls()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldTranslatePositionLockConflictToCore003() {
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930"))
+        .thenThrow(new CannotAcquireLockException("Lock wait timeout exceeded"));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.CORE_CONCURRENCY_CONFLICT);
+          assertThat(businessException.getMetadata()).isEqualTo(
+              new ErrorMetadata("error.core.concurrency_conflict", "CONCURRENCY_FAILURE")
+          );
+          assertThat(businessException.getDetails()).containsEntry("failureReason", "POSITION_LOCK");
+          assertThat(businessException.getDetails()).containsEntry("symbol", "005930");
+        });
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldNotTranslateAccountRowLockFailureToCore003() {
+    lenient().when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    lenient().when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));
+    lenient().when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930"))
+        .thenReturn(Optional.of(Position.of(
+            ACCOUNT_ID,
+            "005930",
+            new BigDecimal("10.0000"),
+            new BigDecimal("70000.0000")
+        )));
+    lenient().when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+    lenient().when(accountRepository.findByIdForUpdate(ACCOUNT_ID))
+        .thenThrow(new CannotAcquireLockException("Account row lock timeout"));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(CannotAcquireLockException.class)
+        .hasMessageContaining("Account row lock timeout");
+
+    assertThat(fepClient.submitCalls()).isZero();
   }
 
   @Test

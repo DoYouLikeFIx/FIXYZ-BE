@@ -70,6 +70,8 @@ recovery:
     backoff-ms: ${RECOVERY_STATUS_QUERY_BACKOFF_MS:0}
 
 corebank:
+  order:
+    position-lock-timeout-millis: ${COREBANK_ORDER_POSITION_LOCK_TIMEOUT_MILLIS:1000}
   provisioning:
     # Safe default for shared or misconfigured environments. Local/openapi
     # profiles and explicit env overrides can opt into funded demo balances.

@@ -2,12 +2,14 @@ package com.fix.corebank.service;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.fep.FepOrderType;
 import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.corebank.domain.AccountStatus;
+import com.fix.corebank.exception.order.PositionLockContentionException;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
@@ -40,6 +42,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -57,6 +60,7 @@ public class CorebankOrderService {
   private final ExecutionRepository executionRepository;
   private final CorebankOrderPersistenceService orderPersistenceService;
   private final FepClient fepClient;
+  private final PositionLockMetrics positionLockMetrics;
 
   @Value("${recovery.max-retry-count:5}")
   private int maxRetryCount = 5;
@@ -359,8 +363,12 @@ public class CorebankOrderService {
 
   private InternalOrderResult createFreshOrder(InternalOrderCreateCommand command) {
     try {
-      CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder =
-          orderPersistenceService.prepareOrderSubmission(command);
+      CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder;
+      try {
+        pendingOrder = orderPersistenceService.prepareOrderSubmission(command);
+      } catch (PositionLockContentionException ex) {
+        throw concurrencyConflict(command, ex);
+      }
       try {
         FepOrderResult gatewayOrder = fepClient.submitOrder(
             toFepPayload(pendingOrder),
@@ -390,6 +398,22 @@ public class CorebankOrderService {
           .map(existing -> mapToOrderResult(existing, true))
           .orElseThrow(() -> e);
     }
+  }
+
+  private BusinessException concurrencyConflict(InternalOrderCreateCommand command, RuntimeException ex) {
+    positionLockMetrics.incrementConflicts();
+    return new BusinessException(
+        ErrorCode.CORE_CONCURRENCY_CONFLICT,
+        ErrorCode.CORE_CONCURRENCY_CONFLICT.defaultMessage(),
+        ex,
+        new ErrorMetadata("error.core.concurrency_conflict", "CONCURRENCY_FAILURE"),
+        Map.of(
+            "accountId", command.getAccountId(),
+            "symbol", command.getSymbol(),
+            "clOrdId", command.getClOrdId(),
+            "failureReason", "POSITION_LOCK"
+        )
+    );
   }
 
   private InternalOrderResult mapToOrderResult(CorebankOrderPersistenceService.OrderSnapshot order, boolean idempotent) {
