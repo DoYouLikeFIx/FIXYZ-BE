@@ -220,6 +220,27 @@ public class CorebankOrderPersistenceService {
     return OrderSnapshot.from(order);
   }
 
+  @Transactional
+  public OrderStateUpdateResult updateOrderStateIfSnapshotMatches(
+      OrderSnapshot expectedOrder,
+      String status,
+      String externalSyncStatus,
+      String fepReferenceId,
+      String failureReason
+  ) {
+    int updatedRows = orderRepository.updateStateIfVersionMatches(
+        expectedOrder.clOrdId(),
+        expectedOrder.version(),
+        status,
+        externalSyncStatus,
+        fepReferenceId,
+        failureReason,
+        Instant.now()
+    );
+    OrderSnapshot currentOrder = findOrder(expectedOrder.clOrdId()).orElse(null);
+    return new OrderStateUpdateResult(currentOrder, updatedRows == 1);
+  }
+
   private void appendLedgerSkeleton(Order order) {
     BigDecimal grossAmount = order.getOrderPrice().multiply(order.getOrderQty());
 
@@ -338,7 +359,8 @@ public class CorebankOrderPersistenceService {
       BigDecimal orderQty,
       String externalSyncStatus,
       String fepReferenceId,
-      String failureReason
+      String failureReason,
+      Long version
   ) {
     private static OrderSnapshot from(Order order) {
       return new OrderSnapshot(
@@ -348,8 +370,12 @@ public class CorebankOrderPersistenceService {
           order.getOrderQty(),
           order.getExternalSyncStatus(),
           order.getFepReferenceId(),
-          order.getFailureReason()
+          order.getFailureReason(),
+          order.getVersion()
       );
     }
+  }
+
+  public record OrderStateUpdateResult(OrderSnapshot order, boolean updated) {
   }
 }

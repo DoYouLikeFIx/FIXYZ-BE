@@ -18,6 +18,7 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.validation.ContractPatterns;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.TraceparentSupport;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -57,10 +58,12 @@ public class FepClient {
   @CircuitBreaker(name = "fep-submit", fallbackMethod = "submitOrderFallback")
   public FepOrderResult submitOrder(FepOutboundOrderPayload payload, String correlationId) {
     try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
       FepGatewayEnvelope<FepGatewayOrderResponse> response = restClient.post()
           .uri(FEP_ORDERS_PATH)
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
           .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
           .header(CommonHeaders.X_CL_ORD_ID, payload.clOrdId())
           .contentType(MediaType.APPLICATION_JSON)
           .body(payload)
@@ -81,10 +84,12 @@ public class FepClient {
       throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "clOrdId must be a UUID v4");
     }
     try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
       FepGatewayEnvelope<FepGatewayOrderResponse> response = restClient.get()
           .uri(FEP_ORDER_STATUS_PATH, clOrdId)
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
           .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
           .retrieve()
           .body(new ParameterizedTypeReference<>() {
           });
