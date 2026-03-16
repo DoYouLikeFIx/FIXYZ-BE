@@ -167,6 +167,54 @@ class OrderSessionResponseSerializationTest {
   }
 
   @Test
+  void shouldRenderEscalatedTerminalContractWithoutExecutionFields() throws Exception {
+    OrderSessionResponse response = OrderSessionResponse.from(OrderSessionResult.of(
+        "sess-esc",
+        "cl-esc",
+        "ESCALATED",
+        true,
+        "ELEVATED_ORDER_RISK",
+        101L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000),
+        null,
+        null,
+        null,
+        null,
+        Instant.parse("2026-03-12T01:00:00Z"),
+        15L,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "ESCALATED_MANUAL_REVIEW",
+        null,
+        null,
+        Instant.parse("2026-03-12T00:00:00Z"),
+        Instant.parse("2026-03-12T00:07:00Z"),
+        false
+    ));
+
+    JsonNode data = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+    assertThat(data.path("status").asText()).isEqualTo("ESCALATED");
+    assertThat(data.has("expiresAt")).isFalse();
+    assertThat(data.has("remainingSeconds")).isFalse();
+    assertThat(data.path("executionResult").isNull()).isTrue();
+    assertThat(data.path("executedQty").isNull()).isTrue();
+    assertThat(data.path("leavesQty").isNull()).isTrue();
+    assertThat(data.path("executedPrice").isNull()).isTrue();
+    assertThat(data.path("externalOrderId").isNull()).isTrue();
+    assertThat(data.path("failureReason").asText()).isEqualTo("ESCALATED_MANUAL_REVIEW");
+    assertThat(data.path("executedAt").isNull()).isTrue();
+    assertThat(data.path("canceledAt").isNull()).isTrue();
+  }
+
+  @Test
   void shouldRenderCanceledTerminalContractWithoutFailureReason() throws Exception {
     OrderSessionResponse response = OrderSessionResponse.from(OrderSessionResult.of(
         "sess-4",

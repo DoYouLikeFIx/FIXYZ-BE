@@ -96,8 +96,21 @@ class CorebankExternalErrorFlowIntegrationTest {
   @BeforeEach
   void setUp() {
     WIRE_MOCK_SERVER.resetAll();
-    orderRepository.deleteAll();
-    jdbcTemplate.update("UPDATE accounts SET status = 'ACTIVE' WHERE id = 1");
+    jdbcTemplate.update("DELETE FROM ledger_entry_refs");
+    jdbcTemplate.update("DELETE FROM ledger_entries");
+    jdbcTemplate.update("DELETE FROM journal_entries");
+    jdbcTemplate.update("DELETE FROM executions");
+    jdbcTemplate.update("DELETE FROM orders");
+    jdbcTemplate.update("DELETE FROM positions");
+    jdbcTemplate.update(
+        "UPDATE accounts SET status = 'ACTIVE', cash_balance = 100000000.0000, daily_sell_limit = 500.0000 WHERE id = 1"
+    );
+    jdbcTemplate.update(
+        """
+            INSERT INTO positions (account_id, symbol, qty, avg_price, created_at, updated_at, version)
+            VALUES (1, '005930', 120.0000, 70000.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+            """
+    );
     circuitBreakerRegistry.circuitBreaker("fep-submit").reset();
     circuitBreakerRegistry.circuitBreaker("fep-status").reset();
   }
@@ -173,9 +186,11 @@ class CorebankExternalErrorFlowIntegrationTest {
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-timeout")));
 
     Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_TIMEOUT).orElseThrow();
-    assertThat(persistedOrder.getStatus()).isEqualTo("ACCEPTED");
+    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+    assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
+    assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
   }
 
   @Test
@@ -199,6 +214,42 @@ class CorebankExternalErrorFlowIntegrationTest {
         .andExpect(jsonPath("$.operatorCode").value("UNKNOWN_EXTERNAL_9555"))
         .andExpect(jsonPath("$.correlationId").isNotEmpty())
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
+
+    Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_UNKNOWN).orElseThrow();
+    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("UNKNOWN_EXTERNAL_9555");
+    assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
+    assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
+  }
+
+  @Test
+  void shouldEscalateRejectedSubmitWhilePreservingCanonicalFill() throws Exception {
+    String clOrdId = "123e4567-e89b-42d3-a456-426614174225";
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(400, "9097", "order rejected by exchange")));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-rejected")
+            .param("accountId", "1")
+            .param("clOrdId", clOrdId)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isBadRequest())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-rejected"))
+        .andExpect(jsonPath("$.code").value("FEP-003"))
+        .andExpect(jsonPath("$.message").value("Exchange rejected order"))
+        .andExpect(jsonPath("$.operatorCode").value("ORDER_REJECTED"));
+
+    Order persistedOrder = orderRepository.findByClOrdId(clOrdId).orElseThrow();
+    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("ORDER_REJECTED");
+    assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
+    assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
   }
 
   @Test
@@ -938,5 +989,17 @@ class CorebankExternalErrorFlowIntegrationTest {
         default -> new FepExternalError("FEP-999", "UNKNOWN_EXTERNAL_" + externalRc);
       };
     }
+  }
+
+  private BigDecimal accountCashBalance() {
+    return jdbcTemplate.queryForObject("SELECT cash_balance FROM accounts WHERE id = 1", BigDecimal.class);
+  }
+
+  private BigDecimal positionQuantity(String symbol) {
+    return jdbcTemplate.queryForObject(
+        "SELECT qty FROM positions WHERE account_id = 1 AND symbol = ?",
+        BigDecimal.class,
+        symbol
+    );
   }
 }

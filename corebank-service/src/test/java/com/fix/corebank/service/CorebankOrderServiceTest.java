@@ -117,7 +117,9 @@ class CorebankOrderServiceTest {
         executionRepository,
         journalEntryRepository,
         ledgerEntryRepository,
-        ledgerEntryRefRepository
+        ledgerEntryRefRepository,
+        (order, account, position) -> {
+        }
     );
     corebankOrderService = new CorebankOrderService(
         accountRepository,
@@ -645,6 +647,8 @@ class CorebankOrderServiceTest {
     ));
 
     assertThat(result.getStatus()).isEqualTo("PENDING");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(result.getExternalOrderId()).isEqualTo("FEP-KRX-" + IDEMPOTENT_CL_ORD_ID);
     assertThat(fepClient.submitCalls()).isEqualTo(1);
   }
 
@@ -843,7 +847,7 @@ class CorebankOrderServiceTest {
     assertThat(fepClient.lastSubmitPayload().clOrdId()).isEqualTo(PAYLOAD_BOUND_CL_ORD_ID);
     assertThat(fepClient.lastSubmitPayload().referenceId()).isEqualTo(PAYLOAD_BOUND_CL_ORD_ID);
     assertThat(savedOrder.getFepReferenceId()).isEqualTo("FEP-KRX-" + PAYLOAD_BOUND_CL_ORD_ID);
-    assertThat(savedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_CONFIRMED);
+    assertThat(savedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
   }
 
   @Test
@@ -959,10 +963,63 @@ class CorebankOrderServiceTest {
         .extracting(ex -> ((BusinessException) ex).getErrorCode())
         .isEqualTo(ErrorCode.FEP_GATEWAY_TIMEOUT);
 
-    assertThat(savedOrder.getStatus()).isEqualTo("ACCEPTED");
+    assertThat(savedOrder.getStatus()).isEqualTo("PENDING");
     assertThat(savedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
     assertThat(savedOrder.getFailureReason()).isEqualTo("TIMEOUT");
     assertThat(fepClient.submitCalls()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldEscalateRejectedSubmitAfterCanonicalPosting() {
+    Account account = persistedAccount();
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
+    Order savedOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            IDEMPOTENT_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("3.0000"),
+            new BigDecimal("70200.0000")
+        ),
+        9014L
+    );
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID))
+        .thenReturn(Optional.empty())
+        .thenReturn(Optional.of(savedOrder));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+    when(orderRepository.saveAndFlush(any(Order.class))).thenReturn(savedOrder);
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7014L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8014L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitFailure(new BusinessException(
+        ErrorCode.FEP_ORDER_REJECTED,
+        ErrorCode.FEP_ORDER_REJECTED.defaultMessage(),
+        new ErrorMetadata("error.fep.rejected", "ORDER_REJECTED")
+    ));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .extracting(ex -> ((BusinessException) ex).getErrorCode())
+        .isEqualTo(ErrorCode.FEP_ORDER_REJECTED);
+
+    assertThat(savedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(savedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(savedOrder.getFailureReason()).isEqualTo("ORDER_REJECTED");
   }
 
   @Test

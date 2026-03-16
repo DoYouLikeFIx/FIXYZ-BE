@@ -162,6 +162,20 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
+  OrderSession markEscalated(OrderSession session, String failureReason) {
+    session.escalate(failureReason);
+    orderSessionRepository.flush();
+    auditLogRepository.save(AuditLog.of(
+        session.getMemberId(),
+        AuditAction.ORDER_SESSION_ESCALATED,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        "clOrdId=" + session.getClOrdId() + ", reason=" + failureReason
+    ));
+    return session;
+  }
+
+  @Transactional
   OrderSession markFailed(OrderSession session, String failureReason) {
     session.fail(failureReason);
     orderSessionRepository.flush();

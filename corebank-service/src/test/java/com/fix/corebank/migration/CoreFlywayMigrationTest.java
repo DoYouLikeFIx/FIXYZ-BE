@@ -108,4 +108,39 @@ class CoreFlywayMigrationTest {
     assertThat(cashBalanceScale).isEqualTo(4);
     assertThat(dailySellLimitScale).isEqualTo(4);
   }
+
+  @Test
+  void shouldAddExecutionSummaryColumnsToOrders() {
+    Integer executionResultLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'EXECUTION_RESULT'",
+        Integer.class
+    );
+    Integer executedQtyScale = jdbcTemplate.queryForObject(
+        "SELECT NUMERIC_SCALE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'EXECUTED_QTY'",
+        Integer.class
+    );
+    Integer leavesQtyScale = jdbcTemplate.queryForObject(
+        "SELECT NUMERIC_SCALE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'LEAVES_QTY'",
+        Integer.class
+    );
+    Integer executedPriceScale = jdbcTemplate.queryForObject(
+        "SELECT NUMERIC_SCALE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'EXECUTED_PRICE'",
+        Integer.class
+    );
+    Integer executedAtExists = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'EXECUTED_AT'",
+        Integer.class
+    );
+
+    assertThat(executionResultLength).isEqualTo(32);
+    assertThat(executedQtyScale).isEqualTo(4);
+    assertThat(leavesQtyScale).isEqualTo(4);
+    assertThat(executedPriceScale).isEqualTo(4);
+    assertThat(executedAtExists).isEqualTo(1);
+  }
 }

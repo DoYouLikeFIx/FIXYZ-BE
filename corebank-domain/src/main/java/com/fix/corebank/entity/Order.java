@@ -1,6 +1,8 @@
 package com.fix.corebank.entity;
 
 import com.fix.common.entity.BaseTimeEntity;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -8,11 +10,14 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 
 @Entity
 @Table(name = "orders")
 public class Order extends BaseTimeEntity {
+
+  private static final int SCALE = 4;
 
   public static final String EXTERNAL_SYNC_CONFIRMED = "CONFIRMED";
   public static final String EXTERNAL_SYNC_FAILED = "FAILED";
@@ -52,6 +57,21 @@ public class Order extends BaseTimeEntity {
   @Column(name = "failure_reason", length = 255)
   private String failureReason;
 
+  @Column(name = "execution_result", length = 32)
+  private String executionResult;
+
+  @Column(name = "executed_qty", precision = 19, scale = 4)
+  private BigDecimal executedQty;
+
+  @Column(name = "leaves_qty", precision = 19, scale = 4)
+  private BigDecimal leavesQty;
+
+  @Column(name = "executed_price", precision = 19, scale = 4)
+  private BigDecimal executedPrice;
+
+  @Column(name = "executed_at")
+  private Instant executedAt;
+
   @Column(name = "requested_at", nullable = false)
   private Instant requestedAt;
 
@@ -69,6 +89,11 @@ public class Order extends BaseTimeEntity {
       String externalSyncStatus,
       String fepReferenceId,
       String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      Instant executedAt,
       Instant requestedAt
   ) {
     this.accountId = accountId;
@@ -81,6 +106,11 @@ public class Order extends BaseTimeEntity {
     this.externalSyncStatus = externalSyncStatus;
     this.fepReferenceId = fepReferenceId;
     this.failureReason = failureReason;
+    this.executionResult = executionResult;
+    this.executedQty = executedQty;
+    this.leavesQty = leavesQty;
+    this.executedPrice = executedPrice;
+    this.executedAt = executedAt;
     this.requestedAt = requestedAt;
   }
 
@@ -92,7 +122,24 @@ public class Order extends BaseTimeEntity {
       BigDecimal orderQty,
       BigDecimal orderPrice
   ) {
-    return new Order(accountId, clOrdId, symbol, side, orderQty, orderPrice, "ACCEPTED", null, null, null, Instant.now());
+    return new Order(
+        accountId,
+        clOrdId,
+        symbol,
+        side,
+        orderQty,
+        orderPrice,
+        "ACCEPTED",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        Instant.now()
+    );
   }
 
   public Long getId() {
@@ -139,6 +186,26 @@ public class Order extends BaseTimeEntity {
     return failureReason;
   }
 
+  public String getExecutionResult() {
+    return executionResult;
+  }
+
+  public BigDecimal getExecutedQty() {
+    return executedQty;
+  }
+
+  public BigDecimal getLeavesQty() {
+    return leavesQty;
+  }
+
+  public BigDecimal getExecutedPrice() {
+    return executedPrice;
+  }
+
+  public Instant getExecutedAt() {
+    return executedAt;
+  }
+
   public Instant getRequestedAt() {
     return requestedAt;
   }
@@ -152,5 +219,61 @@ public class Order extends BaseTimeEntity {
 
   public void updateStatus(String status) {
     updateState(status, externalSyncStatus, fepReferenceId, failureReason);
+  }
+
+  public void updateExecutionSummary(
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
+    this.executionResult = executionResult;
+    this.executedQty = executedQty;
+    this.leavesQty = leavesQty;
+    this.executedPrice = executedPrice;
+    this.executedAt = executedAt;
+  }
+
+  public void completeExecution(
+      String status,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
+    requireNonBlank(status, "order status is required");
+    requireNonBlank(executionResult, "execution result is required");
+    if (executedAt == null) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "executedAt is required");
+    }
+
+    this.status = status;
+    this.failureReason = null;
+    updateExecutionSummary(
+        executionResult,
+        normalizeNonNegative(executedQty, "executed quantity is required"),
+        normalizeNonNegative(leavesQty, "leaves quantity is required"),
+        normalizeNonNegative(executedPrice, "executed price is required"),
+        executedAt
+    );
+  }
+
+  private void requireNonBlank(String value, String message) {
+    if (value == null || value.isBlank()) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, message);
+    }
+  }
+
+  private BigDecimal normalizeNonNegative(BigDecimal value, String nullMessage) {
+    if (value == null) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, nullMessage);
+    }
+    BigDecimal normalized = value.setScale(SCALE, RoundingMode.HALF_UP);
+    if (normalized.signum() < 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "execution summary values cannot be negative");
+    }
+    return normalized;
   }
 }

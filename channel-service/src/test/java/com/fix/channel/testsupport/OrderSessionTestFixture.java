@@ -128,6 +128,36 @@ public class OrderSessionTestFixture {
         .orElse(null);
   }
 
+  public String executionResultOf(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .map(OrderSession::getExecutionResult)
+        .orElse(null);
+  }
+
+  public BigDecimal executedQtyOf(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .map(OrderSession::getExecutedQty)
+        .orElse(null);
+  }
+
+  public BigDecimal leavesQtyOf(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .map(OrderSession::getLeavesQty)
+        .orElse(null);
+  }
+
+  public BigDecimal executedPriceOf(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .map(OrderSession::getExecutedPrice)
+        .orElse(null);
+  }
+
+  public String externalOrderIdOf(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .map(OrderSession::getExternalOrderId)
+        .orElse(null);
+  }
+
   private void activateTtl(OrderSession session) {
     OrderSessionTtlStore orderSessionTtlStore = orderSessionTtlStoreProvider.getIfAvailable();
     if (orderSessionTtlStore == null) {

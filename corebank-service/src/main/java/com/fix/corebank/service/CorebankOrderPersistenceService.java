@@ -5,6 +5,7 @@ import com.fix.common.error.ErrorCode;
 import com.fix.corebank.domain.AccountStatus;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.AccountStatusEvent;
+import com.fix.corebank.entity.Execution;
 import com.fix.corebank.entity.JournalEntry;
 import com.fix.corebank.entity.LedgerEntry;
 import com.fix.corebank.entity.LedgerEntryRef;
@@ -24,6 +25,7 @@ import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -44,6 +46,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CorebankOrderPersistenceService {
 
+  private static final int MONEY_SCALE = 4;
+  private static final String LOCAL_EXECUTION_STATUS = "PENDING";
+  private static final String LOCAL_EXECUTION_RESULT = "FILLED";
+  private static final String JOURNAL_ENTRY_TYPE_ORDER_EXECUTED = "ORDER_EXECUTED";
+  private static final String LEDGER_TYPE_CASH = "CASH";
+  private static final String LEDGER_TYPE_POSITION = "POSITION";
+  private static final String LEDGER_DIRECTION_DEBIT = "DR";
+  private static final String LEDGER_DIRECTION_CREDIT = "CR";
+
   private final AccountRepository accountRepository;
   private final AccountStatusEventRepository accountStatusEventRepository;
   private final OrderRepository orderRepository;
@@ -52,6 +63,7 @@ public class CorebankOrderPersistenceService {
   private final JournalEntryRepository journalEntryRepository;
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
+  private final OrderPostingTransactionHook orderPostingTransactionHook;
   private Clock limitWindowClock = Clock.systemUTC();
 
   @Value("${corebank.order.limit-window-zone:UTC}")
@@ -100,15 +112,23 @@ public class CorebankOrderPersistenceService {
 
   @Transactional
   public PendingOrderSubmission prepareOrderSubmission(InternalOrderCreateCommand command) {
-    Account account = accountRepository.findById(command.getAccountId())
+    Account account = accountRepository.findByIdForUpdate(command.getAccountId())
+        .or(() -> accountRepository.findById(command.getAccountId()))
         .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
     ensureOrderEligibleAccountStatus(account);
 
     String side = normalizeSide(command.getSide());
     Position position = positionRepository.findByAccountIdAndSymbolForUpdate(command.getAccountId(), command.getSymbol())
-        .orElseGet(() -> positionRepository.saveAndFlush(
-            Position.of(command.getAccountId(), command.getSymbol(), BigDecimal.ZERO, BigDecimal.ZERO)
-        ));
+        .orElseGet(() -> {
+          Position createdPosition = Position.of(
+              command.getAccountId(),
+              command.getSymbol(),
+              BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+              BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)
+          );
+          Position persistedPosition = positionRepository.saveAndFlush(createdPosition);
+          return persistedPosition != null ? persistedPosition : createdPosition;
+        });
     BigDecimal availableQty = resolveAvailableQuantity(position);
 
     BigDecimal todaySellQty = executionRepository.sumSellQuantityByAccountAndSymbolBetween(
@@ -139,15 +159,48 @@ public class CorebankOrderPersistenceService {
       }
     }
 
-    Order savedOrder = orderRepository.saveAndFlush(Order.accepted(
+    Order candidateOrder = Order.accepted(
         command.getAccountId(),
         command.getClOrdId(),
         command.getSymbol(),
         side,
         command.getQuantity(),
         command.getPrice()
+    );
+    Order savedOrder = orderRepository.saveAndFlush(candidateOrder);
+    if (savedOrder == null) {
+      savedOrder = candidateOrder;
+    }
+
+    Instant executedAt = Instant.now();
+    BigDecimal executedQty = normalizeMoney(command.getQuantity());
+    BigDecimal executedPrice = normalizeMoney(command.getPrice());
+    BigDecimal leavesQty = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    BigDecimal grossAmount = calculateGrossAmount(executedQty, executedPrice);
+
+    executionRepository.saveAndFlush(Execution.of(
+        savedOrder.getId(),
+        savedOrder.getAccountId(),
+        savedOrder.getClOrdId(),
+        savedOrder.getSymbol(),
+        savedOrder.getSide(),
+        executedQty,
+        executedPrice,
+        executedAt
     ));
-    appendLedgerSkeleton(savedOrder);
+
+    applyCanonicalPosting(account, position, side, executedQty, executedPrice, grossAmount);
+    savedOrder.completeExecution(
+        LOCAL_EXECUTION_STATUS,
+        LOCAL_EXECUTION_RESULT,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        executedAt
+    );
+    orderPostingTransactionHook.afterPostingMutation(savedOrder, account, position);
+    appendExecutionPosting(savedOrder, grossAmount);
+    orderRepository.flush();
     return PendingOrderSubmission.from(savedOrder, account);
   }
 
@@ -244,13 +297,67 @@ public class CorebankOrderPersistenceService {
   private void appendLedgerSkeleton(Order order) {
     BigDecimal grossAmount = order.getOrderPrice().multiply(order.getOrderQty());
 
+  private void appendExecutionPosting(Order order, BigDecimal grossAmount) {
     JournalEntry journalEntry = journalEntryRepository.save(
-        JournalEntry.of(order.getId(), "ORDER_ACCEPTED", grossAmount, "corebank scaffold journal")
+        JournalEntry.of(order.getId(), JOURNAL_ENTRY_TYPE_ORDER_EXECUTED, grossAmount, "canonical same-bank ledger posting")
     );
+    if (journalEntry == null) {
+      return;
+    }
+
+    if ("BUY".equals(order.getSide())) {
+      saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_POSITION, LEDGER_DIRECTION_DEBIT, grossAmount, order.getClOrdId());
+      saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_CASH, LEDGER_DIRECTION_CREDIT, grossAmount, order.getClOrdId());
+      return;
+    }
+
+    saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_CASH, LEDGER_DIRECTION_DEBIT, grossAmount, order.getClOrdId());
+    saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_POSITION, LEDGER_DIRECTION_CREDIT, grossAmount, order.getClOrdId());
+  }
+
+  private void saveLedgerEntryWithRef(
+      Long journalEntryId,
+      Long accountId,
+      String ledgerType,
+      String direction,
+      BigDecimal amount,
+      String clOrdId
+  ) {
     LedgerEntry ledgerEntry = ledgerEntryRepository.save(
-        LedgerEntry.of(journalEntry.getId(), order.getAccountId(), "ORDER", "DR", grossAmount)
+        LedgerEntry.of(journalEntryId, accountId, ledgerType, direction, amount)
     );
-    ledgerEntryRefRepository.save(LedgerEntryRef.of(ledgerEntry.getId(), "CL_ORD_ID", order.getClOrdId()));
+    if (ledgerEntry != null && ledgerEntry.getId() != null) {
+      ledgerEntryRefRepository.save(LedgerEntryRef.of(ledgerEntry.getId(), "CL_ORD_ID", clOrdId));
+    }
+  }
+
+  private void applyCanonicalPosting(
+      Account account,
+      Position position,
+      String side,
+      BigDecimal executedQty,
+      BigDecimal executedPrice,
+      BigDecimal grossAmount
+  ) {
+    if ("BUY".equals(side)) {
+      account.debitCash(grossAmount);
+      position.applyBuy(executedQty, executedPrice);
+      return;
+    }
+
+    position.applySell(executedQty);
+    account.creditCash(grossAmount);
+  }
+
+  private BigDecimal calculateGrossAmount(BigDecimal quantity, BigDecimal price) {
+    return normalizeMoney(quantity.multiply(price));
+  }
+
+  private BigDecimal normalizeMoney(BigDecimal value) {
+    if (value == null) {
+      return BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+    return value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
   }
 
   private BigDecimal resolveAvailableQuantity(Position position) {
@@ -361,6 +468,11 @@ public class CorebankOrderPersistenceService {
       String fepReferenceId,
       String failureReason,
       Long version
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      Instant executedAt
   ) {
     private static OrderSnapshot from(Order order) {
       return new OrderSnapshot(
@@ -372,6 +484,11 @@ public class CorebankOrderPersistenceService {
           order.getFepReferenceId(),
           order.getFailureReason(),
           order.getVersion()
+          order.getExecutionResult(),
+          order.getExecutedQty(),
+          order.getLeavesQty(),
+          order.getExecutedPrice(),
+          order.getExecutedAt()
       );
     }
   }

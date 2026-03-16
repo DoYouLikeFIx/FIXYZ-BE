@@ -658,6 +658,25 @@
           "orderQuantity": {
             "type": "number"
           },
+          "executionResult": {
+            "type": "string"
+          },
+          "executedQty": {
+            "type": "number"
+          },
+          "leavesQty": {
+            "type": "number"
+          },
+          "executedPrice": {
+            "type": "number"
+          },
+          "externalOrderId": {
+            "type": "string"
+          },
+          "executedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "message": {
             "type": "string"
           },
