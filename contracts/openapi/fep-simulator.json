@@ -11,90 +11,40 @@
     }
   ],
   "paths": {
-    "/simulator/v1/rules": {
-      "post": {
-        "tags": [
-          "fep-simulator-rule-controller"
-        ],
-        "operationId": "upsertRule",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/SimulatorRuleUpsertRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseSimulatorRuleResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/simulator/v1/chaos": {
-      "post": {
-        "tags": [
-          "fep-simulator-rule-controller"
-        ],
-        "operationId": "runChaos",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/SimulatorChaosRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseSimulatorChaosResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/simulator/v1/rules/{ruleCode}": {
+    "/fep-internal/rules": {
       "get": {
         "tags": [
           "fep-simulator-rule-controller"
         ],
-        "operationId": "getRule",
-        "parameters": [
-          {
-            "name": "ruleCode",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/SimulatorRuleQueryRequest"
+        "operationId": "getRuleList",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSimulatorRuleListResponse"
+                }
+              }
             }
           }
+        }
+      },
+      "put": {
+        "tags": [
+          "fep-simulator-rule-controller"
         ],
+        "operationId": "upsertRule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulatorRuleUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -102,6 +52,24 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseSimulatorRuleResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "fep-simulator-rule-controller"
+        ],
+        "operationId": "clearRules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseSimulatorRuleClearResponse"
                 }
               }
             }
@@ -138,6 +106,33 @@
           "fep-simulator-controller"
         ],
         "operationId": "ping",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exchange",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "amount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -146,7 +141,7 @@
                 "schema": {
                   "type": "object",
                   "additionalProperties": {
-                    "type": "string"
+                    "type": "object"
                   }
                 }
               }
@@ -172,23 +167,28 @@
   "components": {
     "schemas": {
       "SimulatorRuleUpsertRequest": {
-        "required": [
-          "action",
-          "enabled",
-          "ruleCode"
-        ],
         "type": "object",
         "properties": {
-          "ruleCode": {
-            "minLength": 1,
-            "type": "string"
-          },
           "action": {
-            "minLength": 1,
             "type": "string"
           },
-          "enabled": {
-            "type": "boolean"
+          "targetSymbol": {
+            "type": "string"
+          },
+          "targetExchange": {
+            "type": "string"
+          },
+          "ttlSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "matchAmount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "probability": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -245,52 +245,44 @@
       "SimulatorRuleResponse": {
         "type": "object",
         "properties": {
-          "ruleCode": {
+          "ruleId": {
             "type": "string"
           },
           "action": {
             "type": "string"
           },
-          "enabled": {
-            "type": "boolean"
-          },
-          "activeInRepository": {
-            "type": "boolean"
-          }
-        }
-      },
-      "SimulatorChaosRequest": {
-        "required": [
-          "connectionKey",
-          "intensity",
-          "scenario"
-        ],
-        "type": "object",
-        "properties": {
-          "connectionKey": {
-            "minLength": 1,
+          "targetSymbol": {
             "type": "string"
           },
-          "scenario": {
-            "minLength": 1,
+          "targetExchange": {
             "type": "string"
           },
-          "intensity": {
-            "maximum": 100,
-            "minimum": 1,
+          "matchAmount": {
             "type": "integer",
-            "format": "int32"
+            "format": "int64"
+          },
+          "probability": {
+            "type": "number",
+            "format": "double"
+          },
+          "appliedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
-      "ApiResponseSimulatorChaosResponse": {
+      "ApiResponseSimulatorRuleListResponse": {
         "type": "object",
         "properties": {
           "success": {
             "type": "boolean"
           },
           "data": {
-            "$ref": "#/components/schemas/SimulatorChaosResponse"
+            "$ref": "#/components/schemas/SimulatorRuleListResponse"
           },
           "error": {
             "$ref": "#/components/schemas/ApiErrorResponse"
@@ -301,22 +293,46 @@
           }
         }
       },
-      "SimulatorChaosResponse": {
+      "SimulatorRuleListResponse": {
         "type": "object",
         "properties": {
-          "connectionKey": {
-            "type": "string"
-          },
-          "scenario": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
+          "activeRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SimulatorRuleResponse"
+            }
           }
         }
       },
-      "SimulatorRuleQueryRequest": {
-        "type": "object"
+      "ApiResponseSimulatorRuleClearResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SimulatorRuleClearResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SimulatorRuleClearResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "clearedCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
       }
     }
   }
