@@ -8,6 +8,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.fepsimulator.entity.SimulatorRule;
@@ -17,6 +18,7 @@ import com.fix.fepsimulator.vo.SimulatorRuleResult;
 import com.fix.fepsimulator.vo.SimulatorRuleUpsertCommand;
 
 @Service
+@Transactional
 public class FepSimulatorControlService {
 
   private static final Logger log = LoggerFactory.getLogger(FepSimulatorControlService.class);

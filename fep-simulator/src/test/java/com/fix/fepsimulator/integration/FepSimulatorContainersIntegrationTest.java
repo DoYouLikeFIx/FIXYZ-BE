@@ -1,5 +1,7 @@
 package com.fix.fepsimulator.integration;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -22,12 +26,19 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 @AutoConfigureMockMvc
 class FepSimulatorContainersIntegrationTest extends FepSimulatorContainersIntegrationTestBase {
 
+  private static final String INTERNAL_SECRET = "it-secret-" + UUID.randomUUID();
+
+  @DynamicPropertySource
+  static void registerInternalSecret(DynamicPropertyRegistry registry) {
+    registry.add("internal.secret", () -> INTERNAL_SECRET);
+  }
+
   @Autowired
   private MockMvc mockMvc;
 
   @BeforeEach
   void clearRulesBeforeEach() throws Exception {
-    mockMvc.perform(delete("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+    mockMvc.perform(delete("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET))
         .andExpect(status().isOk());
   }
 
@@ -51,7 +62,7 @@ class FepSimulatorContainersIntegrationTest extends FepSimulatorContainersIntegr
   @Test
   void shouldListOnlyActiveRulesAndDropExpiredRule() throws Exception {
     mockMvc.perform(put("/fep-internal/rules")
-            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET)
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {
@@ -65,7 +76,7 @@ class FepSimulatorContainersIntegrationTest extends FepSimulatorContainersIntegr
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.action").value("APPROVE"));
 
-    mockMvc.perform(get("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+    mockMvc.perform(get("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.activeRules.length()").value(1));
 
@@ -78,7 +89,7 @@ class FepSimulatorContainersIntegrationTest extends FepSimulatorContainersIntegr
 
     Thread.sleep(1200L);
 
-    mockMvc.perform(get("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+    mockMvc.perform(get("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.activeRules.length()").value(0));
 
@@ -93,7 +104,7 @@ class FepSimulatorContainersIntegrationTest extends FepSimulatorContainersIntegr
   @Test
   void shouldClearRulesAndResumeNormalHandling() throws Exception {
     mockMvc.perform(put("/fep-internal/rules")
-            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET)
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {
@@ -105,15 +116,15 @@ class FepSimulatorContainersIntegrationTest extends FepSimulatorContainersIntegr
                 """))
         .andExpect(status().isOk());
 
-    mockMvc.perform(get("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+    mockMvc.perform(get("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.activeRules.length()").value(1));
 
-    mockMvc.perform(delete("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+    mockMvc.perform(delete("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.clearedCount").value(1));
 
-    mockMvc.perform(get("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+    mockMvc.perform(get("/fep-internal/rules").header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.activeRules.length()").value(0));
 
