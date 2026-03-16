@@ -114,7 +114,9 @@ class CorebankOrderServiceTest {
         executionRepository,
         journalEntryRepository,
         ledgerEntryRepository,
-        ledgerEntryRefRepository
+        ledgerEntryRefRepository,
+        (order, account, position) -> {
+        }
     );
     corebankOrderService = new CorebankOrderService(
         accountRepository,
@@ -907,7 +909,7 @@ class CorebankOrderServiceTest {
         .extracting(ex -> ((BusinessException) ex).getErrorCode())
         .isEqualTo(ErrorCode.FEP_GATEWAY_TIMEOUT);
 
-    assertThat(savedOrder.getStatus()).isEqualTo("ACCEPTED");
+    assertThat(savedOrder.getStatus()).isEqualTo("PENDING");
     assertThat(savedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
     assertThat(savedOrder.getFailureReason()).isEqualTo("TIMEOUT");
   }

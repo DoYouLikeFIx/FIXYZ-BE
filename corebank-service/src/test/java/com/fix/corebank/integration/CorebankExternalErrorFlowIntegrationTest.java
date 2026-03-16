@@ -79,8 +79,21 @@ class CorebankExternalErrorFlowIntegrationTest {
   @BeforeEach
   void setUp() {
     WIRE_MOCK_SERVER.resetAll();
-    orderRepository.deleteAll();
-    jdbcTemplate.update("UPDATE accounts SET status = 'ACTIVE' WHERE id = 1");
+    jdbcTemplate.update("DELETE FROM ledger_entry_refs");
+    jdbcTemplate.update("DELETE FROM ledger_entries");
+    jdbcTemplate.update("DELETE FROM journal_entries");
+    jdbcTemplate.update("DELETE FROM executions");
+    jdbcTemplate.update("DELETE FROM orders");
+    jdbcTemplate.update("DELETE FROM positions");
+    jdbcTemplate.update(
+        "UPDATE accounts SET status = 'ACTIVE', cash_balance = 100000000.0000, daily_sell_limit = 500.0000 WHERE id = 1"
+    );
+    jdbcTemplate.update(
+        """
+            INSERT INTO positions (account_id, symbol, qty, avg_price, created_at, updated_at, version)
+            VALUES (1, '005930', 120.0000, 70000.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+            """
+    );
     circuitBreakerRegistry.circuitBreaker("fep-submit").reset();
     circuitBreakerRegistry.circuitBreaker("fep-status").reset();
   }
@@ -156,7 +169,7 @@ class CorebankExternalErrorFlowIntegrationTest {
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-timeout")));
 
     Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_TIMEOUT).orElseThrow();
-    assertThat(persistedOrder.getStatus()).isEqualTo("ACCEPTED");
+    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
   }
