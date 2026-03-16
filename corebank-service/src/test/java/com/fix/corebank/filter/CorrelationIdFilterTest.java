@@ -31,7 +31,8 @@ class CorrelationIdFilterTest {
   void shouldGenerateCorrelationIdWhenHeaderMissing() throws Exception {
     mockMvc.perform(get("/api/v1/ping"))
         .andExpect(status().isOk())
-        .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID));
+        .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
+        .andExpect(header().exists(CommonHeaders.TRACEPARENT));
   }
 
   @Test
@@ -39,5 +40,14 @@ class CorrelationIdFilterTest {
     mockMvc.perform(get("/api/v1/ping").header(CommonHeaders.X_CORRELATION_ID, "corr-corebank-001"))
         .andExpect(status().isOk())
         .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "corr-corebank-001"));
+  }
+
+  @Test
+  void shouldPreserveProvidedTraceparent() throws Exception {
+    String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+    mockMvc.perform(get("/api/v1/ping").header(CommonHeaders.TRACEPARENT, traceparent))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.TRACEPARENT, traceparent));
   }
 }

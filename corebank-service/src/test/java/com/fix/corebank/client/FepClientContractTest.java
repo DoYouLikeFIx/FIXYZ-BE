@@ -25,6 +25,8 @@ import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
 import com.fix.common.validation.ContractPatterns;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.io.IOException;
 import java.io.InputStream;
@@ -202,6 +204,32 @@ class FepClientContractTest {
             true,
             false
         )));
+  }
+
+  @Test
+  void shouldForwardTraceparentHeaderToFepGateway() {
+    String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    TraceparentSupport.putInMdc(traceparent);
+    try {
+      wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+          .willReturn(aResponse()
+              .withHeader("Content-Type", "application/json")
+              .withBody(contractFixture(
+                  SUBMIT_SUCCESS_RESPONSE_FIXTURE,
+                  Map.of(
+                      "clOrdId", CL_ORD_ID_2,
+                      "fepOrderId", "FEP-KRX-" + CL_ORD_ID_2,
+                      "transactTime", "2026-03-01T10:05:30Z"
+                  )
+              ))));
+
+      fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_2, "ref-client-trace"), "trace-client-traceparent");
+
+      wireMockServer.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
+          .withHeader(CommonHeaders.TRACEPARENT, equalTo(traceparent)));
+    } finally {
+      CorrelationIdSupport.clearMdc();
+    }
   }
 
   @Test
