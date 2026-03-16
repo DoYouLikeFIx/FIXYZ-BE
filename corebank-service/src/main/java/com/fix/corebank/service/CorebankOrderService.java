@@ -9,6 +9,7 @@ import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.corebank.domain.AccountStatus;
+import com.fix.corebank.exception.order.PositionLockContentionException;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
@@ -44,9 +45,7 @@ import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -295,11 +294,8 @@ public class CorebankOrderService {
       CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder;
       try {
         pendingOrder = orderPersistenceService.prepareOrderSubmission(command);
-      } catch (RuntimeException ex) {
-        if (isPositionLockConflict(ex)) {
-          throw concurrencyConflict(command, ex);
-        }
-        throw ex;
+      } catch (PositionLockContentionException ex) {
+        throw concurrencyConflict(command, ex);
       }
       try {
         FepOrderResult gatewayOrder = fepClient.submitOrder(
@@ -346,43 +342,6 @@ public class CorebankOrderService {
             "failureReason", "POSITION_LOCK"
         )
     );
-  }
-
-  private boolean isPositionLockConflict(Throwable throwable) {
-    Throwable current = throwable;
-    while (current != null) {
-      if (current instanceof CannotAcquireLockException
-          || current instanceof PessimisticLockingFailureException
-          || current instanceof jakarta.persistence.LockTimeoutException
-          || current instanceof jakarta.persistence.PessimisticLockException
-          || isLockConflictClassName(current)
-          || isLockConflictMessage(current.getMessage())) {
-        return true;
-      }
-      current = current.getCause();
-    }
-    return false;
-  }
-
-  private boolean isLockConflictClassName(Throwable throwable) {
-    String className = throwable.getClass().getName();
-    return "org.hibernate.exception.LockAcquisitionException".equals(className)
-        || "org.hibernate.PessimisticLockException".equals(className)
-        || "org.springframework.dao.DeadlockLoserDataAccessException".equals(className)
-        || "java.sql.SQLTransactionRollbackException".equals(className)
-        || "com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException".equals(className);
-  }
-
-  private boolean isLockConflictMessage(String message) {
-    if (message == null || message.isBlank()) {
-      return false;
-    }
-    String normalized = message.toLowerCase();
-    return normalized.contains("lock wait timeout")
-        || normalized.contains("could not obtain lock")
-        || normalized.contains("pessimistic lock")
-        || normalized.contains("deadlock found")
-        || normalized.contains("for update nowait");
   }
 
   private InternalOrderResult mapToOrderResult(CorebankOrderPersistenceService.OrderSnapshot order, boolean idempotent) {

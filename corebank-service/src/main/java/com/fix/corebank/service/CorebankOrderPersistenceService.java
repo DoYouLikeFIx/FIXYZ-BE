@@ -13,6 +13,7 @@ import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
 import com.fix.corebank.exception.order.DailySellLimitExceededException;
 import com.fix.corebank.exception.order.InsufficientPositionException;
+import com.fix.corebank.exception.order.PositionLockContentionException;
 import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.AccountStatusEventRepository;
 import com.fix.corebank.repository.ExecutionRepository;
@@ -35,7 +36,9 @@ import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -297,6 +300,17 @@ public class CorebankOrderPersistenceService {
   }
 
   private Position lockPositionForUpdate(Long accountId, String symbol) {
+    try {
+      return findOrCreatePositionForUpdate(accountId, symbol);
+    } catch (RuntimeException ex) {
+      if (isPositionLockAcquisitionFailure(ex)) {
+        throw new PositionLockContentionException(accountId, symbol, ex);
+      }
+      throw ex;
+    }
+  }
+
+  private Position findOrCreatePositionForUpdate(Long accountId, String symbol) {
     Optional<Position> existingPosition = positionRepository.findByAccountIdAndSymbolForUpdate(accountId, symbol);
     if (existingPosition.isPresent()) {
       return existingPosition.get();
@@ -316,6 +330,30 @@ public class CorebankOrderPersistenceService {
       return positionRepository.findByAccountIdAndSymbolForUpdate(accountId, symbol)
           .orElseThrow(() -> ex);
     }
+  }
+
+  private boolean isPositionLockAcquisitionFailure(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof CannotAcquireLockException
+          || current instanceof PessimisticLockingFailureException
+          || current instanceof jakarta.persistence.LockTimeoutException
+          || current instanceof jakarta.persistence.PessimisticLockException
+          || isPositionLockExceptionClassName(current)) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
+  }
+
+  private boolean isPositionLockExceptionClassName(Throwable throwable) {
+    String className = throwable.getClass().getName();
+    return "org.hibernate.exception.LockAcquisitionException".equals(className)
+        || "org.hibernate.PessimisticLockException".equals(className)
+        || "org.springframework.dao.DeadlockLoserDataAccessException".equals(className)
+        || "java.sql.SQLTransactionRollbackException".equals(className)
+        || "com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException".equals(className);
   }
 
   private void saveLedgerEntryWithRef(

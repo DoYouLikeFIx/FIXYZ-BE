@@ -24,6 +24,9 @@ import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.OrderPreparationLockHook;
 import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -33,7 +36,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -68,7 +70,7 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
   private MockMvc mockMvc;
 
   @Autowired
-  private PrometheusMeterRegistry prometheusMeterRegistry;
+  private MeterRegistry meterRegistry;
 
   @MockBean
   private FepClient fepClient;
@@ -162,10 +164,15 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
       assertThat(count("ledger_entries")).isEqualTo(2);
       assertThat(count("ledger_entry_refs")).isEqualTo(2);
 
-      String scrapedMetrics = prometheusMeterRegistry.scrape();
-      assertThat(scrapedMetrics).contains("corebank_order_position_lock_wait_seconds_count");
-      assertThat(scrapedMetrics).contains("corebank_order_position_lock_hold_seconds_count");
-      assertThat(scrapedMetrics).contains("corebank_order_position_lock_conflicts_total");
+      Timer waitTimer = meterRegistry.find("corebank.order.position.lock.wait").timer();
+      Timer holdTimer = meterRegistry.find("corebank.order.position.lock.hold").timer();
+      Counter conflictCounter = meterRegistry.find("corebank.order.position.lock.conflicts").counter();
+      assertThat(waitTimer).isNotNull();
+      assertThat(waitTimer.count()).isGreaterThan(0);
+      assertThat(holdTimer).isNotNull();
+      assertThat(holdTimer.count()).isGreaterThan(0);
+      assertThat(conflictCounter).isNotNull();
+      assertThat(conflictCounter.count()).isGreaterThan(0);
 
       verify(fepClient, times(1)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {

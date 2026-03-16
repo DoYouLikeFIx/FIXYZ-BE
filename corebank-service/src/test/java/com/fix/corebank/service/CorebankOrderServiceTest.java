@@ -907,6 +907,36 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldNotTranslateAccountRowLockFailureToCore003() {
+    lenient().when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+    lenient().when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));
+    lenient().when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930"))
+        .thenReturn(Optional.of(Position.of(
+            ACCOUNT_ID,
+            "005930",
+            new BigDecimal("10.0000"),
+            new BigDecimal("70000.0000")
+        )));
+    lenient().when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+    lenient().when(accountRepository.findByIdForUpdate(ACCOUNT_ID))
+        .thenThrow(new CannotAcquireLockException("Account row lock timeout"));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "SELL",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(CannotAcquireLockException.class)
+        .hasMessageContaining("Account row lock timeout");
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
   void shouldPersistExternalSyncFailureWhenSubmitFailsAfterLocalCommit() {
     Account account = persistedAccount();
     Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
