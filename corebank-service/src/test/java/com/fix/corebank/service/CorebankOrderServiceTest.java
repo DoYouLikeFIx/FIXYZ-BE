@@ -3,7 +3,9 @@ package com.fix.corebank.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -115,9 +117,13 @@ class CorebankOrderServiceTest {
         journalEntryRepository,
         ledgerEntryRepository,
         ledgerEntryRefRepository,
+        (accountId, symbol) -> {
+        },
         (order, account, position) -> {
         }
     );
+    lenient().when(accountRepository.findByIdForUpdate(anyLong()))
+        .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)));
     corebankOrderService = new CorebankOrderService(
         accountRepository,
         positionRepository,

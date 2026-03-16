@@ -35,6 +35,7 @@ import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -63,6 +64,7 @@ public class CorebankOrderPersistenceService {
   private final JournalEntryRepository journalEntryRepository;
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
+  private final OrderPreparationLockHook orderPreparationLockHook;
   private final OrderPostingTransactionHook orderPostingTransactionHook;
   private Clock limitWindowClock = Clock.systemUTC();
 
@@ -112,23 +114,11 @@ public class CorebankOrderPersistenceService {
 
   @Transactional
   public PendingOrderSubmission prepareOrderSubmission(InternalOrderCreateCommand command) {
-    Account account = accountRepository.findByIdForUpdate(command.getAccountId())
-        .or(() -> accountRepository.findById(command.getAccountId()))
+    accountRepository.findById(command.getAccountId())
         .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
-    ensureOrderEligibleAccountStatus(account);
 
     String side = normalizeSide(command.getSide());
-    Position position = positionRepository.findByAccountIdAndSymbolForUpdate(command.getAccountId(), command.getSymbol())
-        .orElseGet(() -> {
-          Position createdPosition = Position.of(
-              command.getAccountId(),
-              command.getSymbol(),
-              BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
-              BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)
-          );
-          Position persistedPosition = positionRepository.saveAndFlush(createdPosition);
-          return persistedPosition != null ? persistedPosition : createdPosition;
-        });
+    Position position = lockPositionForUpdate(command.getAccountId(), command.getSymbol());
     BigDecimal availableQty = resolveAvailableQuantity(position);
 
     BigDecimal todaySellQty = executionRepository.sumSellQuantityByAccountAndSymbolBetween(
@@ -137,6 +127,12 @@ public class CorebankOrderPersistenceService {
         startOfLimitWindowDay(),
         startOfNextLimitWindowDay()
     );
+
+    orderPreparationLockHook.afterPositionLock(command.getAccountId(), command.getSymbol());
+
+    Account account = accountRepository.findByIdForUpdate(command.getAccountId())
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+    ensureOrderEligibleAccountStatus(account);
 
     if ("SELL".equals(side)) {
       if (command.getQuantity().compareTo(availableQty) > 0) {
@@ -289,6 +285,28 @@ public class CorebankOrderPersistenceService {
 
     saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_CASH, LEDGER_DIRECTION_DEBIT, grossAmount, order.getClOrdId());
     saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_POSITION, LEDGER_DIRECTION_CREDIT, grossAmount, order.getClOrdId());
+  }
+
+  private Position lockPositionForUpdate(Long accountId, String symbol) {
+    Optional<Position> existingPosition = positionRepository.findByAccountIdAndSymbolForUpdate(accountId, symbol);
+    if (existingPosition.isPresent()) {
+      return existingPosition.get();
+    }
+
+    Position createdPosition = Position.of(
+        accountId,
+        symbol,
+        BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+        BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP)
+    );
+
+    try {
+      Position persistedPosition = positionRepository.saveAndFlush(createdPosition);
+      return persistedPosition != null ? persistedPosition : createdPosition;
+    } catch (DataIntegrityViolationException ex) {
+      return positionRepository.findByAccountIdAndSymbolForUpdate(accountId, symbol)
+          .orElseThrow(() -> ex);
+    }
   }
 
   private void saveLedgerEntryWithRef(

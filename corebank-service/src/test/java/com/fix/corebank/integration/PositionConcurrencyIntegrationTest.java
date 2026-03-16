@@ -2,7 +2,9 @@ package com.fix.corebank.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -16,6 +18,7 @@ import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
 import com.fix.corebank.service.CorebankOrderService;
+import com.fix.corebank.service.OrderPreparationLockHook;
 import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderResult;
@@ -31,6 +34,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -61,9 +66,13 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
   @MockBean
   private FepClient fepClient;
 
+  @MockBean
+  private OrderPreparationLockHook orderPreparationLockHook;
+
   @BeforeEach
   void setUp() {
     reset(fepClient);
+    reset(orderPreparationLockHook);
     jdbcTemplate.update("DELETE FROM ledger_entry_refs");
     jdbcTemplate.update("DELETE FROM ledger_entries");
     jdbcTemplate.update("DELETE FROM journal_entries");
@@ -95,7 +104,7 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       List<Future<AttemptOutcome>> futures = new ArrayList<>();
       for (int i = 0; i < THREAD_COUNT; i++) {
         String clOrdId = UUID.randomUUID().toString();
-        futures.add(executorService.submit(taskFor(clOrdId, ready, start)));
+        futures.add(executorService.submit(taskFor(clOrdId, SYMBOL, ready, start)));
       }
 
       assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
@@ -128,8 +137,8 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
           .allSatisfy(outcome -> assertThat(outcome.errorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION));
 
       assertThat(accountCashBalance()).isEqualByComparingTo("136000000.0000");
-      assertThat(positionQuantity()).isEqualByComparingTo("0.0000");
-      assertThat(positionQuantity().signum()).isNotNegative();
+      assertThat(positionQuantity(SYMBOL)).isEqualByComparingTo("0.0000");
+      assertThat(positionQuantity(SYMBOL).signum()).isNotNegative();
       assertThat(count("orders")).isEqualTo(5);
       assertThat(count("executions")).isEqualTo(5);
       assertThat(count("journal_entries")).isEqualTo(5);
@@ -143,28 +152,99 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     }
   }
 
+  @Test
+  @Timeout(20)
+  void shouldAllowDifferentSymbolsToProceedWhileAnotherSymbolPositionLockIsHeld() throws Exception {
+    String firstSymbol = SYMBOL;
+    String secondSymbol = "000660";
+    insertPosition(secondSymbol, "100.0000", "120000.0000");
+
+    CountDownLatch firstPositionLocked = new CountDownLatch(1);
+    CountDownLatch releaseFirstOrder = new CountDownLatch(1);
+    AtomicBoolean shouldBlockFirstOrder = new AtomicBoolean(true);
+
+    doAnswer(invocation -> {
+      Long accountId = invocation.getArgument(0);
+      String symbol = invocation.getArgument(1);
+      if (ACCOUNT_ID == accountId && firstSymbol.equals(symbol) && shouldBlockFirstOrder.compareAndSet(true, false)) {
+        firstPositionLocked.countDown();
+        assertThat(releaseFirstOrder.await(5, TimeUnit.SECONDS)).isTrue();
+      }
+      return null;
+    }).when(orderPreparationLockHook).afterPositionLock(anyLong(), anyString());
+
+    ExecutorService executorService = Executors.newFixedThreadPool(2);
+    Future<AttemptOutcome> firstFuture = null;
+    Future<AttemptOutcome> secondFuture = null;
+
+    try {
+      firstFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), firstSymbol));
+      assertThat(firstPositionLocked.await(5, TimeUnit.SECONDS)).isTrue();
+
+      long secondStartedAt = System.nanoTime();
+      secondFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), secondSymbol));
+      AttemptOutcome secondOutcome = secondFuture.get(2, TimeUnit.SECONDS);
+      Duration secondElapsed = Duration.ofNanos(System.nanoTime() - secondStartedAt);
+
+      releaseFirstOrder.countDown();
+      AttemptOutcome firstOutcome = firstFuture.get(10, TimeUnit.SECONDS);
+
+      assertThat(secondElapsed).isLessThan(Duration.ofSeconds(2));
+      assertThat(secondOutcome.success()).isTrue();
+      assertThat(secondOutcome.status()).isEqualTo("FILLED");
+      assertThat(secondOutcome.executionResult()).isEqualTo("FILLED");
+      assertThat(firstOutcome.success()).isTrue();
+      assertThat(firstOutcome.status()).isEqualTo("FILLED");
+      assertThat(firstOutcome.executionResult()).isEqualTo("FILLED");
+
+      assertThat(accountCashBalance()).isEqualByComparingTo("114400000.0000");
+      assertThat(positionQuantity(firstSymbol)).isEqualByComparingTo("400.0000");
+      assertThat(positionQuantity(secondSymbol)).isEqualByComparingTo("0.0000");
+
+      verify(fepClient, times(2)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
+    } catch (TimeoutException ex) {
+      releaseFirstOrder.countDown();
+      if (firstFuture != null) {
+        firstFuture.get(10, TimeUnit.SECONDS);
+      }
+      if (secondFuture != null) {
+        secondFuture.cancel(true);
+      }
+      throw ex;
+    } finally {
+      releaseFirstOrder.countDown();
+      executorService.shutdownNow();
+      executorService.awaitTermination(5, TimeUnit.SECONDS);
+    }
+  }
+
   private Callable<AttemptOutcome> taskFor(
       String clOrdId,
+      String symbol,
       CountDownLatch ready,
       CountDownLatch start
   ) {
     return () -> {
       ready.countDown();
       assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
-      try {
-        InternalOrderResult result = corebankOrderService.createOrder(InternalOrderCreateCommand.of(
-            ACCOUNT_ID,
-            clOrdId,
-            SYMBOL,
-            "SELL",
-            ORDER_QTY,
-            ORDER_PRICE
-        ));
-        return AttemptOutcome.success(clOrdId, result.getStatus(), result.getExecutionResult());
-      } catch (BusinessException ex) {
-        return AttemptOutcome.failure(clOrdId, ex.getErrorCode());
-      }
+      return attemptSell(clOrdId, symbol);
     };
+  }
+
+  private AttemptOutcome attemptSell(String clOrdId, String symbol) {
+    try {
+      InternalOrderResult result = corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+          ACCOUNT_ID,
+          clOrdId,
+          symbol,
+          "SELL",
+          ORDER_QTY,
+          ORDER_PRICE
+      ));
+      return AttemptOutcome.success(clOrdId, result.getStatus(), result.getExecutionResult());
+    } catch (BusinessException ex) {
+      return AttemptOutcome.failure(clOrdId, ex.getErrorCode());
+    }
   }
 
   private FepOrderResult toFilledResult(FepOutboundOrderPayload payload) {
@@ -192,10 +272,23 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     );
   }
 
-  private BigDecimal positionQuantity() {
+  private BigDecimal positionQuantity(String symbol) {
     return jdbcTemplate.queryForObject(
-        "SELECT qty FROM positions WHERE account_id = 1 AND symbol = '005930'",
-        BigDecimal.class
+        "SELECT qty FROM positions WHERE account_id = 1 AND symbol = ?",
+        BigDecimal.class,
+        symbol
+    );
+  }
+
+  private void insertPosition(String symbol, String qty, String avgPrice) {
+    jdbcTemplate.update(
+        """
+            INSERT INTO positions (account_id, symbol, qty, avg_price, created_at, updated_at, version)
+            VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+            """,
+        symbol,
+        new BigDecimal(qty),
+        new BigDecimal(avgPrice)
     );
   }
 
