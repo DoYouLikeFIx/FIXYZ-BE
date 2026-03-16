@@ -6,6 +6,7 @@ import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import jakarta.servlet.http.Cookie;
 import java.util.Arrays;
 import org.springframework.beans.factory.annotation.Value;
@@ -64,6 +65,7 @@ public class ChannelSecurityConfig {
               response.setContentType(MediaType.APPLICATION_JSON_VALUE);
               response.setCharacterEncoding("UTF-8");
               response.setHeader(CommonHeaders.X_CORRELATION_ID, correlationId);
+              response.setHeader(CommonHeaders.TRACEPARENT, TraceparentSupport.ensureTraceparent(request));
 
               ApiErrorResponse body = ApiErrorResponse.from(
                   errorCode,
@@ -86,6 +88,7 @@ public class ChannelSecurityConfig {
               response.setContentType(MediaType.APPLICATION_JSON_VALUE);
               response.setCharacterEncoding("UTF-8");
               response.setHeader(CommonHeaders.X_CORRELATION_ID, correlationId);
+              response.setHeader(CommonHeaders.TRACEPARENT, TraceparentSupport.ensureTraceparent(request));
 
               ApiErrorResponse body = ApiErrorResponse.from(
                   errorCode,
@@ -117,9 +120,11 @@ public class ChannelSecurityConfig {
                 "/swagger-ui/**",
                 "/v3/api-docs/**",
                 "/actuator/health",
-                "/actuator/info"
+                "/actuator/info",
+                "/actuator/prometheus"
             ).permitAll()
             .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+            .requestMatchers("/actuator/**").hasRole("ADMIN")
             .anyRequest().authenticated());
     return http.build();
   }
