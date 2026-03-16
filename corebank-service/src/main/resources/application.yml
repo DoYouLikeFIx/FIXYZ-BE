@@ -50,12 +50,14 @@ resilience4j:
         minimumNumberOfCalls: 3
         failureRateThreshold: 100
         waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 1
       fep-status:
         slidingWindowType: COUNT_BASED
         slidingWindowSize: 3
         minimumNumberOfCalls: 3
         failureRateThreshold: 100
         waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 1
 
 recovery:
   max-retry-count: ${RECOVERY_MAX_RETRY_COUNT:5}
