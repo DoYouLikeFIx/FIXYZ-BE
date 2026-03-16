@@ -321,13 +321,19 @@ public class CorebankOrderService {
   }
 
   private InternalOrderResult mapToOrderResult(CorebankOrderPersistenceService.OrderSnapshot order, boolean idempotent) {
-    return InternalOrderResult.of(
+    return InternalOrderResult.execution(
         order.orderId(),
         order.clOrdId(),
         order.status(),
         order.externalSyncStatus(),
         idempotent,
-        order.orderQty()
+        order.orderQty(),
+        order.executionResult(),
+        order.executedQty(),
+        order.leavesQty(),
+        order.executedPrice(),
+        order.fepReferenceId(),
+        order.executedAt()
     );
   }
 
@@ -343,6 +349,12 @@ public class CorebankOrderService {
         order.externalSyncStatus(),
         true,
         order.orderQty(),
+        order.executionResult(),
+        order.executedQty(),
+        order.leavesQty(),
+        order.executedPrice(),
+        order.fepReferenceId(),
+        order.executedAt(),
         message,
         signal.retriable(),
         signal.escalationRequired(),

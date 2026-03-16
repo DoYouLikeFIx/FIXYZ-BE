@@ -9,6 +9,7 @@ import com.fix.channel.vo.OrderSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CorrelationIdSupport;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
@@ -56,12 +57,12 @@ public class OrderExecutionService {
 
       OrderSession completedSession = orderSessionService.completeExecution(
           executingSession,
-          result.getStatus(),
-          result.getOrderQuantity(),
-          java.math.BigDecimal.ZERO,
-          executingSession.getPrice(),
-          result.getOrderId() == null ? null : String.valueOf(result.getOrderId()),
-          Instant.now(clock)
+          executionResult(result),
+          executedQty(result),
+          leavesQty(result),
+          executedPrice(executingSession, result),
+          externalOrderId(result),
+          executedAt(result)
       );
       return orderSessionService.toResult(completedSession, false);
     } finally {
@@ -89,5 +90,48 @@ public class OrderExecutionService {
       return simpleName;
     }
     return "EXECUTION_FAILED";
+  }
+
+  private String executionResult(OrderExecuteResult result) {
+    String executionResult = result.getExecutionResult();
+    if (executionResult != null && !executionResult.isBlank()) {
+      return executionResult;
+    }
+    return result.getStatus();
+  }
+
+  private BigDecimal executedQty(OrderExecuteResult result) {
+    if (result.getExecutedQty() != null) {
+      return result.getExecutedQty();
+    }
+    return result.getOrderQuantity();
+  }
+
+  private BigDecimal leavesQty(OrderExecuteResult result) {
+    if (result.getLeavesQty() != null) {
+      return result.getLeavesQty();
+    }
+    return BigDecimal.ZERO;
+  }
+
+  private BigDecimal executedPrice(OrderSession session, OrderExecuteResult result) {
+    if (result.getExecutedPrice() != null) {
+      return result.getExecutedPrice();
+    }
+    return session.getPrice();
+  }
+
+  private String externalOrderId(OrderExecuteResult result) {
+    if (result.getExternalOrderId() != null && !result.getExternalOrderId().isBlank()) {
+      return result.getExternalOrderId();
+    }
+    return result.getOrderId() == null ? null : String.valueOf(result.getOrderId());
+  }
+
+  private Instant executedAt(OrderExecuteResult result) {
+    if (result.getExecutedAt() != null) {
+      return result.getExecutedAt();
+    }
+    return Instant.now(clock);
   }
 }

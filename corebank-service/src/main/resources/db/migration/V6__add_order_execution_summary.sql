@@ -1,0 +1,5 @@
+ALTER TABLE orders ADD COLUMN execution_result VARCHAR(32) NULL;
+ALTER TABLE orders ADD COLUMN executed_qty DECIMAL(19, 4) NULL;
+ALTER TABLE orders ADD COLUMN leaves_qty DECIMAL(19, 4) NULL;
+ALTER TABLE orders ADD COLUMN executed_price DECIMAL(19, 4) NULL;
+ALTER TABLE orders ADD COLUMN executed_at TIMESTAMP NULL;

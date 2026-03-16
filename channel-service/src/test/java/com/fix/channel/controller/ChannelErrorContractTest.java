@@ -243,7 +243,14 @@ class ChannelErrorContractTest {
                     "clOrdId": "123e4567-e89b-42d3-a456-426614174260",
                     "status": "FILLED",
                     "idempotent": false,
-                    "orderQuantity": 2.0000
+                    "orderQuantity": 2.0000,
+                    "executionResult": "FILLED",
+                    "executedQty": 2.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": 70100.0000,
+                    "externalOrderId": "FEP-KRX-90001",
+                    "externalSyncStatus": "CONFIRMED",
+                    "executedAt": "2026-03-12T00:06:00Z"
                   }
                 }
                 """)));
@@ -261,10 +268,10 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.data.executedQty").value(2))
         .andExpect(jsonPath("$.data.leavesQty").value(0))
         .andExpect(jsonPath("$.data.executedPrice").value(70100))
-        .andExpect(jsonPath("$.data.externalOrderId").value("90001"))
+        .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-90001"))
         .andExpect(jsonPath("$.data.failureReason").value(org.hamcrest.Matchers.nullValue()))
         .andExpect(jsonPath("$.data.canceledAt").value(org.hamcrest.Matchers.nullValue()))
-        .andExpect(jsonPath("$.data.executedAt").isNotEmpty())
+        .andExpect(jsonPath("$.data.executedAt").value("2026-03-12T00:06:00Z"))
         .andExpect(jsonPath("$.data.expiresAt").doesNotExist())
         .andExpect(jsonPath("$.data.remainingSeconds").doesNotExist());
 

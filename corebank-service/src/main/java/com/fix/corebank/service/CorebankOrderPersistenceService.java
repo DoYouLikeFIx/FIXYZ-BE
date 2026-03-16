@@ -338,7 +338,12 @@ public class CorebankOrderPersistenceService {
       BigDecimal orderQty,
       String externalSyncStatus,
       String fepReferenceId,
-      String failureReason
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      Instant executedAt
   ) {
     private static OrderSnapshot from(Order order) {
       return new OrderSnapshot(
@@ -348,7 +353,12 @@ public class CorebankOrderPersistenceService {
           order.getOrderQty(),
           order.getExternalSyncStatus(),
           order.getFepReferenceId(),
-          order.getFailureReason()
+          order.getFailureReason(),
+          order.getExecutionResult(),
+          order.getExecutedQty(),
+          order.getLeavesQty(),
+          order.getExecutedPrice(),
+          order.getExecutedAt()
       );
     }
   }
