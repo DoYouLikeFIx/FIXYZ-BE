@@ -1,30 +1,18 @@
 package com.fix.fepsimulator.dto.request;
 
 import com.fix.fepsimulator.vo.SimulatorRuleUpsertCommand;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 public class SimulatorRuleUpsertRequest {
 
-  @NotBlank
-  private String ruleCode;
-
-  @NotBlank
   private String action;
-
-  @NotNull
-  private Boolean enabled;
+  private String targetSymbol;
+  private String targetExchange;
+  private Integer ttlSeconds;
+  private Long matchAmount;
+  private Double probability;
 
   public SimulatorRuleUpsertCommand toVo() {
-    return SimulatorRuleUpsertCommand.of(ruleCode, action, Boolean.TRUE.equals(enabled));
-  }
-
-  public String getRuleCode() {
-    return ruleCode;
-  }
-
-  public void setRuleCode(String ruleCode) {
-    this.ruleCode = ruleCode;
+    return SimulatorRuleUpsertCommand.of(action, targetSymbol, targetExchange, ttlSeconds, matchAmount, probability);
   }
 
   public String getAction() {
@@ -35,11 +23,43 @@ public class SimulatorRuleUpsertRequest {
     this.action = action;
   }
 
-  public Boolean getEnabled() {
-    return enabled;
+  public String getTargetSymbol() {
+    return targetSymbol;
   }
 
-  public void setEnabled(Boolean enabled) {
-    this.enabled = enabled;
+  public void setTargetSymbol(String targetSymbol) {
+    this.targetSymbol = targetSymbol;
+  }
+
+  public String getTargetExchange() {
+    return targetExchange;
+  }
+
+  public void setTargetExchange(String targetExchange) {
+    this.targetExchange = targetExchange;
+  }
+
+  public Integer getTtlSeconds() {
+    return ttlSeconds;
+  }
+
+  public void setTtlSeconds(Integer ttlSeconds) {
+    this.ttlSeconds = ttlSeconds;
+  }
+
+  public Long getMatchAmount() {
+    return matchAmount;
+  }
+
+  public void setMatchAmount(Long matchAmount) {
+    this.matchAmount = matchAmount;
+  }
+
+  public Double getProbability() {
+    return probability;
+  }
+
+  public void setProbability(Double probability) {
+    this.probability = probability;
   }
 }
