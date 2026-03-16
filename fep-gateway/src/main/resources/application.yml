@@ -31,6 +31,9 @@ springdoc:
     path: /swagger-ui/index.html
 
 management:
+  server:
+    port: 18083
+    address: 127.0.0.1
   endpoints:
     web:
       exposure:
