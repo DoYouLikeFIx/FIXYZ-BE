@@ -14,6 +14,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import org.junit.jupiter.api.AfterEach;
@@ -147,5 +150,42 @@ class HttpCorebankProvisioningClientTest {
     );
 
     assertThat(client.fetchDefaultAccountProfile(123L, "corr-missing")).isNull();
+  }
+
+  @Test
+  void shouldForwardTraceparentHeaderToCorebankProvisioning() {
+    String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    TraceparentSupport.putInMdc(traceparent);
+    try {
+      wireMockServer.stubFor(post(urlEqualTo("/internal/v1/portfolio"))
+          .willReturn(aResponse()
+              .withStatus(201)
+              .withHeader("Content-Type", "application/json")
+              .withBody("""
+                  {
+                    "success": true,
+                    "data": {
+                      "accountId": 1001,
+                      "accountNumber": "110123456789",
+                      "status": "ACTIVE",
+                      "idempotent": false,
+                      "memberId": 123
+                    }
+                  }
+                  """)));
+
+      HttpCorebankProvisioningClient client = new HttpCorebankProvisioningClient(
+          RestClient.builder(),
+          "http://127.0.0.1:" + wireMockServer.port(),
+          "test-secret"
+      );
+
+      client.provisionDefaultAccount(123L, "M-123", "member123@fix.local", "corr-123");
+
+      wireMockServer.verify(postRequestedFor(urlEqualTo("/internal/v1/portfolio"))
+          .withHeader(CommonHeaders.TRACEPARENT, equalTo(traceparent)));
+    } finally {
+      CorrelationIdSupport.clearMdc();
+    }
   }
 }

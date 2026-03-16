@@ -35,6 +35,7 @@ import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
 import com.fix.corebank.vo.PortfolioQueryCommand;
 import com.fix.corebank.vo.PortfolioResult;
+import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -64,10 +65,26 @@ public class CorebankOrderService {
   @Value("${recovery.max-retry-count:5}")
   private int maxRetryCount = 5;
 
+  @Value("${recovery.status-query.max-attempts:2}")
+  private int statusQueryMaxAttempts = 2;
+
+  @Value("${recovery.status-query.backoff-ms:0}")
+  private long statusQueryBackoffMs = 0L;
+
   private Clock limitWindowClock = Clock.systemUTC();
 
   @Value("${corebank.order.limit-window-zone:UTC}")
   private String limitWindowZone = "UTC";
+
+  @PostConstruct
+  void validateRecoveryConfiguration() {
+    if (statusQueryMaxAttempts < 1) {
+      throw new IllegalStateException("recovery.status-query.max-attempts must be >= 1");
+    }
+    if (statusQueryBackoffMs < 0L) {
+      throw new IllegalStateException("recovery.status-query.backoff-ms must be >= 0");
+    }
+  }
 
   @Transactional(readOnly = true)
   public PortfolioResult getPortfolio(PortfolioQueryCommand command) {
@@ -248,45 +265,100 @@ public class CorebankOrderService {
 
   public InternalOrderResult requeryOrder(InternalOrderRequeryCommand command) {
     CorebankOrderPersistenceService.OrderSnapshot order = orderPersistenceService.getRequiredOrder(command.getClOrdId());
-    try {
-      FepOrderResult gatewayStatus = fepClient.queryOrderStatus(
-          order.clOrdId(),
-          correlationId("requery", order.clOrdId())
-      );
-      CorebankOrderPersistenceService.OrderSnapshot updatedOrder =
-          orderPersistenceService.updateOrderState(
-              order.clOrdId(),
+    StatusQueryOutcome outcome = queryOrderStatusWithRetry(order);
+    if (outcome instanceof StatusQuerySuccess success) {
+      FepOrderResult gatewayStatus = success.gatewayStatus();
+      CorebankOrderPersistenceService.OrderSnapshot currentOrder = findCurrentOrder(command.getClOrdId())
+          .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "order not found"));
+      if (shouldPreserveTerminalRequeryState(currentOrder.status(), gatewayStatus.ordStatus())) {
+        return mapExistingTerminalRequeryResult(currentOrder, command.getAttemptCount());
+      }
+      String requeryMessage = failureReasonForRequery(gatewayStatus);
+      CorebankOrderPersistenceService.OrderStateUpdateResult updateResult =
+          orderPersistenceService.updateOrderStateIfSnapshotMatches(
+              currentOrder,
               gatewayStatus.ordStatus().name(),
               externalSyncStatusForRequery(gatewayStatus.ordStatus(), command.getAttemptCount()),
-              resolveFepReferenceId(order, gatewayStatus.fepOrderId()),
-              failureReasonForRequery(gatewayStatus)
+              resolveFepReferenceId(currentOrder, gatewayStatus.fepOrderId()),
+              requeryMessage
           );
-      String requeryMessage = failureReasonForRequery(gatewayStatus);
+      CorebankOrderPersistenceService.OrderSnapshot resolvedOrder = updateResult.order();
+      if (resolvedOrder == null) {
+        throw new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "order not found");
+      }
+      if (!updateResult.updated()) {
+        if (shouldPreserveTerminalRequeryState(resolvedOrder.status(), gatewayStatus.ordStatus())) {
+          return mapExistingTerminalRequeryResult(resolvedOrder, command.getAttemptCount());
+        }
+        return mapSnapshotRequeryResult(resolvedOrder, requeryMessage, gatewayStatus.ordStatus(), command.getAttemptCount());
+      }
       return mapToRequeryResult(
-          updatedOrder,
+          resolvedOrder,
           requeryMessage,
           classifyRequeryOutcome(gatewayStatus.ordStatus(), command.getAttemptCount())
       );
-    } catch (BusinessException ex) {
-      if (isRetriableRequeryFailure(ex)) {
-        CorebankOrderPersistenceService.OrderSnapshot currentOrder = order;
-        if (!isTerminalOrderStatus(order.status())) {
-          currentOrder = orderPersistenceService.updateOrderState(
-              order.clOrdId(),
-              order.status(),
-              externalSyncStatusForRetriableFailure(command.getAttemptCount()),
-              order.fepReferenceId(),
-              failureReason(ex)
-          );
-        }
-        return mapToRequeryResult(
-            currentOrder,
-            ex.getMessage(),
-            classifyRetriableFailure(order.status(), command.getAttemptCount())
-        );
-      }
+    }
+    StatusQueryFailure failure = (StatusQueryFailure) outcome;
+    BusinessException ex = failure.failure();
+    if (!isRetriableRequeryFailure(ex)) {
       throw ex;
     }
+    CorebankOrderPersistenceService.OrderSnapshot currentOrder = failure.currentOrder();
+    if (currentOrder == null) {
+      throw ex;
+    }
+    if (!isTerminalOrderStatus(currentOrder.status())) {
+      CorebankOrderPersistenceService.OrderStateUpdateResult updateResult =
+          orderPersistenceService.updateOrderStateIfSnapshotMatches(
+              currentOrder,
+              currentOrder.status(),
+              externalSyncStatusForRetriableFailure(command.getAttemptCount()),
+              currentOrder.fepReferenceId(),
+              failureReason(ex)
+          );
+      currentOrder = updateResult.order();
+      if (currentOrder == null) {
+        throw ex;
+      }
+    }
+    return mapToRequeryResult(
+        currentOrder,
+        ex.getMessage(),
+        classifyRetriableFailure(currentOrder.status(), command.getAttemptCount())
+    );
+  }
+
+  private StatusQueryOutcome queryOrderStatusWithRetry(CorebankOrderPersistenceService.OrderSnapshot initialOrder) {
+    int maxAttempts = statusQueryMaxAttempts;
+    String correlationId = correlationId("requery", initialOrder.clOrdId());
+    CorebankOrderPersistenceService.OrderSnapshot currentOrder = initialOrder;
+    BusinessException firstRetriableFailure = null;
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return new StatusQuerySuccess(fepClient.queryOrderStatus(initialOrder.clOrdId(), correlationId));
+      } catch (BusinessException ex) {
+        boolean retriableFailure = isRetriableRequeryFailure(ex);
+        if (retriableFailure) {
+          if (firstRetriableFailure == null) {
+            firstRetriableFailure = ex;
+          }
+        }
+        Optional<CorebankOrderPersistenceService.OrderSnapshot> refreshedOrder = findCurrentOrder(initialOrder.clOrdId());
+        if (refreshedOrder.isEmpty()) {
+          return new StatusQueryFailure(finalStatusQueryFailure(ex, firstRetriableFailure, retriableFailure, attempt, maxAttempts), null);
+        }
+        currentOrder = refreshedOrder.get();
+        if (!shouldRetryStatusQuery(currentOrder.status(), ex, attempt, maxAttempts)) {
+          return new StatusQueryFailure(
+              finalStatusQueryFailure(ex, firstRetriableFailure, retriableFailure, attempt, maxAttempts),
+              currentOrder
+          );
+        }
+        applyStatusQueryBackoff();
+      }
+    }
+    throw new IllegalStateException("status query retry exited without terminal outcome");
   }
 
   private InternalOrderResult createFreshOrder(InternalOrderCreateCommand command) {
@@ -409,6 +481,46 @@ public class CorebankOrderService {
         || ex.getErrorCode() == ErrorCode.FEP_GATEWAY_UNAVAILABLE;
   }
 
+  private boolean shouldRetryStatusQuery(
+      String currentOrderStatus,
+      BusinessException ex,
+      int attempt,
+      int maxAttempts
+  ) {
+    return !isTerminalOrderStatus(currentOrderStatus)
+        && isRetriableRequeryFailure(ex)
+        && attempt < maxAttempts;
+  }
+
+  private boolean shouldPreserveTerminalRequeryState(String currentOrderStatus, FepOrdStatus gatewayStatus) {
+    return isTerminalOrderStatus(currentOrderStatus)
+        && !currentOrderStatus.equals(gatewayStatus.name());
+  }
+
+  private InternalOrderResult mapExistingTerminalRequeryResult(
+      CorebankOrderPersistenceService.OrderSnapshot currentOrder,
+      int attemptCount
+  ) {
+    return mapToRequeryResult(
+        currentOrder,
+        currentOrder.failureReason(),
+        classifyRequeryOutcome(FepOrdStatus.valueOf(currentOrder.status()), attemptCount)
+    );
+  }
+
+  private InternalOrderResult mapSnapshotRequeryResult(
+      CorebankOrderPersistenceService.OrderSnapshot currentOrder,
+      String fallbackMessage,
+      FepOrdStatus fallbackStatus,
+      int attemptCount
+  ) {
+    return mapToRequeryResult(
+        currentOrder,
+        firstNonBlank(currentOrder.failureReason(), fallbackMessage),
+        classifyRequeryOutcome(resolveRequeryStatus(currentOrder.status(), fallbackStatus), attemptCount)
+    );
+  }
+
   private String externalSyncStatusForRequery(FepOrdStatus ordStatus, int attemptCount) {
     return switch (ordStatus) {
       case FILLED, PARTIALLY_FILLED, CANCELED -> Order.EXTERNAL_SYNC_CONFIRMED;
@@ -448,6 +560,47 @@ public class CorebankOrderService {
 
   private boolean isEscalationThresholdReached(int attemptCount) {
     return attemptCount >= maxRetryCount;
+  }
+
+  private void applyStatusQueryBackoff() {
+    if (statusQueryBackoffMs == 0L) {
+      return;
+    }
+    try {
+      Thread.sleep(statusQueryBackoffMs);
+    } catch (InterruptedException interruptedException) {
+      Thread.currentThread().interrupt();
+      throw new BusinessException(
+          ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+          "status query retry backoff interrupted",
+          interruptedException
+      );
+    }
+  }
+
+  private Optional<CorebankOrderPersistenceService.OrderSnapshot> findCurrentOrder(String clOrdId) {
+    return orderPersistenceService.findOrder(clOrdId);
+  }
+
+  private BusinessException finalStatusQueryFailure(
+      BusinessException currentFailure,
+      BusinessException firstRetriableFailure,
+      boolean retriableFailure,
+      int attempt,
+      int maxAttempts
+  ) {
+    if (retriableFailure && attempt >= maxAttempts && firstRetriableFailure != null) {
+      return firstRetriableFailure;
+    }
+    return currentFailure;
+  }
+
+  private FepOrdStatus resolveRequeryStatus(String persistedStatus, FepOrdStatus fallbackStatus) {
+    try {
+      return FepOrdStatus.valueOf(persistedStatus);
+    } catch (IllegalArgumentException ex) {
+      return fallbackStatus;
+    }
   }
 
   private boolean isTerminalOrderStatus(String status) {
@@ -624,5 +777,17 @@ public class CorebankOrderService {
       int attemptCount,
       int maxRetryCount
   ) {
+  }
+
+  private sealed interface StatusQueryOutcome permits StatusQuerySuccess, StatusQueryFailure {
+  }
+
+  private record StatusQuerySuccess(FepOrderResult gatewayStatus) implements StatusQueryOutcome {
+  }
+
+  private record StatusQueryFailure(
+      BusinessException failure,
+      CorebankOrderPersistenceService.OrderSnapshot currentOrder
+  ) implements StatusQueryOutcome {
   }
 }

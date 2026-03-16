@@ -9,6 +9,7 @@ import com.fix.common.error.RetryAfterBusinessException;
 import com.fix.common.error.SystemException;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.util.LinkedHashMap;
@@ -112,7 +113,8 @@ public class GlobalExceptionHandler {
 
     ResponseEntity.BodyBuilder builder = ResponseEntity
         .status(errorCode.httpStatus())
-        .header(CommonHeaders.X_CORRELATION_ID, correlationId);
+        .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+        .header(CommonHeaders.TRACEPARENT, TraceparentSupport.ensureTraceparent(request));
     if (retryAfterSeconds != null && retryAfterSeconds > 0) {
       builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds));
     }

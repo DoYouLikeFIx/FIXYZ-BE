@@ -1,5 +1,23 @@
 package com.fix.corebank.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.corebank.domain.AccountStatus;
@@ -25,15 +43,7 @@ import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.CannotAcquireLockException;
@@ -281,6 +291,27 @@ public class CorebankOrderPersistenceService {
     return OrderSnapshot.from(order);
   }
 
+  @Transactional
+  public OrderStateUpdateResult updateOrderStateIfSnapshotMatches(
+      OrderSnapshot expectedOrder,
+      String status,
+      String externalSyncStatus,
+      String fepReferenceId,
+      String failureReason
+  ) {
+    int updatedRows = orderRepository.updateStateIfVersionMatches(
+        expectedOrder.clOrdId(),
+        expectedOrder.version(),
+        status,
+        externalSyncStatus,
+        fepReferenceId,
+        failureReason,
+        Instant.now()
+    );
+    OrderSnapshot currentOrder = findOrder(expectedOrder.clOrdId()).orElse(null);
+    return new OrderStateUpdateResult(currentOrder, updatedRows == 1);
+  }
+
   private void appendExecutionPosting(Order order, BigDecimal grossAmount) {
     JournalEntry journalEntry = journalEntryRepository.save(
         JournalEntry.of(order.getId(), JOURNAL_ENTRY_TYPE_ORDER_EXECUTED, grossAmount, "canonical same-bank ledger posting")
@@ -508,6 +539,7 @@ public class CorebankOrderPersistenceService {
       String externalSyncStatus,
       String fepReferenceId,
       String failureReason,
+      Long version,
       String executionResult,
       BigDecimal executedQty,
       BigDecimal leavesQty,
@@ -523,6 +555,7 @@ public class CorebankOrderPersistenceService {
           order.getExternalSyncStatus(),
           order.getFepReferenceId(),
           order.getFailureReason(),
+          order.getVersion(),
           order.getExecutionResult(),
           order.getExecutedQty(),
           order.getLeavesQty(),
@@ -530,5 +563,8 @@ public class CorebankOrderPersistenceService {
           order.getExecutedAt()
       );
     }
+  }
+
+  public record OrderStateUpdateResult(OrderSnapshot order, boolean updated) {
   }
 }

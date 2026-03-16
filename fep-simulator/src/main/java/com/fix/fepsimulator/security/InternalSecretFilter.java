@@ -5,6 +5,7 @@ import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -54,6 +55,7 @@ public class InternalSecretFilter extends OncePerRequestFilter {
 
   private void writeUnauthorizedResponse(HttpServletRequest request, HttpServletResponse response) throws IOException {
     String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
+    String traceparent = TraceparentSupport.ensureTraceparent(request);
 
     ApiErrorResponse body = ApiErrorResponse.from(
         ErrorCode.AUTH_REQUIRED,
@@ -66,6 +68,7 @@ public class InternalSecretFilter extends OncePerRequestFilter {
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setHeader(CommonHeaders.X_CORRELATION_ID, correlationId);
+    response.setHeader(CommonHeaders.TRACEPARENT, traceparent);
     objectMapper.writeValue(response.getWriter(), body);
   }
 }

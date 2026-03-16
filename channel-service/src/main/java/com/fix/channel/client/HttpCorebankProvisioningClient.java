@@ -3,8 +3,9 @@ package com.fix.channel.client;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -38,11 +39,13 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
   public CorebankLinkedAccountProfile provisionDefaultAccount(Long memberId, String memberNo, String email, String correlationId) {
     CorebankProvisioningRequest requestBody = new CorebankProvisioningRequest(memberId, memberNo, email);
     try {
+      String resolvedCorrelationId = resolveCorrelationId(correlationId);
       CorebankEnvelope<CorebankLinkedAccountPayload> response = restClient.post()
           .uri(PROVISIONING_PATH)
           .contentType(MediaType.APPLICATION_JSON)
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
-          .header(CommonHeaders.X_CORRELATION_ID, resolveCorrelationId(correlationId))
+          .header(CommonHeaders.X_CORRELATION_ID, resolvedCorrelationId)
+          .header(CommonHeaders.TRACEPARENT, TraceparentSupport.currentOrGenerate())
           .body(requestBody)
           .retrieve()
           .body(new org.springframework.core.ParameterizedTypeReference<>() {
@@ -60,13 +63,15 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
   @Override
   public CorebankLinkedAccountProfile fetchDefaultAccountProfile(Long memberId, String correlationId) {
     try {
+      String resolvedCorrelationId = resolveCorrelationId(correlationId);
       CorebankEnvelope<CorebankLinkedAccountPayload> response = restClient.get()
           .uri(uriBuilder -> uriBuilder
               .path(DEFAULT_ACCOUNT_PATH)
               .queryParam("memberId", memberId)
               .build())
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
-          .header(CommonHeaders.X_CORRELATION_ID, resolveCorrelationId(correlationId))
+          .header(CommonHeaders.X_CORRELATION_ID, resolvedCorrelationId)
+          .header(CommonHeaders.TRACEPARENT, TraceparentSupport.currentOrGenerate())
           .retrieve()
           .body(new org.springframework.core.ParameterizedTypeReference<>() {
           });
@@ -87,7 +92,7 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
 
   private String resolveCorrelationId(String correlationId) {
     if (correlationId == null || correlationId.isBlank()) {
-      return UUID.randomUUID().toString();
+      return CorrelationIdSupport.currentOrGenerate();
     }
     return correlationId;
   }

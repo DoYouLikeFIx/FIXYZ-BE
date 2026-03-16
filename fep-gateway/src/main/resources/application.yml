@@ -31,10 +31,13 @@ springdoc:
     path: /swagger-ui/index.html
 
 management:
+  server:
+    port: 18083
+    address: 127.0.0.1
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus,circuitbreakers
   endpoint:
     health:
       probes:
