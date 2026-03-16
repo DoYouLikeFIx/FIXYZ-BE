@@ -1,6 +1,8 @@
 package com.fix.corebank.entity;
 
 import com.fix.common.entity.BaseTimeEntity;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -8,11 +10,14 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 
 @Entity
 @Table(name = "orders")
 public class Order extends BaseTimeEntity {
+
+  private static final int SCALE = 4;
 
   public static final String EXTERNAL_SYNC_CONFIRMED = "CONFIRMED";
   public static final String EXTERNAL_SYNC_FAILED = "FAILED";
@@ -228,5 +233,47 @@ public class Order extends BaseTimeEntity {
     this.leavesQty = leavesQty;
     this.executedPrice = executedPrice;
     this.executedAt = executedAt;
+  }
+
+  public void completeExecution(
+      String status,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
+    requireNonBlank(status, "order status is required");
+    requireNonBlank(executionResult, "execution result is required");
+    if (executedAt == null) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "executedAt is required");
+    }
+
+    this.status = status;
+    this.failureReason = null;
+    updateExecutionSummary(
+        executionResult,
+        normalizeNonNegative(executedQty, "executed quantity is required"),
+        normalizeNonNegative(leavesQty, "leaves quantity is required"),
+        normalizeNonNegative(executedPrice, "executed price is required"),
+        executedAt
+    );
+  }
+
+  private void requireNonBlank(String value, String message) {
+    if (value == null || value.isBlank()) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, message);
+    }
+  }
+
+  private BigDecimal normalizeNonNegative(BigDecimal value, String nullMessage) {
+    if (value == null) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, nullMessage);
+    }
+    BigDecimal normalized = value.setScale(SCALE, RoundingMode.HALF_UP);
+    if (normalized.signum() < 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "execution summary values cannot be negative");
+    }
+    return normalized;
   }
 }
