@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.fepsimulator.filter.CorrelationIdFilter;
+import com.fix.fepsimulator.repository.SimulatorRuleRepository;
+import com.fix.fepsimulator.service.FepSimulatorControlService;
 import com.fix.fepsimulator.support.FepSimulatorStandaloneMvcSupport;
 import java.io.InputStream;
 import java.util.List;
@@ -28,7 +30,7 @@ class FepSimulatorErrorContractTest {
   void setUp() {
     mockMvc = FepSimulatorStandaloneMvcSupport.build(
         List.of(new CorrelationIdFilter()),
-        new FepSimulatorController()
+      new FepSimulatorController(new FepSimulatorControlService((SimulatorRuleRepository) null))
     );
   }
 
