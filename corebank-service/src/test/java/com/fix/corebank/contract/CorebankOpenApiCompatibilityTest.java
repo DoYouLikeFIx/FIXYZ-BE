@@ -114,7 +114,20 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))
         .contains("symbol", "symbolName", "side", "qty", "unitPrice", "totalAmount", "status", "clOrdId", "createdAt");
     assertThat(fieldNames(internalOrderSchema.path("properties")))
-        .contains("message", "retriable", "escalationRequired", "attemptCount", "maxRetryCount", "externalSyncStatus");
+        .contains(
+            "message",
+            "retriable",
+            "escalationRequired",
+            "attemptCount",
+            "maxRetryCount",
+            "externalSyncStatus",
+            "executionResult",
+            "executedQty",
+            "leavesQty",
+            "executedPrice",
+            "externalOrderId",
+            "executedAt"
+        );
     assertThat(requeryParameters.isArray()).isTrue();
     assertThat(attemptCountParameter.path("name").asText()).isEqualTo("attemptCount");
     assertThat(attemptCountParameter.path("in").asText()).isEqualTo("query");

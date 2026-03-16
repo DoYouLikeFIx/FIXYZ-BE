@@ -1,6 +1,8 @@
 package com.fix.corebank.entity;
 
 import com.fix.common.entity.BaseTimeEntity;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -8,10 +10,13 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Entity
 @Table(name = "accounts")
 public class Account extends BaseTimeEntity {
+
+  private static final int MONEY_SCALE = 4;
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -105,5 +110,29 @@ public class Account extends BaseTimeEntity {
 
   public void updateStatus(String status) {
     this.status = status;
+  }
+
+  public void debitCash(BigDecimal amount) {
+    BigDecimal normalizedAmount = normalizePositiveAmount(amount, "cash debit amount is required");
+    if (cashBalance.compareTo(normalizedAmount) < 0) {
+      throw new BusinessException(ErrorCode.ORD_INSUFFICIENT_CASH, "insufficient cash balance");
+    }
+    this.cashBalance = cashBalance.subtract(normalizedAmount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  public void creditCash(BigDecimal amount) {
+    BigDecimal normalizedAmount = normalizePositiveAmount(amount, "cash credit amount is required");
+    this.cashBalance = cashBalance.add(normalizedAmount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal normalizePositiveAmount(BigDecimal amount, String message) {
+    if (amount == null) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, message);
+    }
+    BigDecimal normalizedAmount = amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    if (normalizedAmount.signum() <= 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "cash mutation amount must be positive");
+    }
+    return normalizedAmount;
   }
 }

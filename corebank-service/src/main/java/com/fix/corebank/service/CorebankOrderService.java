@@ -297,17 +297,17 @@ public class CorebankOrderService {
         CorebankOrderPersistenceService.OrderSnapshot updatedOrder =
             orderPersistenceService.updateOrderState(
                 pendingOrder.clOrdId(),
-                gatewayOrder.ordStatus().name(),
-                Order.EXTERNAL_SYNC_CONFIRMED,
+                statusForSubmitConfirmation(pendingOrder.status(), gatewayOrder.ordStatus()),
+                externalSyncStatusForSubmitConfirmation(gatewayOrder.ordStatus()),
                 gatewayOrder.fepOrderId(),
-                null
+                failureReasonForSubmitConfirmation(gatewayOrder)
             );
         return mapToOrderResult(updatedOrder, false);
       } catch (BusinessException ex) {
         orderPersistenceService.updateOrderState(
             pendingOrder.clOrdId(),
             pendingOrder.status(),
-            Order.EXTERNAL_SYNC_FAILED,
+            externalSyncStatusForSubmitFailure(ex),
             null,
             failureReason(ex)
         );
@@ -321,13 +321,19 @@ public class CorebankOrderService {
   }
 
   private InternalOrderResult mapToOrderResult(CorebankOrderPersistenceService.OrderSnapshot order, boolean idempotent) {
-    return InternalOrderResult.of(
+    return InternalOrderResult.execution(
         order.orderId(),
         order.clOrdId(),
         order.status(),
         order.externalSyncStatus(),
         idempotent,
-        order.orderQty()
+        order.orderQty(),
+        order.executionResult(),
+        order.executedQty(),
+        order.leavesQty(),
+        order.executedPrice(),
+        order.fepReferenceId(),
+        order.executedAt()
     );
   }
 
@@ -343,6 +349,12 @@ public class CorebankOrderService {
         order.externalSyncStatus(),
         true,
         order.orderQty(),
+        order.executionResult(),
+        order.executedQty(),
+        order.leavesQty(),
+        order.executedPrice(),
+        order.fepReferenceId(),
+        order.executedAt(),
         message,
         signal.retriable(),
         signal.escalationRequired(),
@@ -385,6 +397,29 @@ public class CorebankOrderService {
     return isEscalationThresholdReached(attemptCount)
         ? Order.EXTERNAL_SYNC_ESCALATED
         : Order.EXTERNAL_SYNC_FAILED;
+  }
+
+  private String statusForSubmitConfirmation(String currentStatus, FepOrdStatus ordStatus) {
+    return ordStatus == FepOrdStatus.FILLED ? FepOrdStatus.FILLED.name() : currentStatus;
+  }
+
+  private String externalSyncStatusForSubmitConfirmation(FepOrdStatus ordStatus) {
+    return switch (ordStatus) {
+      case FILLED -> Order.EXTERNAL_SYNC_CONFIRMED;
+      case PENDING, UNKNOWN, MALFORMED -> Order.EXTERNAL_SYNC_FAILED;
+      case PARTIALLY_FILLED, CANCELED, REJECTED -> Order.EXTERNAL_SYNC_ESCALATED;
+    };
+  }
+
+  private String externalSyncStatusForSubmitFailure(BusinessException ex) {
+    return isRetriableSubmitFailure(ex)
+        ? Order.EXTERNAL_SYNC_FAILED
+        : Order.EXTERNAL_SYNC_ESCALATED;
+  }
+
+  private boolean isRetriableSubmitFailure(BusinessException ex) {
+    return ex.getErrorCode() == ErrorCode.FEP_GATEWAY_TIMEOUT
+        || ex.getErrorCode() == ErrorCode.FEP_GATEWAY_UNAVAILABLE;
   }
 
   private boolean isEscalationThresholdReached(int attemptCount) {
@@ -433,6 +468,16 @@ public class CorebankOrderService {
       case REJECTED -> firstNonBlank(result.rejectReason(), result.message(), "REJECTED");
       case UNKNOWN, PENDING -> result.message();
       case MALFORMED -> firstNonBlank(result.parseError(), result.message());
+    };
+  }
+
+  private String failureReasonForSubmitConfirmation(FepOrderResult result) {
+    return switch (result.ordStatus()) {
+      case FILLED -> null;
+      case PENDING, UNKNOWN -> result.message();
+      case MALFORMED -> firstNonBlank(result.parseError(), result.message(), "MALFORMED");
+      case PARTIALLY_FILLED, CANCELED -> firstNonBlank(result.message(), result.ordStatus().name());
+      case REJECTED -> firstNonBlank(result.rejectReason(), result.message(), "REJECTED");
     };
   }
 

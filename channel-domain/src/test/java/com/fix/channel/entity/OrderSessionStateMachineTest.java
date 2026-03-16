@@ -3,6 +3,7 @@ package com.fix.channel.entity;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -141,5 +142,35 @@ class OrderSessionStateMachineTest {
 
     assertEquals(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED, exception.getErrorCode());
     assertEquals(OrderSessionStatus.COMPLETED, session.getStatus());
+  }
+
+  @Test
+  void shouldEscalateExecutingSessionAndClearExecutionOutcome() {
+    OrderSession session = OrderSession.initiated(
+        1L,
+        101L,
+        "123e4567-e89b-42d3-a456-426614174265",
+        "fingerprint",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.parse("2026-03-12T00:10:00Z")
+    );
+
+    session.startExecuting();
+    session.escalate(OrderSession.ESCALATED_MANUAL_REVIEW);
+
+    assertEquals(OrderSessionStatus.ESCALATED, session.getStatus());
+    assertEquals(OrderSession.ESCALATED_MANUAL_REVIEW, session.getFailureReason());
+    assertNull(session.getExecutionResult());
+    assertNull(session.getExecutedQty());
+    assertNull(session.getLeavesQty());
+    assertNull(session.getExecutedPrice());
+    assertNull(session.getExternalOrderId());
+    assertNull(session.getExecutedAt());
   }
 }

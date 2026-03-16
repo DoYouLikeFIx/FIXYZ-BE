@@ -1,6 +1,8 @@
 package com.fix.corebank.entity;
 
 import com.fix.common.entity.BaseTimeEntity;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -9,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Entity
 @Table(
@@ -16,6 +19,8 @@ import java.math.BigDecimal;
     uniqueConstraints = @UniqueConstraint(name = "uk_positions_account_symbol", columnNames = {"account_id", "symbol"})
 )
 public class Position extends BaseTimeEntity {
+
+  private static final int SCALE = 4;
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -65,5 +70,43 @@ public class Position extends BaseTimeEntity {
 
   public BigDecimal getAvgPrice() {
     return avgPrice;
+  }
+
+  public void applyBuy(BigDecimal executedQty, BigDecimal executedPrice) {
+    BigDecimal normalizedQty = normalizePositive(executedQty, "executed quantity is required");
+    BigDecimal normalizedPrice = normalizePositive(executedPrice, "executed price is required");
+
+    BigDecimal existingCostBasis = qty.multiply(avgPrice);
+    BigDecimal additionalCostBasis = normalizedQty.multiply(normalizedPrice);
+    BigDecimal nextQty = qty.add(normalizedQty).setScale(SCALE, RoundingMode.HALF_UP);
+    BigDecimal nextAvgPrice = existingCostBasis.add(additionalCostBasis)
+        .divide(nextQty, SCALE, RoundingMode.HALF_UP);
+
+    this.qty = nextQty;
+    this.avgPrice = nextAvgPrice;
+  }
+
+  public void applySell(BigDecimal executedQty) {
+    BigDecimal normalizedQty = normalizePositive(executedQty, "executed quantity is required");
+    if (qty.compareTo(normalizedQty) < 0) {
+      throw new BusinessException(ErrorCode.ORD_INSUFFICIENT_POSITION, "insufficient position quantity");
+    }
+
+    BigDecimal nextQty = qty.subtract(normalizedQty).setScale(SCALE, RoundingMode.HALF_UP);
+    this.qty = nextQty;
+    if (nextQty.signum() == 0) {
+      this.avgPrice = BigDecimal.ZERO.setScale(SCALE, RoundingMode.HALF_UP);
+    }
+  }
+
+  private BigDecimal normalizePositive(BigDecimal value, String nullMessage) {
+    if (value == null) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, nullMessage);
+    }
+    BigDecimal normalized = value.setScale(SCALE, RoundingMode.HALF_UP);
+    if (normalized.signum() <= 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "position mutation inputs must be positive");
+    }
+    return normalized;
   }
 }

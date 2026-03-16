@@ -182,19 +182,38 @@ class CorebankInternalApiSkeletonTest {
         0,
         20
     ));
-    corebankOrderService.setCreateOrderResult(InternalOrderResult.of(
+    corebankOrderService.setCreateOrderResult(InternalOrderResult.execution(
         1001L,
         CORE_CL_ORD_ID_1,
         "FILLED",
+        "CONFIRMED",
         false,
-        new BigDecimal("2.0000")
+        new BigDecimal("2.0000"),
+        "FILLED",
+        new BigDecimal("2.0000"),
+        BigDecimal.ZERO,
+        new BigDecimal("70100.0000"),
+        "FEP-KRX-" + CORE_CL_ORD_ID_1,
+        Instant.parse("2026-03-01T10:02:30Z")
     ));
-    corebankOrderService.setRequeryOrderResult(InternalOrderResult.of(
+    corebankOrderService.setRequeryOrderResult(InternalOrderResult.requery(
         1001L,
         CORE_CL_ORD_ID_1,
         "FILLED",
+        "CONFIRMED",
         true,
-        new BigDecimal("2.0000")
+        new BigDecimal("2.0000"),
+        "FILLED",
+        new BigDecimal("2.0000"),
+        BigDecimal.ZERO,
+        new BigDecimal("70100.0000"),
+        "FEP-KRX-" + CORE_CL_ORD_ID_1,
+        Instant.parse("2026-03-01T10:02:30Z"),
+        "exchange confirmed",
+        false,
+        false,
+        1,
+        5
     ));
     corebankOrderService.setAccountStatusTransitionResult(AccountStatusTransitionResult.of(
         1L,
@@ -323,14 +342,24 @@ class CorebankInternalApiSkeletonTest {
             .param("price", "70100.0000"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.clOrdId").value(CORE_CL_ORD_ID_1))
-        .andExpect(jsonPath("$.data.status").value("FILLED"));
+        .andExpect(jsonPath("$.data.status").value("FILLED"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("CONFIRMED"))
+        .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
+        .andExpect(jsonPath("$.data.executedQty").value(2.0))
+        .andExpect(jsonPath("$.data.leavesQty").value(0.0))
+        .andExpect(jsonPath("$.data.executedPrice").value(70100.0))
+        .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-" + CORE_CL_ORD_ID_1))
+        .andExpect(jsonPath("$.data.executedAt").exists());
 
     mockMvc.perform(get("/internal/v1/orders/{clOrdId}/requery", CORE_CL_ORD_ID_1)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
             .param("attemptCount", "5"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.clOrdId").value(CORE_CL_ORD_ID_1))
-        .andExpect(jsonPath("$.data.status").value("FILLED"));
+        .andExpect(jsonPath("$.data.status").value("FILLED"))
+        .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
+        .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-" + CORE_CL_ORD_ID_1))
+        .andExpect(jsonPath("$.data.message").value("exchange confirmed"));
 
     mockMvc.perform(patch("/internal/v1/accounts/{accountId}/status", 1L)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")

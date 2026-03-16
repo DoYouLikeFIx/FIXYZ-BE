@@ -88,7 +88,14 @@ public class CorebankClient {
           responseBody.clOrdId(),
           responseBody.status(),
           responseBody.idempotent(),
-          responseBody.orderQuantity()
+          responseBody.orderQuantity(),
+          responseBody.executionResult(),
+          responseBody.executedQty(),
+          responseBody.leavesQty(),
+          responseBody.executedPrice(),
+          responseBody.externalOrderId(),
+          responseBody.externalSyncStatus(),
+          responseBody.executedAt()
       );
     } catch (RestClientException ex) {
       throw translateFailure(ex);
@@ -442,7 +449,14 @@ public class CorebankClient {
       String clOrdId,
       String status,
       boolean idempotent,
-      BigDecimal orderQuantity
+      BigDecimal orderQuantity,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
   ) {
   }
 
