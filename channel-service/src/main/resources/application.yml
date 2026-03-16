@@ -45,7 +45,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,circuitbreakers
+        include: health,info,metrics,prometheus,circuitbreakers
   endpoint:
     health:
       probes:
