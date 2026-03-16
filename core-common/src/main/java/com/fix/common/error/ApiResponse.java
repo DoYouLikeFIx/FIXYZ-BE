@@ -1,5 +1,6 @@
 package com.fix.common.error;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 
 public class ApiResponse<T> {
@@ -32,6 +33,7 @@ public class ApiResponse<T> {
     return data;
   }
 
+  @JsonInclude(JsonInclude.Include.ALWAYS)
   public ApiErrorResponse getError() {
     return error;
   }

@@ -1,10 +1,10 @@
 package com.fix.channel.service;
 
+import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
-import com.fix.channel.entity.SecurityEvent;
-import com.fix.channel.entity.OrderSession;
-import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.entity.Member;
+import com.fix.channel.entity.OrderSession;
+import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
@@ -41,10 +41,10 @@ public class OrderSessionService {
   private static final String AUTHORIZATION_REASON_ELEVATED_ORDER_RISK = "ELEVATED_ORDER_RISK";
   private static final String AUTHORIZATION_REASON_TRUSTED_AUTH_SESSION = "TRUSTED_AUTH_SESSION";
   private static final String ORDER_SESSION_TARGET_TYPE = "ORDER_SESSION";
-  private static final String OTP_DEBOUNCE_AUDIT_ACTION = "ORDER_SESSION_OTP_RATE_LIMITED";
-  private static final String OTP_DEBOUNCE_EVENT_TYPE = "ORDER_SESSION_OTP_RATE_LIMITED";
-  private static final String OTP_REPLAY_AUDIT_ACTION = "ORDER_SESSION_OTP_REPLAYED";
-  private static final String OTP_REPLAY_EVENT_TYPE = "ORDER_SESSION_OTP_REPLAYED";
+  private static final AuditAction OTP_DEBOUNCE_AUDIT_ACTION = AuditAction.ORDER_SESSION_OTP_RATE_LIMITED;
+  private static final String OTP_DEBOUNCE_EVENT_TYPE = OTP_DEBOUNCE_AUDIT_ACTION.value();
+  private static final AuditAction OTP_REPLAY_AUDIT_ACTION = AuditAction.ORDER_SESSION_OTP_REPLAYED;
+  private static final String OTP_REPLAY_EVENT_TYPE = OTP_REPLAY_AUDIT_ACTION.value();
   private static final Set<String> RECENT_RISK_SECURITY_EVENTS = Set.of(
       "ACCOUNT_LOCKED",
       "MFA_RECOVERY_PROOF_ISSUED",
@@ -108,22 +108,21 @@ public class OrderSessionService {
       throw ex;
     }
 
-    return buildResult(savedSession, requireRemainingSeconds(savedSession), true);
+    return toResult(savedSession, true);
   }
 
   public OrderSessionResult getOrderSession(OrderSessionQueryCommand command) {
     OrderSession session = requireOwnedSession(command.getMemberId(), command.getOrderSessionId());
-    return buildResult(session, requireRemainingSeconds(session), false);
+    return toResult(session, false);
   }
 
   public OrderSessionResult extendOrderSession(OrderSessionQueryCommand command) {
     OrderSession session = requireOwnedSession(command.getMemberId(), command.getOrderSessionId());
-    requireRemainingSeconds(session);
-    if (!isExtendableStatus(session.getStatus())) {
-      throw new BusinessException(
-          ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
-          "order session cannot be extended in current state"
-      );
+    if (session.isExpired()) {
+      throw orderSessionNotFound();
+    }
+    if (session.hasActiveWindow()) {
+      requireRemainingSeconds(session);
     }
 
     // Extension preserves an already-active order session. It does not replay
@@ -137,31 +136,17 @@ public class OrderSessionService {
       orderSessionPersistenceService.restoreExpiry(extendedSession, previousExpiresAt);
       throw ex;
     }
-    return buildResult(extendedSession, requireRemainingSeconds(extendedSession), false);
+    return toResult(extendedSession, false);
   }
 
   @Transactional(noRollbackFor = BusinessException.class)
   public OrderSessionResult verifyOtp(OrderSessionOtpVerifyCommand command) {
     OrderSession session = requireOwnedSession(command.getMemberId(), command.getOrderSessionId());
-    Long remainingSeconds = requireRemainingSeconds(session);
-    if (session.getStatus() == OrderSessionStatus.AUTHED) {
-      throw new BusinessException(
-          ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
-          "order session is already authorized"
-      );
+    if (session.isExpired()) {
+      throw orderSessionNotFound();
     }
-    if (session.getStatus() != OrderSessionStatus.PENDING_NEW) {
-      throw new BusinessException(
-          ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
-          "order session is not awaiting otp verification"
-      );
-    }
-    if (!session.isChallengeRequired()) {
-      throw new BusinessException(
-          ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
-          "order session does not require otp verification"
-      );
-    }
+    session.assertAwaitingOtpVerification();
+    requireRemainingSeconds(session);
 
     Member member = memberRepository.findByIdForUpdate(command.getMemberId())
         .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
@@ -206,7 +191,7 @@ public class OrderSessionService {
         verification.normalizedOtp()
     )) {
       session.authorize();
-      return buildResult(session, remainingSeconds, false);
+      return toResult(session, false);
     }
 
     boolean replayGuardClaimed = false;
@@ -226,7 +211,7 @@ public class OrderSessionService {
           verification.windowIndex(),
           verification.normalizedOtp()
       );
-      return buildResult(authorizedSession, remainingSeconds, false);
+      return toResult(authorizedSession, false);
     } catch (RuntimeException ex) {
       if (replayGuardClaimed) {
         totpReplayGuardService.releaseClaim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
@@ -286,6 +271,10 @@ public class OrderSessionService {
     return session;
   }
 
+  void ensureActiveWindow(OrderSession session) {
+    requireRemainingSeconds(session);
+  }
+
   private Instant resolveExpiresAt(OrderSession session) {
     Instant expiresAt = session.getExpiresAt();
     if (expiresAt == null) {
@@ -299,7 +288,8 @@ public class OrderSessionService {
     return candidateExpiresAt.isAfter(previousExpiresAt) ? candidateExpiresAt : previousExpiresAt;
   }
 
-  private OrderSessionResult buildResult(OrderSession session, Long remainingSeconds, boolean created) {
+  OrderSessionResult toResult(OrderSession session, boolean created) {
+    ActiveWindowMetadata activeWindow = resolveActiveWindowMetadata(session);
     return OrderSessionResult.of(
         session.getOrderSessionId(),
         session.getClOrdId(),
@@ -316,8 +306,8 @@ public class OrderSessionService {
         null,
         null,
         null,
-        resolveExpiresAt(session),
-        remainingSeconds,
+        activeWindow.expiresAt(),
+        activeWindow.remainingSeconds(),
         session.getExecutionResult(),
         session.getExecutedQty(),
         session.getLeavesQty(),
@@ -340,10 +330,6 @@ public class OrderSessionService {
       return new AuthorizationDecision(false, AUTHORIZATION_REASON_TRUSTED_AUTH_SESSION);
     }
     return new AuthorizationDecision(true, AUTHORIZATION_REASON_ELEVATED_ORDER_RISK);
-  }
-
-  private boolean isExtendableStatus(OrderSessionStatus status) {
-    return status == OrderSessionStatus.PENDING_NEW || status == OrderSessionStatus.AUTHED;
   }
 
   private boolean hasFreshLoginMfaForCreateAutoAuth(Instant lastMfaVerifiedAt) {
@@ -465,9 +451,9 @@ public class OrderSessionService {
           .orElseThrow(() -> ex);
       concurrentSessionId = concurrentSession.getOrderSessionId();
       sessionOwnershipValidator.validateOwner(concurrentSession, command.getMemberId());
-      Long remainingSeconds = requireRemainingSeconds(concurrentSession);
+      ensureReplayVisible(concurrentSession);
       validateReplayPayload(concurrentSession, command);
-      return buildResult(concurrentSession, remainingSeconds, false);
+      return toResult(concurrentSession, false);
     } catch (RuntimeException runtimeEx) {
       failure = runtimeEx;
       throw runtimeEx;
@@ -483,14 +469,23 @@ public class OrderSessionService {
 
   private OrderSessionResult replayExistingSession(OrderSession session, OrderSessionCreateCommand command) {
     sessionOwnershipValidator.validateOwner(session, command.getMemberId());
-    Long remainingSeconds = requireRemainingSeconds(session);
+    ensureReplayVisible(session);
     validateReplayPayload(session, command);
-    return buildResult(session, remainingSeconds, false);
+    return toResult(session, false);
   }
 
   private void validateReplayPayload(OrderSession session, OrderSessionCreateCommand command) {
     if (!session.matchesReplayFingerprint(command.replayFingerprint())) {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "clOrdId replay payload mismatch");
+    }
+  }
+
+  private void ensureReplayVisible(OrderSession session) {
+    if (session.isExpired()) {
+      throw orderSessionNotFound();
+    }
+    if (session.hasActiveWindow()) {
+      requireRemainingSeconds(session);
     }
   }
 
@@ -501,6 +496,9 @@ public class OrderSessionService {
   }
 
   private Long requireRemainingSeconds(OrderSession session) {
+    if (!session.hasActiveWindow()) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session is not in an active window");
+    }
     Instant expiresAt = resolveExpiresAt(session);
     if (!expiresAt.isAfter(Instant.now(clock))) {
       return expireAndReturnMissing(session);
@@ -509,6 +507,16 @@ public class OrderSessionService {
       return expireAndReturnMissing(session);
     }
     return remainingSecondsUntil(expiresAt);
+  }
+
+  private ActiveWindowMetadata resolveActiveWindowMetadata(OrderSession session) {
+    if (session.isExpired()) {
+      throw orderSessionNotFound();
+    }
+    if (!session.hasActiveWindow()) {
+      return ActiveWindowMetadata.inactive();
+    }
+    return new ActiveWindowMetadata(resolveExpiresAt(session), requireRemainingSeconds(session));
   }
 
   private Long remainingSecondsUntil(Instant expiresAt) {
@@ -562,5 +570,11 @@ public class OrderSessionService {
   }
 
   private record AuthorizationDecision(boolean challengeRequired, String authorizationReason) {
+  }
+
+  private record ActiveWindowMetadata(Instant expiresAt, Long remainingSeconds) {
+    private static ActiveWindowMetadata inactive() {
+      return new ActiveWindowMetadata(null, null);
+    }
   }
 }

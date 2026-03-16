@@ -435,6 +435,11 @@ class OrderSessionServiceTest {
 
     assertThat(orderSessionRepository.findByOrderSessionId(created.getOrderSessionId()))
         .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.EXPIRED));
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_EXPIRED");
+          assertThat(log.getTargetId()).isEqualTo(created.getOrderSessionId());
+        });
   }
 
   @Test
@@ -454,6 +459,39 @@ class OrderSessionServiceTest {
 
     assertThat(orderSessionRepository.findByOrderSessionId(created.getOrderSessionId()))
         .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.EXPIRED));
+  }
+
+  @Test
+  void shouldReturnCompletedSessionWithoutActiveWindowMetadataEvenAfterRedisTtlDisappears() {
+    var created = orderSessionService.createOrderSession(ownerLimitCommand(
+        "123e4567-e89b-42d3-a456-426614174288",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    ));
+    OrderSession completed = orderSessionRepository.findByOrderSessionId(created.getOrderSessionId()).orElseThrow();
+    completed.authorize();
+    completed.startExecuting();
+    completed.complete(
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "FEP-0001",
+        Instant.parse("2026-03-12T00:05:30Z")
+    );
+    orderSessionRepository.saveAndFlush(completed);
+    orderSessionTtlStore.clear(created.getOrderSessionId());
+
+    var loaded = orderSessionService.getOrderSession(
+        OrderSessionQueryCommand.of(ownerMember.getId(), created.getOrderSessionId())
+    );
+
+    assertThat(loaded.getStatus()).isEqualTo("COMPLETED");
+    assertThat(loaded.getExpiresAt()).isNull();
+    assertThat(loaded.getRemainingSeconds()).isNull();
+    assertThat(loaded.getExecutionResult()).isEqualTo("FILLED");
+    assertThat(loaded.getExecutedQty()).isEqualByComparingTo("10");
+    assertThat(loaded.getLeavesQty()).isEqualByComparingTo("0");
   }
 
   @Test

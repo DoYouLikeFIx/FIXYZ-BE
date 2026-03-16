@@ -1,6 +1,8 @@
 package com.fix.channel.entity;
 
 import com.fix.common.entity.BaseTimeEntity;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -255,15 +257,41 @@ public class OrderSession extends BaseTimeEntity {
     return Objects.equals(this.replayFingerprint, candidateFingerprint);
   }
 
+  public boolean hasActiveWindow() {
+    return status != null && status.isActiveWindow();
+  }
+
+  public boolean isExpired() {
+    return status == OrderSessionStatus.EXPIRED;
+  }
+
+  public void assertAwaitingOtpVerification() {
+    if (this.status == OrderSessionStatus.AUTHED) {
+      throw invalidTransition("order session is already authorized");
+    }
+    if (this.status != OrderSessionStatus.PENDING_NEW) {
+      throw invalidTransition("order session is not awaiting otp verification");
+    }
+    if (!this.challengeRequired) {
+      throw invalidTransition("order session does not require otp verification");
+    }
+  }
+
   public void authorize() {
+    assertAwaitingOtpVerification();
+    transitionTo(OrderSessionStatus.AUTHED, "order session is not awaiting otp verification");
     this.status = OrderSessionStatus.AUTHED;
   }
 
   public void extendExpiry(Instant expiresAt) {
+    if (!hasActiveWindow()) {
+      throw invalidTransition("order session cannot be extended in current state");
+    }
     this.expiresAt = expiresAt;
   }
 
   public void startExecuting() {
+    transitionTo(OrderSessionStatus.EXECUTING, "order session is not authorized for execution");
     this.status = OrderSessionStatus.EXECUTING;
   }
 
@@ -275,6 +303,7 @@ public class OrderSession extends BaseTimeEntity {
       String externalOrderId,
       Instant executedAt
   ) {
+    transitionTo(OrderSessionStatus.COMPLETED, transitionMessage(OrderSessionStatus.COMPLETED));
     this.status = OrderSessionStatus.COMPLETED;
     this.executionResult = executionResult;
     this.executedQty = executedQty;
@@ -282,15 +311,41 @@ public class OrderSession extends BaseTimeEntity {
     this.executedPrice = executedPrice;
     this.externalOrderId = externalOrderId;
     this.executedAt = executedAt;
+    this.canceledAt = null;
     this.failureReason = null;
   }
 
   public void fail(String failureReason) {
+    transitionTo(OrderSessionStatus.FAILED, transitionMessage(OrderSessionStatus.FAILED));
     this.status = OrderSessionStatus.FAILED;
+    this.executionResult = null;
+    this.executedQty = null;
+    this.leavesQty = null;
+    this.executedPrice = null;
+    this.externalOrderId = null;
+    this.executedAt = null;
+    this.canceledAt = null;
     this.failureReason = failureReason;
   }
 
   public void expire() {
+    transitionTo(OrderSessionStatus.EXPIRED, transitionMessage(OrderSessionStatus.EXPIRED));
     this.status = OrderSessionStatus.EXPIRED;
+    this.failureReason = null;
+    this.canceledAt = null;
+  }
+
+  private void transitionTo(OrderSessionStatus nextStatus, String message) {
+    if (!this.status.canTransitionTo(nextStatus)) {
+      throw invalidTransition(message);
+    }
+  }
+
+  private BusinessException invalidTransition(String message) {
+    return new BusinessException(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED, message);
+  }
+
+  private String transitionMessage(OrderSessionStatus nextStatus) {
+    return "order session transition " + this.status + " -> " + nextStatus + " is not allowed";
   }
 }

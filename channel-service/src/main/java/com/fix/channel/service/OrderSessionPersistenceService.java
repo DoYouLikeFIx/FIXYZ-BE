@@ -67,8 +67,12 @@ public class OrderSessionPersistenceService {
   @Transactional
   void expireSession(String orderSessionId) {
     orderSessionRepository.findByOrderSessionId(orderSessionId)
-        .filter(session -> session.getStatus() != OrderSessionStatus.EXPIRED)
-        .ifPresent(OrderSession::expire);
+        .filter(OrderSession::hasActiveWindow)
+        .ifPresent(session -> {
+          session.expire();
+          orderSessionRepository.flush();
+          auditLogRepository.save(expiredAuditLog(session));
+        });
   }
 
   @Transactional
@@ -80,6 +84,7 @@ public class OrderSessionPersistenceService {
     );
     sessions.forEach(OrderSession::expire);
     orderSessionRepository.flush();
+    sessions.forEach(session -> auditLogRepository.save(expiredAuditLog(session)));
     return sessions.stream().map(OrderSession::getOrderSessionId).toList();
   }
 
@@ -168,5 +173,15 @@ public class OrderSessionPersistenceService {
         "clOrdId=" + session.getClOrdId() + ", reason=" + failureReason
     ));
     return session;
+  }
+
+  private AuditLog expiredAuditLog(OrderSession session) {
+    return AuditLog.of(
+        session.getMemberId(),
+        AuditAction.ORDER_SESSION_EXPIRED,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        "clOrdId=" + session.getClOrdId() + ", expiresAt=" + session.getExpiresAt()
+    );
   }
 }

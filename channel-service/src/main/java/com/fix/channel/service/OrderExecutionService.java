@@ -25,7 +25,6 @@ public class OrderExecutionService {
 
   public OrderSessionResult execute(Long memberId, String orderSessionId) {
     OrderSession session = orderSessionService.requireOwnedSession(memberId, orderSessionId);
-    Long remainingSeconds = requireRemainingSeconds(session);
     if (session.getStatus() == OrderSessionStatus.EXECUTING) {
       throw new BusinessException(
           ErrorCode.ORDER_SESSION_EXECUTION_IN_PROGRESS,
@@ -38,6 +37,7 @@ public class OrderExecutionService {
           "order session is not authorized for execution"
       );
     }
+    orderSessionService.ensureActiveWindow(session);
 
     orderSessionExecutionLockService.acquire(orderSessionId);
     try {
@@ -63,36 +63,7 @@ public class OrderExecutionService {
           result.getOrderId() == null ? null : String.valueOf(result.getOrderId()),
           Instant.now(clock)
       );
-      return OrderSessionResult.of(
-          completedSession.getOrderSessionId(),
-          completedSession.getClOrdId(),
-          completedSession.getStatus().name(),
-          completedSession.isChallengeRequired(),
-          completedSession.getAuthorizationReason(),
-          completedSession.getAccountId(),
-          completedSession.getSymbol(),
-          completedSession.getSide(),
-          completedSession.getOrderType(),
-          completedSession.getQty(),
-          completedSession.getPrice(),
-          null,
-          null,
-          null,
-          null,
-          resolveExpiresAt(completedSession),
-          remainingSeconds,
-          completedSession.getExecutionResult(),
-          completedSession.getExecutedQty(),
-          completedSession.getLeavesQty(),
-          completedSession.getExecutedPrice(),
-          completedSession.getExternalOrderId(),
-          completedSession.getFailureReason(),
-          completedSession.getExecutedAt(),
-          completedSession.getCanceledAt(),
-          completedSession.getCreatedAt(),
-          completedSession.getUpdatedAt(),
-          false
-      );
+      return orderSessionService.toResult(completedSession, false);
     } finally {
       orderSessionExecutionLockService.release(orderSessionId);
     }
@@ -107,27 +78,6 @@ public class OrderExecutionService {
         session.getQty(),
         session.getPrice()
     );
-  }
-
-  private Long requireRemainingSeconds(OrderSession session) {
-    if (session.getStatus() == OrderSessionStatus.EXPIRED || !resolveExpiresAt(session).isAfter(Instant.now(clock))) {
-      orderSessionService.expireSession(session.getOrderSessionId());
-      throw orderSessionNotFound();
-    }
-    long remainingMillis = java.time.Duration.between(Instant.now(clock), session.getExpiresAt()).toMillis();
-    return Math.max(1L, (remainingMillis + 999L) / 1000L);
-  }
-
-  private Instant resolveExpiresAt(OrderSession session) {
-    Instant expiresAt = session.getExpiresAt();
-    if (expiresAt == null) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "order session expiration timestamp missing");
-    }
-    return expiresAt;
-  }
-
-  private BusinessException orderSessionNotFound() {
-    return new BusinessException(ErrorCode.ORDER_SESSION_NOT_FOUND, "Order session not found.");
   }
 
   private String executionFailureReason(RuntimeException exception) {
