@@ -1,14 +1,5 @@
 package com.fix.corebank.client;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fix.common.error.BusinessException;
-import com.fix.common.error.ErrorCode;
-import com.fix.common.error.ErrorMetadata;
-import com.fix.common.validation.ContractPatterns;
-import com.fix.common.web.CommonHeaders;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -18,6 +9,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
+import com.fix.common.validation.ContractPatterns;
+import com.fix.common.web.CommonHeaders;
+
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 
 @Component
 public class FepClient {
@@ -68,7 +71,7 @@ public class FepClient {
       FepGatewayOrderResponse responseBody = extractBody(response, "submit");
       return FepOrderResult.fromSubmitResponse(responseBody, payload.clOrdId());
     } catch (RestClientException ex) {
-      throw translateFailure("submit", ex);
+      throw translateFailure(ex);
     }
   }
 
@@ -89,18 +92,18 @@ public class FepClient {
       FepGatewayOrderResponse responseBody = extractBody(response, "status");
       return FepOrderResult.fromStatusResponse(responseBody, clOrdId);
     } catch (RestClientException ex) {
-      throw translateFailure("status", ex);
+      throw translateFailure(ex);
     }
   }
 
   @SuppressWarnings("unused")
   private FepOrderResult submitOrderFallback(FepOutboundOrderPayload payload, String correlationId, Throwable throwable) {
-    throw translateFailure("submit", throwable);
+    throw translateFailure(throwable);
   }
 
   @SuppressWarnings("unused")
   private FepOrderResult queryOrderStatusFallback(String clOrdId, String correlationId, Throwable throwable) {
-    throw translateFailure("status", throwable);
+    throw translateFailure(throwable);
   }
 
   private FepGatewayOrderResponse extractBody(FepGatewayEnvelope<FepGatewayOrderResponse> response, String operationName) {
@@ -113,9 +116,17 @@ public class FepClient {
     return response.data();
   }
 
-  private BusinessException translateFailure(String operationName, Throwable throwable) {
+  private BusinessException translateFailure(Throwable throwable) {
     if (throwable instanceof BusinessException businessException) {
       return businessException;
+    }
+    if (throwable instanceof CallNotPermittedException) {
+      return new BusinessException(
+          ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+          ErrorCode.FEP_GATEWAY_UNAVAILABLE.defaultMessage(),
+          throwable,
+          new ErrorMetadata("error.fep.unavailable", "CIRCUIT_OPEN")
+      );
     }
     if (throwable instanceof RestClientResponseException restClientResponseException) {
       GatewayApiErrorResponse errorResponse = parseError(restClientResponseException.getResponseBodyAsString());
