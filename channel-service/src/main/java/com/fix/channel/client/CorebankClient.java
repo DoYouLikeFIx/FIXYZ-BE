@@ -17,6 +17,7 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.TraceparentSupport;
 import java.math.BigDecimal;
 import java.net.SocketTimeoutException;
 import java.time.Instant;
@@ -72,10 +73,12 @@ public class CorebankClient {
 
   public OrderExecuteResult executeOrder(OrderExecuteCommand command, String correlationId) {
     try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
       CorebankApiResponse<CorebankOrderResponse> response = restClient.post()
           .uri(COREBANK_ORDERS_PATH)
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
           .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
           .contentType(MediaType.APPLICATION_FORM_URLENCODED)
           .body(toFormData(command))
           .retrieve()
@@ -97,6 +100,7 @@ public class CorebankClient {
 
   public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command, String correlationId) {
     try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
       CorebankApiResponse<CorebankAccountPositionResponse> response = restClient.get()
           .uri(uriBuilder -> uriBuilder
               .path(COREBANK_ACCOUNT_POSITION_PATH)
@@ -105,6 +109,7 @@ public class CorebankClient {
               .build(command.getAccountId()))
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
           .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
           .retrieve()
           .body(new ParameterizedTypeReference<>() {
           });
@@ -120,6 +125,7 @@ public class CorebankClient {
       String correlationId
   ) {
     try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
       CorebankApiResponse<List<CorebankAccountPositionResponse>> response = restClient.get()
           .uri(uriBuilder -> uriBuilder
               .path(COREBANK_ACCOUNT_POSITIONS_PATH)
@@ -127,6 +133,7 @@ public class CorebankClient {
               .build(command.getAccountId()))
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
           .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
           .retrieve()
           .body(new ParameterizedTypeReference<>() {
           });
@@ -158,6 +165,7 @@ public class CorebankClient {
       String correlationId
   ) {
     try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
       CorebankApiResponse<CorebankAccountPositionResponse> response = restClient.get()
           .uri(uriBuilder -> uriBuilder
               .path(COREBANK_ACCOUNT_SUMMARY_PATH)
@@ -165,6 +173,7 @@ public class CorebankClient {
               .build(command.getAccountId()))
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
           .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
           .retrieve()
           .body(new ParameterizedTypeReference<>() {
           });
@@ -191,6 +200,7 @@ public class CorebankClient {
 
   public AccountOrderHistoryResult getAccountOrderHistory(AccountOrderHistoryQueryCommand command, String correlationId) {
     try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
       CorebankApiResponse<CorebankAccountOrderHistoryResponse> response = restClient.get()
           .uri(uriBuilder -> uriBuilder
               .path(COREBANK_ACCOUNT_ORDERS_PATH)
@@ -200,6 +210,7 @@ public class CorebankClient {
               .build(command.getAccountId()))
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
           .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
           .retrieve()
           .body(new ParameterizedTypeReference<>() {
           });
@@ -226,10 +237,12 @@ public class CorebankClient {
       String correlationId
   ) {
     try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
       CorebankApiResponse<CorebankAccountStatusTransitionResponse> response = restClient.patch()
           .uri(COREBANK_ACCOUNT_STATUS_PATH, command.getAccountId())
           .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
           .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
           .contentType(MediaType.APPLICATION_JSON)
           .body(new CorebankAccountStatusTransitionRequest(
               command.getMemberId(),
