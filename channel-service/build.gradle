@@ -85,7 +85,8 @@ tasks.register('verifyCommittedOpenApi') {
 
     String generatedText = normalizeOpenApiText(generated.getText('UTF-8'))
     String committedText = normalizeOpenApiText(committed.getText('UTF-8'))
-    if (generatedText != committedText) {
+    def jsonSlurper = new groovy.json.JsonSlurper()
+    if (jsonSlurper.parseText(generatedText) != jsonSlurper.parseText(committedText)) {
       throw new GradleException(
           "Committed OpenAPI snapshot is out of date. Regenerate :channel-service:generateOpenApiDocs and sync contracts/openapi/${project.name}.json."
       )
@@ -110,6 +111,7 @@ dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
   implementation 'org.flywaydb:flyway-core'
   implementation 'org.flywaydb:flyway-mysql'
+  implementation 'io.micrometer:micrometer-registry-prometheus'
   implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.15'
   implementation 'org.apache.httpcomponents.client5:httpclient5'
 
