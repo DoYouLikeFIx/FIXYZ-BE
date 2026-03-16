@@ -60,6 +60,7 @@ public class CorebankOrderService {
   private final ExecutionRepository executionRepository;
   private final CorebankOrderPersistenceService orderPersistenceService;
   private final FepClient fepClient;
+  private final PositionLockMetrics positionLockMetrics;
 
   @Value("${recovery.max-retry-count:5}")
   private int maxRetryCount = 5;
@@ -332,6 +333,7 @@ public class CorebankOrderService {
   }
 
   private BusinessException concurrencyConflict(InternalOrderCreateCommand command, RuntimeException ex) {
+    positionLockMetrics.incrementConflicts();
     return new BusinessException(
         ErrorCode.CORE_CONCURRENCY_CONFLICT,
         ErrorCode.CORE_CONCURRENCY_CONFLICT.defaultMessage(),

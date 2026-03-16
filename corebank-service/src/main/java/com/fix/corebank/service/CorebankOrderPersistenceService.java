@@ -64,6 +64,7 @@ public class CorebankOrderPersistenceService {
   private final JournalEntryRepository journalEntryRepository;
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
+  private final PositionLockMetrics positionLockMetrics;
   private final OrderPreparationLockHook orderPreparationLockHook;
   private final OrderPostingTransactionHook orderPostingTransactionHook;
   private Clock limitWindowClock = Clock.systemUTC();
@@ -118,7 +119,14 @@ public class CorebankOrderPersistenceService {
         .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
 
     String side = normalizeSide(command.getSide());
-    Position position = lockPositionForUpdate(command.getAccountId(), command.getSymbol());
+    long waitStartedAtNanos = System.nanoTime();
+    Position position;
+    try {
+      position = lockPositionForUpdate(command.getAccountId(), command.getSymbol());
+    } finally {
+      positionLockMetrics.recordWait(waitStartedAtNanos);
+    }
+    positionLockMetrics.recordHoldOnTransactionCompletion(System.nanoTime());
     BigDecimal availableQty = resolveAvailableQuantity(position);
 
     BigDecimal todaySellQty = executionRepository.sumSellQuantityByAccountAndSymbolBetween(

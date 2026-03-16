@@ -53,6 +53,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -105,10 +106,12 @@ class CorebankOrderServiceTest {
   private StubFepClient fepClient;
   private CorebankOrderPersistenceService corebankOrderPersistenceService;
   private CorebankOrderService corebankOrderService;
+  private PositionLockMetrics positionLockMetrics;
 
   @BeforeEach
   void setUp() {
     fepClient = new StubFepClient();
+    positionLockMetrics = new PositionLockMetrics(new SimpleMeterRegistry());
     corebankOrderPersistenceService = new CorebankOrderPersistenceService(
         accountRepository,
         accountStatusEventRepository,
@@ -118,6 +121,7 @@ class CorebankOrderServiceTest {
         journalEntryRepository,
         ledgerEntryRepository,
         ledgerEntryRefRepository,
+        positionLockMetrics,
         (accountId, symbol) -> {
         },
         (order, account, position) -> {
@@ -130,7 +134,8 @@ class CorebankOrderServiceTest {
         positionRepository,
         executionRepository,
         corebankOrderPersistenceService,
-        fepClient
+        fepClient,
+        positionLockMetrics
     );
   }
 

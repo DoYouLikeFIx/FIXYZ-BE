@@ -18,6 +18,7 @@ import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderPersistenceService;
 import com.fix.corebank.service.CorebankOrderService;
+import com.fix.corebank.service.PositionLockMetrics;
 import com.fix.corebank.support.CorebankStandaloneMvcSupport;
 import com.fix.corebank.vo.AccountProvisioningCommand;
 import com.fix.corebank.vo.AccountProvisioningResult;
@@ -42,6 +43,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -660,7 +662,8 @@ class CorebankInternalApiSkeletonTest {
           (PositionRepository) null,
           (ExecutionRepository) null,
           (CorebankOrderPersistenceService) null,
-          null
+          null,
+          new PositionLockMetrics(new SimpleMeterRegistry())
       );
     }
 

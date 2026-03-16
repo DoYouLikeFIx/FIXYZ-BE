@@ -9,7 +9,9 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -157,6 +159,12 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
       assertThat(count("journal_entries")).isEqualTo(1);
       assertThat(count("ledger_entries")).isEqualTo(2);
       assertThat(count("ledger_entry_refs")).isEqualTo(2);
+
+      mockMvc.perform(get("/actuator/prometheus"))
+          .andExpect(status().isOk())
+          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_wait_seconds_count 2.0")))
+          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_hold_seconds_count 1.0")))
+          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_conflicts_total 1.0")));
 
       verify(fepClient, times(1)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {
