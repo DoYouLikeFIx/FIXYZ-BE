@@ -195,6 +195,38 @@ class CorebankExternalErrorFlowIntegrationTest {
         .andExpect(jsonPath("$.operatorCode").value("UNKNOWN_EXTERNAL_9555"))
         .andExpect(jsonPath("$.correlationId").isNotEmpty())
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
+
+    Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_UNKNOWN).orElseThrow();
+    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("UNKNOWN_EXTERNAL_9555");
+  }
+
+  @Test
+  void shouldEscalateRejectedSubmitWhilePreservingCanonicalFill() throws Exception {
+    String clOrdId = "123e4567-e89b-42d3-a456-426614174225";
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
+        .willReturn(canonicalGatewayError(400, "9097", "order rejected by exchange")));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-rejected")
+            .param("accountId", "1")
+            .param("clOrdId", clOrdId)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("quantity", "2.0000")
+            .param("price", "70100.0000"))
+        .andExpect(status().isBadRequest())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-rejected"))
+        .andExpect(jsonPath("$.code").value("FEP-003"))
+        .andExpect(jsonPath("$.message").value("Exchange rejected order"))
+        .andExpect(jsonPath("$.operatorCode").value("ORDER_REJECTED"));
+
+    Order persistedOrder = orderRepository.findByClOrdId(clOrdId).orElseThrow();
+    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("ORDER_REJECTED");
   }
 
   @Test
