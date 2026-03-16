@@ -46,7 +46,9 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
     "spring.datasource.username=sa",
     "spring.datasource.password=",
     "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
-    "internal.secret=test-secret"
+  "internal.secret=test-secret",
+  "resilience4j.circuitbreaker.instances.fep-submit.waitDurationInOpenState=1s",
+  "resilience4j.circuitbreaker.instances.fep-status.waitDurationInOpenState=1s"
 })
 class CorebankExternalErrorFlowIntegrationTest {
 
@@ -61,7 +63,7 @@ class CorebankExternalErrorFlowIntegrationTest {
   private static final String CL_ORD_ID_CB_OPEN_CALL = "123e4567-e89b-42d3-a456-426614174243";
   private static final String CL_ORD_ID_HALF_OPEN_PROBE = "123e4567-e89b-42d3-a456-426614174244";
   private static final String CL_ORD_ID_HALF_OPEN_SECOND = "123e4567-e89b-42d3-a456-426614174245";
-  private static final long OPEN_STATE_WAIT_MILLIS = 10_500L;
+  private static final long OPEN_STATE_WAIT_MILLIS = 1_200L;
   private static final WireMockServer WIRE_MOCK_SERVER = new WireMockServer(wireMockConfig().dynamicPort());
 
   static {
@@ -337,7 +339,7 @@ class CorebankExternalErrorFlowIntegrationTest {
           .andExpect(status().isOk());
     }
 
-          assertCircuitState("fep-status", "OPEN");
+        assertCircuitState("fep-status", "OPEN");
 
     WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(canonicalGatewayError(504, "9004", "submit timeout")));
@@ -637,6 +639,11 @@ class CorebankExternalErrorFlowIntegrationTest {
       probeCall.get(10, TimeUnit.SECONDS);
     } finally {
       executorService.shutdownNow();
+      try {
+        executorService.awaitTermination(5, TimeUnit.SECONDS);
+      } catch (InterruptedException interruptedException) {
+        Thread.currentThread().interrupt();
+      }
     }
 
     WIRE_MOCK_SERVER.verify(4, postRequestedFor(urlEqualTo("/fep/v1/orders")));
