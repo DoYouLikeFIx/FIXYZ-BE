@@ -11,9 +11,9 @@ spring:
     username: sa
     password:
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
-    database-platform: org.hibernate.dialect.H2Dialect
   flyway:
     enabled: true
     validate-on-migrate: true
@@ -26,9 +26,11 @@ spring:
 
 springdoc:
   api-docs:
+    enabled: true
     path: /v3/api-docs
     version: OPENAPI_3_0
   swagger-ui:
+    enabled: true
     path: /swagger-ui/index.html
 
 corebank:
