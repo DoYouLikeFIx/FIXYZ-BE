@@ -1,74 +1,130 @@
 package com.fix.fepsimulator.service;
 
-import com.fix.common.error.BusinessException;
-import com.fix.common.error.ErrorCode;
-import com.fix.fepsimulator.entity.SimulatorConnection;
-import com.fix.fepsimulator.entity.SimulatorMessage;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import com.fix.common.web.CorrelationIdSupport;
 import com.fix.fepsimulator.entity.SimulatorRule;
-import com.fix.fepsimulator.repository.SimulatorConnectionRepository;
-import com.fix.fepsimulator.repository.SimulatorMessageRepository;
 import com.fix.fepsimulator.repository.SimulatorRuleRepository;
-import com.fix.fepsimulator.vo.SimulatorChaosCommand;
-import com.fix.fepsimulator.vo.SimulatorChaosResult;
-import com.fix.fepsimulator.vo.SimulatorRuleQueryCommand;
+import com.fix.fepsimulator.vo.ChaosRuleAction;
 import com.fix.fepsimulator.vo.SimulatorRuleResult;
 import com.fix.fepsimulator.vo.SimulatorRuleUpsertCommand;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class FepSimulatorControlService {
 
-  private final SimulatorConnectionRepository simulatorConnectionRepository;
-  private final SimulatorMessageRepository simulatorMessageRepository;
+  private static final Logger log = LoggerFactory.getLogger(FepSimulatorControlService.class);
+
   private final SimulatorRuleRepository simulatorRuleRepository;
 
-  @Transactional
-  public SimulatorRuleResult upsertRule(SimulatorRuleUpsertCommand command) {
-    SimulatorRule rule = simulatorRuleRepository.findByRuleCode(command.getRuleCode())
-        .orElseGet(() -> SimulatorRule.create(command.getRuleCode(), command.getAction(), command.isEnabled()));
-
-    rule.update(command.getAction(), command.isEnabled());
-    simulatorRuleRepository.save(rule);
-
-    return SimulatorRuleResult.of(
-        rule.getRuleCode(),
-        rule.getAction(),
-        rule.isEnabled(),
-        simulatorRuleRepository.existsEnabledRuleByRuleCode(rule.getRuleCode())
-    );
+  public FepSimulatorControlService(SimulatorRuleRepository simulatorRuleRepository) {
+    this.simulatorRuleRepository = simulatorRuleRepository;
   }
 
-  @Transactional(readOnly = true)
-  public SimulatorRuleResult getRule(SimulatorRuleQueryCommand command) {
-    SimulatorRule rule = simulatorRuleRepository.findByRuleCode(command.getRuleCode())
-        .orElseThrow(() -> new BusinessException(ErrorCode.SYS_RESOURCE_NOT_FOUND, "simulator rule not found"));
+  public SimulatorRuleResult applyRule(SimulatorRuleUpsertCommand command, String requestUri, String requestSource) {
+    Instant now = Instant.now();
+    cleanupExpired(now);
 
-    return SimulatorRuleResult.of(
-        rule.getRuleCode(),
-        rule.getAction(),
-        rule.isEnabled(),
-        simulatorRuleRepository.existsEnabledRuleByRuleCode(rule.getRuleCode())
-    );
-  }
-
-  @Transactional
-  public SimulatorChaosResult runChaos(SimulatorChaosCommand command) {
-    SimulatorConnection connection = simulatorConnectionRepository.findByConnectionKey(command.getConnectionKey())
-        .orElseGet(() -> simulatorConnectionRepository.save(
-            SimulatorConnection.connected(command.getConnectionKey(), "sim://" + command.getConnectionKey())
-        ));
-
-    connection.markStatus("CHAOS_ACTIVE");
-    simulatorMessageRepository.save(SimulatorMessage.of(
-        connection.getId(),
-        "CHAOS",
-        "OUTBOUND",
-        command.getScenario() + "|intensity=" + command.getIntensity()
+    SimulatorRule savedRule = simulatorRuleRepository.save(SimulatorRule.create(
+        command.getAction().name(),
+        command.getTargetSymbol(),
+        command.getTargetExchange(),
+        command.getTtlSeconds(),
+        command.getMatchAmount(),
+        command.getProbability(),
+        now
     ));
 
-    return SimulatorChaosResult.of(connection.getConnectionKey(), command.getScenario(), "CHAOS_ACCEPTED");
+    SimulatorRuleResult result = toResult(savedRule);
+    logRuleMutation("APPLY_RULE", requestUri, requestSource, result);
+    return result;
+  }
+
+  public int clearRules(String requestUri, String requestSource) {
+    cleanupExpired(Instant.now());
+    int clearedCount = Math.toIntExact(simulatorRuleRepository.count());
+    simulatorRuleRepository.deleteAllInBatch();
+
+    log.info(
+        "operation=RESET_RULES correlationId={} requestUri={} requestSource={} clearedCount={}",
+        CorrelationIdSupport.currentOrGenerate(),
+        requestUri,
+        requestSource,
+        clearedCount
+    );
+
+    return clearedCount;
+  }
+
+  public Optional<ChaosRuleAction> resolveMatchingAction(String symbol, String exchange, Long amount) {
+    List<SimulatorRuleResult> activeRules = listActiveRules();
+    return activeRules.stream()
+        .filter(rule -> matches(rule, symbol, exchange, amount))
+        .filter(rule -> ThreadLocalRandom.current().nextDouble() <= rule.getProbability())
+        .map(rule -> ChaosRuleAction.valueOf(rule.getAction()))
+        .findFirst();
+  }
+
+  public List<SimulatorRuleResult> listActiveRules() {
+    Instant now = Instant.now();
+    cleanupExpired(now);
+    return simulatorRuleRepository.findAllByExpiresAtAfterOrderByAppliedAtDesc(now).stream()
+        .map(this::toResult)
+        .toList();
+  }
+
+  private boolean matches(SimulatorRuleResult rule, String symbol, String exchange, Long amount) {
+    if (exchange == null || !exchange.equalsIgnoreCase(rule.getTargetExchange())) {
+      return false;
+    }
+    if (rule.getTargetSymbol() != null && (symbol == null || !rule.getTargetSymbol().equalsIgnoreCase(symbol))) {
+      return false;
+    }
+    if (rule.getMatchAmount() != null && !rule.getMatchAmount().equals(amount)) {
+      return false;
+    }
+    return true;
+  }
+
+  private void cleanupExpired(Instant now) {
+    simulatorRuleRepository.deleteByExpiresAtLessThanEqual(now);
+  }
+
+  private SimulatorRuleResult toResult(SimulatorRule rule) {
+    return SimulatorRuleResult.of(
+        rule.getRuleId(),
+        rule.getAction(),
+        rule.getTargetSymbol(),
+        rule.getTargetExchange(),
+        rule.getMatchAmount(),
+        rule.getProbability(),
+        rule.getAppliedAt(),
+        rule.getExpiresAt()
+    );
+  }
+
+  private void logRuleMutation(String operation, String requestUri, String requestSource, SimulatorRuleResult rule) {
+    log.info(
+        "operation={} correlationId={} requestUri={} requestSource={} ruleId={} action={} targetSymbol={} targetExchange={} "
+            + "matchAmount={} probability={} appliedAt={} expiresAt={}",
+        operation,
+        CorrelationIdSupport.currentOrGenerate(),
+        requestUri,
+        requestSource,
+        rule.getRuleId(),
+        rule.getAction(),
+        rule.getTargetSymbol(),
+        rule.getTargetExchange(),
+        rule.getMatchAmount(),
+        rule.getProbability(),
+        rule.getAppliedAt(),
+        rule.getExpiresAt()
+    );
   }
 }
