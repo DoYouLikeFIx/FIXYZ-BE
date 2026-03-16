@@ -1,10 +1,14 @@
 package com.fix.fepsimulator.repository;
 
-import com.fix.fepsimulator.entity.SimulatorRule;
-import com.fix.fepsimulator.repository.custom.SimulatorRuleCustomRepository;
-import java.util.Optional;
+import java.time.Instant;
+import java.util.List;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface SimulatorRuleRepository extends JpaRepository<SimulatorRule, Long>, SimulatorRuleCustomRepository {
-  Optional<SimulatorRule> findByRuleCode(String ruleCode);
+import com.fix.fepsimulator.entity.SimulatorRule;
+
+public interface SimulatorRuleRepository extends JpaRepository<SimulatorRule, Long> {
+  List<SimulatorRule> findAllByExpiresAtAfterOrderByAppliedAtDesc(Instant now);
+
+  long deleteByExpiresAtLessThanEqual(Instant now);
 }
