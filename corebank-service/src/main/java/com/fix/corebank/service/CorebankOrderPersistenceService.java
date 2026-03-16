@@ -115,8 +115,9 @@ public class CorebankOrderPersistenceService {
 
   @Transactional
   public PendingOrderSubmission prepareOrderSubmission(InternalOrderCreateCommand command) {
-    accountRepository.findById(command.getAccountId())
-        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+    if (!accountRepository.existsById(command.getAccountId())) {
+      throw new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found");
+    }
 
     String side = normalizeSide(command.getSide());
     long waitStartedAtNanos = System.nanoTime();

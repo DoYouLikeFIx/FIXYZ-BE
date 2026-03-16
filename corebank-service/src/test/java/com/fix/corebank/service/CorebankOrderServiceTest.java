@@ -129,6 +129,8 @@ class CorebankOrderServiceTest {
     );
     lenient().when(accountRepository.findByIdForUpdate(anyLong()))
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)));
+    lenient().when(accountRepository.existsById(anyLong()))
+        .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)).isPresent());
     corebankOrderService = new CorebankOrderService(
         accountRepository,
         positionRepository,

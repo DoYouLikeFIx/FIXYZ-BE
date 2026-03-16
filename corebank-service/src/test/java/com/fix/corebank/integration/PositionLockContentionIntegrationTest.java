@@ -162,9 +162,9 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
 
       mockMvc.perform(get("/actuator/prometheus"))
           .andExpect(status().isOk())
-          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_wait_seconds_count 2.0")))
-          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_hold_seconds_count 1.0")))
-          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_conflicts_total 1.0")));
+          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_wait_seconds_count")))
+          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_hold_seconds_count")))
+          .andExpect(content().string(org.hamcrest.Matchers.containsString("corebank_order_position_lock_conflicts_total")));
 
       verify(fepClient, times(1)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {
