@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    url: ${CHANNEL_DB_URL:jdbc:mysql://mysql:3306/channel_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${CHANNEL_DB_USERNAME:${MYSQL_USER:fix}}
+    password: ${CHANNEL_DB_PASSWORD:${MYSQL_PASSWORD:fix}}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+
+auth:
+  totp:
+    vault:
+      base-url: ${AUTH_TOTP_VAULT_BASE_URL:${VAULT_ADDR:http://vault:8200}}
+
+corebank:
+  internal:
+    base-url: ${COREBANK_INTERNAL_BASE_URL:http://corebank-service:8081}

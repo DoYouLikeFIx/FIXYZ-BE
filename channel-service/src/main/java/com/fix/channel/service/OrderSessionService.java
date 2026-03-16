@@ -1,8 +1,11 @@
 package com.fix.channel.service;
 
+import com.fix.channel.entity.AuditLog;
+import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.entity.Member;
+import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
@@ -37,6 +40,11 @@ public class OrderSessionService {
 
   private static final String AUTHORIZATION_REASON_ELEVATED_ORDER_RISK = "ELEVATED_ORDER_RISK";
   private static final String AUTHORIZATION_REASON_TRUSTED_AUTH_SESSION = "TRUSTED_AUTH_SESSION";
+  private static final String ORDER_SESSION_TARGET_TYPE = "ORDER_SESSION";
+  private static final String OTP_DEBOUNCE_AUDIT_ACTION = "ORDER_SESSION_OTP_RATE_LIMITED";
+  private static final String OTP_DEBOUNCE_EVENT_TYPE = "ORDER_SESSION_OTP_RATE_LIMITED";
+  private static final String OTP_REPLAY_AUDIT_ACTION = "ORDER_SESSION_OTP_REPLAYED";
+  private static final String OTP_REPLAY_EVENT_TYPE = "ORDER_SESSION_OTP_REPLAYED";
   private static final Set<String> RECENT_RISK_SECURITY_EVENTS = Set.of(
       "ACCOUNT_LOCKED",
       "MFA_RECOVERY_PROOF_ISSUED",
@@ -47,6 +55,7 @@ public class OrderSessionService {
 
   private final OrderSessionRepository orderSessionRepository;
   private final MemberRepository memberRepository;
+  private final AuditLogRepository auditLogRepository;
   private final SecurityEventRepository securityEventRepository;
   private final SessionOwnershipValidator sessionOwnershipValidator;
   private final OrderSessionPersistenceService orderSessionPersistenceService;
@@ -55,6 +64,7 @@ public class OrderSessionService {
   private final OrderSessionTtlStore orderSessionTtlStore;
   private final AccountPositionService accountPositionService;
   private final TotpService totpService;
+  private final TotpReplayGuardService totpReplayGuardService;
   private final Clock clock;
 
   @Value("${auth.guardrails.order-authorization.recent-login-mfa-window:60m}")
@@ -146,6 +156,12 @@ public class OrderSessionService {
           "order session is not awaiting otp verification"
       );
     }
+    if (!session.isChallengeRequired()) {
+      throw new BusinessException(
+          ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
+          "order session does not require otp verification"
+      );
+    }
 
     Member member = memberRepository.findByIdForUpdate(command.getMemberId())
         .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
@@ -157,7 +173,14 @@ public class OrderSessionService {
       );
     }
 
-    orderSessionOtpChallengeService.enforceDebounce(session.getOrderSessionId());
+    try {
+      orderSessionOtpChallengeService.enforceDebounce(session.getOrderSessionId());
+    } catch (BusinessException ex) {
+      if (ex.getErrorCode() == ErrorCode.RATE_LIMIT_EXCEEDED) {
+        recordOtpDebounceEvidence(session);
+      }
+      throw ex;
+    }
     if (orderSessionOtpChallengeService.remainingAttempts(session.getOrderSessionId()) < 1) {
       markFailed(session, "OTP_EXCEEDED");
       throw new BusinessException(ErrorCode.CHANNEL_OTP_ATTEMPTS_EXCEEDED, "otp attempts exceeded");
@@ -182,16 +205,34 @@ public class OrderSessionService {
         verification.windowIndex(),
         verification.normalizedOtp()
     )) {
-      return buildResult(reloadLatestSession(session), remainingSeconds, false);
+      session.authorize();
+      return buildResult(session, remainingSeconds, false);
     }
 
-    OrderSession authorizedSession = authorize(session);
-    orderSessionOtpChallengeService.recordSuccess(
-        authorizedSession.getOrderSessionId(),
-        verification.windowIndex(),
-        verification.normalizedOtp()
-    );
-    return buildResult(authorizedSession, remainingSeconds, false);
+    boolean replayGuardClaimed = false;
+    try {
+      totpReplayGuardService.claim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
+      replayGuardClaimed = true;
+    } catch (BusinessException ex) {
+      if (ex.getErrorCode() == ErrorCode.AUTH_OTP_REPLAYED) {
+        recordOtpReplayEvidence(session);
+      }
+      throw ex;
+    }
+    try {
+      OrderSession authorizedSession = authorize(session);
+      orderSessionOtpChallengeService.recordSuccess(
+          authorizedSession.getOrderSessionId(),
+          verification.windowIndex(),
+          verification.normalizedOtp()
+      );
+      return buildResult(authorizedSession, remainingSeconds, false);
+    } catch (RuntimeException ex) {
+      if (replayGuardClaimed) {
+        totpReplayGuardService.releaseClaim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
+      }
+      throw ex;
+    }
   }
 
   public OrderSession authorize(OrderSession session) {
@@ -350,9 +391,38 @@ public class OrderSessionService {
         );
   }
 
-  private OrderSession reloadLatestSession(OrderSession fallbackSession) {
-    return orderSessionRepository.findByOrderSessionId(fallbackSession.getOrderSessionId())
-        .orElse(fallbackSession);
+  private void recordOtpDebounceEvidence(OrderSession session) {
+    auditLogRepository.save(AuditLog.of(
+        session.getMemberId(),
+        OTP_DEBOUNCE_AUDIT_ACTION,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        "clOrdId=" + session.getClOrdId() + ", reason=debounce"
+    ));
+    securityEventRepository.save(SecurityEvent.of(
+        session.getMemberId(),
+        OTP_DEBOUNCE_EVENT_TYPE,
+        null,
+        null,
+        "MEDIUM"
+    ));
+  }
+
+  private void recordOtpReplayEvidence(OrderSession session) {
+    auditLogRepository.save(AuditLog.of(
+        session.getMemberId(),
+        OTP_REPLAY_AUDIT_ACTION,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        "clOrdId=" + session.getClOrdId() + ", reason=replay"
+    ));
+    securityEventRepository.save(SecurityEvent.of(
+        session.getMemberId(),
+        OTP_REPLAY_EVENT_TYPE,
+        null,
+        null,
+        "HIGH"
+    ));
   }
 
   private void validatePreTradeEligibility(OrderSessionCreateCommand command) {

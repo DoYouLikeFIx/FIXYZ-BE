@@ -14,13 +14,17 @@ import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
+import com.fix.channel.repository.SecurityEventRepository;
 import com.fix.channel.service.AccountPositionService;
 import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import com.fix.channel.vo.AccountPositionResult;
 import jakarta.servlet.http.Cookie;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,6 +41,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -58,6 +63,9 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   private AuditLogRepository auditLogRepository;
 
   @Autowired
+  private SecurityEventRepository securityEventRepository;
+
+  @Autowired
   private PasswordEncoder passwordEncoder;
 
   @Autowired
@@ -69,16 +77,21 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   @Autowired
   private StubAccountPositionService accountPositionService;
 
+  @Autowired
+  private MutableClock clock;
+
   @BeforeEach
   void setUp() {
     orderSessionRepository.deleteAll();
     auditLogRepository.deleteAll();
+    securityEventRepository.deleteAll();
     memberRepository.deleteAll();
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
       return null;
     });
     accountPositionService.reset();
+    clock.setInstant(Instant.now());
   }
 
   @Test
@@ -245,13 +258,14 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
         72000L
     );
     String orderSessionId = created.path("data").path("orderSessionId").asText();
+    String freshStepUpCode = nextTotpWindowCode(member);
 
     mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
             .cookie(sessionCookie(authSession))
             .header("X-CSRF-TOKEN", authSession.csrfToken())
             .contentType(MediaType.APPLICATION_JSON)
             .content(objectMapper.writeValueAsString(Map.of(
-                "otpCode", totpService.currentCode(member)
+                "otpCode", freshStepUpCode
             ))))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
@@ -267,6 +281,137 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
           assertThat(log.getAction()).isEqualTo("ORDER_SESSION_OTP_VERIFIED");
           assertThat(log.getTargetId()).isEqualTo(orderSessionId);
         });
+  }
+
+  @Test
+  void shouldAllowPendingSessionSuccessMarkerReplayWithinTotpWindow() throws Exception {
+    Member member = saveLinkedMember(
+        "M-ORD-002ABR",
+        "otp-idempotent.user@fixyz.com",
+        "Otp Idempotent User",
+        129L,
+        "12345678901262"
+    );
+
+    AuthSession authSession = login("otp-idempotent.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174396",
+        129L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+    String replayCode = nextTotpWindowCode(member);
+    long windowIndex = clock.instant().getEpochSecond() / 30L;
+
+    stringRedisTemplate.opsForValue().set(
+        "ch:otp-success:" + orderSessionId + ":" + windowIndex,
+        replayCode,
+        Duration.ofSeconds(60)
+    );
+    stringRedisTemplate.opsForValue().set(
+        "ch:totp-used:" + member.getId() + ":" + windowIndex + ":" + replayCode,
+        "1",
+        Duration.ofSeconds(60)
+    );
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", replayCode
+            ))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.orderSessionId").value(orderSessionId))
+        .andExpect(jsonPath("$.data.status").value("AUTHED"))
+        .andExpect(jsonPath("$.data.challengeRequired").value(true))
+        .andExpect(jsonPath("$.data.authorizationReason").value("ELEVATED_ORDER_RISK"));
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED));
+    assertThat(stringRedisTemplate.opsForValue().get("ch:otp-attempts:" + orderSessionId)).isEqualTo("3");
+  }
+
+  @Test
+  void shouldReturnOrd009ForAlreadyAuthorizedSessionEvenWhenSuccessMarkerExists() throws Exception {
+    Member member = saveLinkedMember(
+        "M-ORD-002ABS",
+        "otp-authed.user@fixyz.com",
+        "Otp Authed User",
+        130L,
+        "12345678901263"
+    );
+
+    AuthSession authSession = login("otp-authed.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174397",
+        130L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        1,
+        10000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+    String replayCode = totpService.currentCode(member);
+    long windowIndex = clock.instant().getEpochSecond() / 30L;
+
+    assertThat(created.path("data").path("status").asText()).isEqualTo("AUTHED");
+
+    stringRedisTemplate.opsForValue().set(
+        "ch:otp-success:" + orderSessionId + ":" + windowIndex,
+        replayCode,
+        Duration.ofSeconds(60)
+    );
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", replayCode
+            ))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORD-009"));
+  }
+
+  @Test
+  void shouldRejectVerifyWhenPendingSessionDoesNotRequireChallenge() throws Exception {
+    Member member = saveLinkedMember("M-ORD-002ABX", "otp-guard.user@fixyz.com", "Otp Guard User", 125L, "12345678901258");
+
+    AuthSession authSession = login("otp-guard.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174391",
+        125L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+    orderSessionRepository.findByOrderSessionId(orderSessionId).ifPresent(session -> {
+      ReflectionTestUtils.setField(session, "challengeRequired", false);
+      orderSessionRepository.saveAndFlush(session);
+    });
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", totpService.currentCode(member)
+            ))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORD-009"));
   }
 
   @Test
@@ -297,6 +442,203 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
         .andExpect(jsonPath("$.code").value("CHANNEL-002"))
         .andExpect(jsonPath("$.message").value("otp code mismatch"))
         .andExpect(jsonPath("$.remainingAttempts").value(2));
+  }
+
+  @Test
+  void shouldThrottleRapidDuplicateVerifyWithoutConsumingAttempts() throws Exception {
+    Member member = saveLinkedMember(
+        "M-ORD-002ACY",
+        "otp-throttle.user@fixyz.com",
+        "Otp Throttle User",
+        126L,
+        "12345678901259"
+    );
+
+    AuthSession authSession = login("otp-throttle.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174392",
+        126L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", "000000"
+            ))))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("CHANNEL-002"))
+        .andExpect(jsonPath("$.remainingAttempts").value(2));
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", "000000"
+            ))))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("RATE_001"));
+
+    assertThat(stringRedisTemplate.opsForValue().get("ch:otp-attempts:" + orderSessionId)).isEqualTo("2");
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_OTP_RATE_LIMITED");
+          assertThat(log.getTargetId()).isEqualTo(orderSessionId);
+        });
+    assertThat(securityEventRepository.findAll())
+        .anySatisfy(event -> {
+          assertThat(event.getMemberId()).isEqualTo(member.getId());
+          assertThat(event.getEventType()).isEqualTo("ORDER_SESSION_OTP_RATE_LIMITED");
+          assertThat(event.getSeverity()).isEqualTo("MEDIUM");
+        });
+  }
+
+  @Test
+  void shouldRejectSameWindowTotpReplayAcrossPendingOrderSessions() throws Exception {
+    Member member = saveLinkedMember("M-ORD-002ACZ", "otp-replay.user@fixyz.com", "Otp Replay User", 127L, "12345678901260");
+
+    AuthSession authSession = login("otp-replay.user@fixyz.com", "Abcd1234!");
+    JsonNode firstSession = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174393",
+        127L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    JsonNode secondSession = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174394",
+        127L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String replayCode = nextTotpWindowCode(member);
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify",
+                firstSession.path("data").path("orderSessionId").asText())
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", replayCode
+            ))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("AUTHED"));
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify",
+                secondSession.path("data").path("orderSessionId").asText())
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", replayCode
+            ))))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-011"));
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_OTP_REPLAYED");
+          assertThat(log.getTargetId()).isEqualTo(secondSession.path("data").path("orderSessionId").asText());
+        });
+    assertThat(securityEventRepository.findAll())
+        .anySatisfy(event -> {
+          assertThat(event.getMemberId()).isEqualTo(member.getId());
+          assertThat(event.getEventType()).isEqualTo("ORDER_SESSION_OTP_REPLAYED");
+          assertThat(event.getSeverity()).isEqualTo("HIGH");
+        });
+  }
+
+  @Test
+  void shouldFailSessionAfterThirdOtpMismatchAndRejectFurtherVerifyOrExecute() throws Exception {
+    saveLinkedMember("M-ORD-002ADA", "otp-exhaust.user@fixyz.com", "Otp Exhaust User", 128L, "12345678901261");
+
+    AuthSession authSession = login("otp-exhaust.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174395",
+        128L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", "000000"
+            ))))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("CHANNEL-002"))
+        .andExpect(jsonPath("$.remainingAttempts").value(2));
+    stringRedisTemplate.delete("ch:otp-attempt-ts:" + orderSessionId);
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", "000000"
+            ))))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("CHANNEL-002"))
+        .andExpect(jsonPath("$.remainingAttempts").value(1));
+    stringRedisTemplate.delete("ch:otp-attempt-ts:" + orderSessionId);
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", "000000"
+            ))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.code").value("CHANNEL-003"));
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.FAILED);
+          assertThat(session.getFailureReason()).isEqualTo("OTP_EXCEEDED");
+        });
+
+    stringRedisTemplate.delete("ch:otp-attempt-ts:" + orderSessionId);
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/otp/verify", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "otpCode", "000000"
+            ))))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORD-009"));
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORD-009"));
   }
 
   @Test
@@ -866,6 +1208,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     Cookie sessionCookie = result.getResponse().getCookie("SESSION");
     assertThat(sessionCookie).isNotNull();
     assertThat(sessionCookie.getValue()).isNotBlank();
+    clock.setInstant(Instant.now());
 
     String csrfToken = fetchCsrfToken(sessionCookie.getValue());
 
@@ -903,6 +1246,15 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     return new Cookie("SESSION", authSession.sessionId());
   }
 
+  private String nextTotpWindowCode(Member member) {
+    String currentCode = totpService.currentCode(member);
+    long secondsToNextWindow = 30L - (clock.instant().getEpochSecond() % 30L);
+    clock.advance(Duration.ofSeconds(secondsToNextWindow));
+    String nextCode = totpService.currentCode(member);
+    assertThat(nextCode).isNotEqualTo(currentCode);
+    return nextCode;
+  }
+
   private record AuthSession(String sessionId, String csrfToken) {
   }
 
@@ -929,6 +1281,44 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     @Primary
     StubAccountPositionService stubAccountPositionService() {
       return new StubAccountPositionService();
+    }
+
+    @Bean
+    @Primary
+    MutableClock testClock() {
+      return new MutableClock(Instant.now());
+    }
+  }
+
+  static class MutableClock extends Clock {
+
+    private Instant currentInstant;
+
+    MutableClock(Instant currentInstant) {
+      this.currentInstant = currentInstant;
+    }
+
+    @Override
+    public ZoneOffset getZone() {
+      return ZoneOffset.UTC;
+    }
+
+    @Override
+    public Clock withZone(java.time.ZoneId zone) {
+      return this;
+    }
+
+    @Override
+    public Instant instant() {
+      return currentInstant;
+    }
+
+    void setInstant(Instant currentInstant) {
+      this.currentInstant = currentInstant;
+    }
+
+    void advance(Duration duration) {
+      currentInstant = currentInstant.plus(duration);
     }
   }
 

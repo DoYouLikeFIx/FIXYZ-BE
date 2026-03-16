@@ -27,8 +27,7 @@ public class TotpReplayGuardService {
   }
 
   public void claim(Long memberId, long windowIndex, String otpCode) {
-    String normalizedOtp = otpCode == null ? "" : otpCode.trim();
-    String key = KEY_PREFIX + memberId + ":" + windowIndex + ":" + normalizedOtp;
+    String key = key(memberId, windowIndex, otpCode);
     Duration ttl = ttlFor(windowIndex);
 
     StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
@@ -49,11 +48,28 @@ public class TotpReplayGuardService {
     }
   }
 
+  public void releaseClaim(Long memberId, long windowIndex, String otpCode) {
+    String key = key(memberId, windowIndex, otpCode);
+
+    StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
+    if (redisTemplate != null) {
+      redisTemplate.delete(key);
+      return;
+    }
+
+    localClaims.remove(key);
+  }
+
   private Duration ttlFor(long windowIndex) {
     long windowEndEpochSecond = (windowIndex + 1L) * PERIOD_SECONDS;
     long nowEpochSecond = Instant.now(clock).getEpochSecond();
     long remaining = Math.max(1L, windowEndEpochSecond - nowEpochSecond + PERIOD_SECONDS);
     return Duration.ofSeconds(remaining);
+  }
+
+  private String key(Long memberId, long windowIndex, String otpCode) {
+    String normalizedOtp = otpCode == null ? "" : otpCode.trim();
+    return KEY_PREFIX + memberId + ":" + windowIndex + ":" + normalizedOtp;
   }
 
   private BusinessException replayed() {

@@ -14,6 +14,7 @@ import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
 import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.OrderSessionCreateCommand;
+import com.fix.channel.vo.OrderSessionOtpVerifyCommand;
 import com.fix.channel.vo.OrderSessionQueryCommand;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -78,6 +79,9 @@ class OrderSessionServiceTest {
 
   @Autowired
   private StubAccountPositionService accountPositionService;
+
+  @Autowired
+  private TotpService totpService;
 
   private Member ownerMember;
   private Member otherMember;
@@ -507,6 +511,40 @@ class OrderSessionServiceTest {
     assertThat(auditLogRepository.count()).isZero();
   }
 
+  @Test
+  void shouldReleaseReplayClaimWhenAuthorizationPersistenceFails() {
+    ownerMember.enableTotpEnrollment();
+    memberRepository.saveAndFlush(ownerMember);
+    totpService.provisionActiveSecret(ownerMember);
+
+    var firstSession = orderSessionService.createOrderSession(ownerLimitCommand(
+        "123e4567-e89b-42d3-a456-426614174298",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    ));
+    String otpCode = totpService.currentCode(ownerMember);
+
+    orderSessionPersistenceService.failNextAuthorize();
+    assertThatThrownBy(() -> orderSessionService.verifyOtp(
+        OrderSessionOtpVerifyCommand.of(ownerMember.getId(), firstSession.getOrderSessionId(), otpCode)
+    )).isInstanceOf(IllegalStateException.class)
+        .hasMessage("simulated authorize failure");
+
+    var secondSession = orderSessionService.createOrderSession(ownerLimitCommand(
+        "123e4567-e89b-42d3-a456-426614174299",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    ));
+
+    var verified = orderSessionService.verifyOtp(
+        OrderSessionOtpVerifyCommand.of(ownerMember.getId(), secondSession.getOrderSessionId(), otpCode)
+    );
+
+    assertThat(verified.getStatus()).isEqualTo("AUTHED");
+    assertThat(orderSessionRepository.findByOrderSessionId(secondSession.getOrderSessionId()))
+        .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED));
+  }
+
   private Member saveLinkedMember(String memberNo, String email, String name, Long accountId, String accountNumber) {
     Member member = Member.registerUser(memberNo, email, "{noop}", name);
     member.updateLinkedAccount(accountId, accountNumber);
@@ -633,6 +671,7 @@ class OrderSessionServiceTest {
 
     private volatile boolean failNextCreateWithDuplicateAfterInsert;
     private volatile boolean failNextCreateWithDuplicateWithoutInsert;
+    private volatile boolean failNextAuthorize;
     private final TransactionTemplate requiresNewTransactionTemplate;
     private final InMemoryOrderSessionTtlStore orderSessionTtlStore;
 
@@ -674,6 +713,15 @@ class OrderSessionServiceTest {
       return super.createSession(command, challengeRequired, authorizationReason, expiresAt);
     }
 
+    @Override
+    OrderSession markAuthorized(OrderSession session) {
+      if (failNextAuthorize) {
+        failNextAuthorize = false;
+        throw new IllegalStateException("simulated authorize failure");
+      }
+      return super.markAuthorized(session);
+    }
+
     void failNextCreateWithDuplicateAfterInsert() {
       this.failNextCreateWithDuplicateAfterInsert = true;
     }
@@ -682,9 +730,14 @@ class OrderSessionServiceTest {
       this.failNextCreateWithDuplicateWithoutInsert = true;
     }
 
+    void failNextAuthorize() {
+      this.failNextAuthorize = true;
+    }
+
     void reset() {
       failNextCreateWithDuplicateAfterInsert = false;
       failNextCreateWithDuplicateWithoutInsert = false;
+      failNextAuthorize = false;
     }
   }
 

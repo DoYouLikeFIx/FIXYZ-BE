@@ -35,7 +35,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,circuitbreakers
   endpoint:
     health:
       probes:
@@ -59,3 +59,9 @@ resilience4j:
 
 recovery:
   max-retry-count: ${RECOVERY_MAX_RETRY_COUNT:5}
+
+corebank:
+  provisioning:
+    # Safe default for shared or misconfigured environments. Local/openapi
+    # profiles and explicit env overrides can opt into funded demo balances.
+    default-cash-balance: ${COREBANK_PROVISIONING_DEFAULT_CASH_BALANCE:0.0000}
