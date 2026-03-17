@@ -1,6 +1,9 @@
 package com.fix.channel.entity;
 
+import java.time.Instant;
+
 import com.fix.common.entity.BaseTimeEntity;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -28,18 +31,22 @@ public class Notification extends BaseTimeEntity {
   @Column(name = "delivered", nullable = false)
   private boolean delivered;
 
+  @Column(name = "read_at")
+  private Instant readAt;
+
   protected Notification() {
   }
 
-  private Notification(Long memberId, String channel, String message, boolean delivered) {
+  private Notification(Long memberId, String channel, String message, boolean delivered, Instant readAt) {
     this.memberId = memberId;
     this.channel = channel;
     this.message = message;
     this.delivered = delivered;
+    this.readAt = readAt;
   }
 
   public static Notification pending(Long memberId, String channel, String message) {
-    return new Notification(memberId, channel, message, false);
+    return new Notification(memberId, channel, message, false, null);
   }
 
   public Long getId() {
@@ -62,7 +69,21 @@ public class Notification extends BaseTimeEntity {
     return delivered;
   }
 
+  public Instant getReadAt() {
+    return readAt;
+  }
+
+  public boolean isRead() {
+    return readAt != null;
+  }
+
   public void markDelivered() {
     this.delivered = true;
+  }
+
+  public void markRead(Instant readAt) {
+    if (this.readAt == null) {
+      this.readAt = readAt;
+    }
   }
 }

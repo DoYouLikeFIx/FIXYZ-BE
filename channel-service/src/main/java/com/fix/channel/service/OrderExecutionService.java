@@ -1,5 +1,7 @@
 package com.fix.channel.service;
 
+import org.springframework.stereotype.Service;
+
 import com.fix.channel.client.CorebankClient;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
@@ -9,16 +11,18 @@ import com.fix.channel.vo.OrderSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CorrelationIdSupport;
+
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 public class OrderExecutionService {
 
+  private static final String NOTIFICATION_CHANNEL_ORDER = "ORDER";
   private final CorebankClient corebankClient;
   private final OrderSessionService orderSessionService;
   private final OrderSessionExecutionLockService orderSessionExecutionLockService;
+  private final ChannelScaffoldService channelScaffoldService;
   private static final String EXTERNAL_SYNC_CONFIRMED = "CONFIRMED";
 
   public OrderSessionResult execute(Long memberId, String orderSessionId) {
@@ -64,6 +68,7 @@ public class OrderExecutionService {
             result.getExternalSyncStatus(),
             result.getExecutedAt()
         );
+        persistTerminalNotification(escalatedSession, "ESCALATED");
         return orderSessionService.toResult(escalatedSession, false, result.isIdempotent());
       }
 
@@ -77,6 +82,7 @@ public class OrderExecutionService {
           result.getExternalSyncStatus(),
           result.getExecutedAt()
       );
+      persistTerminalNotification(completedSession, "COMPLETED");
       return orderSessionService.toResult(completedSession, false, result.isIdempotent());
     } finally {
       orderSessionExecutionLockService.release(orderSessionId);
@@ -95,6 +101,9 @@ public class OrderExecutionService {
   }
 
   private String executionFailureReason(RuntimeException exception) {
+    if (exception == null) {
+      return "EXECUTION_FAILED";
+    }
     if (exception instanceof BusinessException businessException) {
       return businessException.getErrorCode().code();
     }
@@ -107,10 +116,17 @@ public class OrderExecutionService {
 
   private void handleExecutionFailure(OrderSession session, RuntimeException exception) {
     if (requiresEscalation(exception)) {
-      orderSessionService.markEscalated(session, OrderSession.ESCALATED_MANUAL_REVIEW);
+      OrderSession escalatedSession = orderSessionService.markEscalated(session, OrderSession.ESCALATED_MANUAL_REVIEW);
+      persistTerminalNotification(escalatedSession, "ESCALATED");
       return;
     }
-    orderSessionService.markFailed(session, executionFailureReason(exception));
+    OrderSession failedSession = orderSessionService.markFailed(session, executionFailureReason(exception));
+    persistTerminalNotification(failedSession, "FAILED");
+  }
+
+  private void persistTerminalNotification(OrderSession session, String terminalStatus) {
+    String message = "orderSessionId=" + session.getOrderSessionId() + " status=" + terminalStatus;
+    channelScaffoldService.bootstrapNotification(session.getMemberId(), NOTIFICATION_CHANNEL_ORDER, message);
   }
 
   private boolean requiresEscalation(OrderExecuteResult result) {
