@@ -513,6 +513,38 @@
         }
       }
     },
+    "/api/v1/notifications/{notificationId}/read": {
+      "patch": {
+        "tags": [
+          "notification-controller"
+        ],
+        "operationId": "markRead",
+        "parameters": [
+          {
+            "name": "notificationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseNotificationItemResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/members/me": {
       "get": {
         "tags": [
@@ -680,12 +712,12 @@
         }
       }
     },
-    "/api/v1/notifications/stream": {
+    "/api/v1/notifications": {
       "get": {
         "tags": [
           "notification-controller"
         ],
-        "operationId": "stream",
+        "operationId": "list",
         "parameters": [
           {
             "name": "request",
@@ -703,6 +735,26 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseNotificationStreamResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/stream": {
+      "get": {
+        "tags": [
+          "notification-controller"
+        ],
+        "operationId": "stream",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1685,6 +1737,49 @@
           }
         }
       },
+      "ApiResponseNotificationItemResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/NotificationItemResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NotificationItemResponse": {
+        "type": "object",
+        "properties": {
+          "notificationId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "delivered": {
+            "type": "boolean"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "readAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "MemberProfileUpdateRequest": {
         "required": [
           "name"
@@ -1849,15 +1944,8 @@
         }
       },
       "NotificationStreamRequest": {
-        "required": [
-          "memberId"
-        ],
         "type": "object",
         "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
           "limit": {
             "maximum": 100,
             "minimum": 1,
@@ -1885,24 +1973,6 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
-          }
-        }
-      },
-      "NotificationItemResponse": {
-        "type": "object",
-        "properties": {
-          "notificationId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "channel": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "delivered": {
-            "type": "boolean"
           }
         }
       },

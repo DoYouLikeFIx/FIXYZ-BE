@@ -29,8 +29,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 
+import java.util.Map;
 import jakarta.servlet.http.Cookie;
 
 @SpringBootTest
@@ -58,6 +60,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   @Autowired
   private StringRedisTemplate stringRedisTemplate;
 
+  @Autowired
+  private TotpService totpService;
+
   @BeforeEach
   void setUp() {
     memberRepository.deleteAll();
@@ -80,11 +85,35 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(jsonPath("$.data.email").value("it.user@fixyz.com"));
 
     Member saved = memberRepository.findByEmail("it.user@fixyz.com").orElseThrow();
+    saved.enableTotpEnrollment();
+    memberRepository.saveAndFlush(saved);
+    totpService.provisionActiveSecret(saved);
+
+    PreAuthSession preAuthSession = bootstrapPreAuthSession();
 
     MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
-            .with(csrf())
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
             .param("email", "it.user@fixyz.com")
             .param("password", "Abcd1234!"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nextAction").value("VERIFY_TOTP"))
+        .andReturn();
+
+    String loginToken = objectMapper.readTree(loginResult.getResponse().getContentAsString())
+        .path("data")
+        .path("loginToken")
+        .asText();
+
+    MvcResult verifyResult = mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(Map.of(
+                "loginToken", loginToken,
+                "otpCode", totpService.currentCode(saved)
+            ))))
         .andExpect(status().isOk())
         .andExpect(header().string("Set-Cookie", containsString("SESSION")))
         .andExpect(header().string("Set-Cookie", containsString("HttpOnly")))
@@ -93,7 +122,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(jsonPath("$.data.memberId").value(saved.getId()))
         .andReturn();
 
-    String loginSessionId = extractSessionId(loginResult);
+    String loginSessionId = extractSessionId(verifyResult);
 
     Session persisted = sessionRepository.findById(loginSessionId);
     assertThat(persisted).isNotNull();
@@ -128,14 +157,14 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(content().string(containsString("event:heartbeat")));
   }
 
-        @Test
-        void shouldReturnUnauthorizedEnvelopeWhenSessionCookieMissingOnNotificationsStream() throws Exception {
-          mockMvc.perform(get("/api/v1/notifications/stream"))
-          .andExpect(status().isUnauthorized())
-          .andExpect(jsonPath("$.code").value("AUTH-003"))
-          .andExpect(jsonPath("$.message").value("authentication required"))
-          .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
-        }
+  @Test
+  void shouldReturnUnauthorizedEnvelopeWhenSessionCookieMissingOnNotificationsStream() throws Exception {
+    mockMvc.perform(get("/api/v1/notifications/stream"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
+  }
 
   @Test
   void shouldLogoutAndExpireSessionCookieImmediately() throws Exception {
@@ -469,6 +498,19 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     return sessionId;
   }
 
+  private PreAuthSession bootstrapPreAuthSession() throws Exception {
+    MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf"))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    Cookie sessionCookie = result.getResponse().getCookie("SESSION");
+    assertThat(sessionCookie).isNotNull();
+    JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
+    String csrfToken = root.path("data").path("token").asText();
+    assertThat(csrfToken).isNotBlank();
+    return new PreAuthSession(sessionCookie.getValue(), csrfToken);
+  }
+
   private String fetchCsrfToken(String sessionId) throws Exception {
     MvcResult result = mockMvc.perform(get("/api/v1/auth/csrf")
             .cookie(new Cookie("SESSION", sessionId)))
@@ -484,5 +526,11 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   @SuppressWarnings({"rawtypes", "unchecked"})
   private void saveSession(Session session) {
     ((SessionRepository) sessionRepository).save(session);
+  }
+
+  private record PreAuthSession(String sessionId, String csrfToken) {
+    private Cookie sessionCookie() {
+      return new Cookie("SESSION", sessionId);
+    }
   }
 }
