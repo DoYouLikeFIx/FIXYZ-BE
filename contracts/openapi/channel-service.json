@@ -754,7 +754,7 @@
             "content": {
               "text/event-stream": {
                 "schema": {
-                  "type": "string"
+                  "$ref": "#/components/schemas/SseEmitter"
                 }
               }
             }
@@ -1984,6 +1984,15 @@
             "items": {
               "$ref": "#/components/schemas/NotificationItemResponse"
             }
+          }
+        }
+      },
+      "SseEmitter": {
+        "type": "object",
+        "properties": {
+          "timeout": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
