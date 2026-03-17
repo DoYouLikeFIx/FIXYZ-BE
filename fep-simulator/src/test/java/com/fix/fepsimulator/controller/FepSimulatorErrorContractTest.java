@@ -1,21 +1,24 @@
 package com.fix.fepsimulator.controller;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fix.fepsimulator.filter.CorrelationIdFilter;
-import com.fix.fepsimulator.support.FepSimulatorStandaloneMvcSupport;
 import java.io.InputStream;
 import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.test.web.servlet.MockMvc;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.fepsimulator.filter.CorrelationIdFilter;
+import com.fix.fepsimulator.repository.SimulatorRuleRepository;
+import com.fix.fepsimulator.service.FepSimulatorControlService;
+import com.fix.fepsimulator.support.FepSimulatorStandaloneMvcSupport;
 
 @ExtendWith(MockitoExtension.class)
 class FepSimulatorErrorContractTest {
@@ -28,7 +31,7 @@ class FepSimulatorErrorContractTest {
   void setUp() {
     mockMvc = FepSimulatorStandaloneMvcSupport.build(
         List.of(new CorrelationIdFilter()),
-        new FepSimulatorController()
+      new FepSimulatorController(new FepSimulatorControlService((SimulatorRuleRepository) null))
     );
   }
 

@@ -26,6 +26,7 @@ public record OrderSessionResult(
     BigDecimal leavesQty,
     BigDecimal executedPrice,
     String externalOrderId,
+    String externalSyncStatus,
     String failureReason,
     Instant executedAt,
     Instant canceledAt,
@@ -57,6 +58,7 @@ public record OrderSessionResult(
       BigDecimal leavesQty,
       BigDecimal executedPrice,
       String externalOrderId,
+      String externalSyncStatus,
       String failureReason,
       Instant executedAt,
       Instant canceledAt,
@@ -87,6 +89,7 @@ public record OrderSessionResult(
         leavesQty,
         executedPrice,
         externalOrderId,
+        externalSyncStatus,
         failureReason,
         executedAt,
         canceledAt,
@@ -182,6 +185,10 @@ public record OrderSessionResult(
 
   public String getExternalOrderId() {
     return externalOrderId;
+  }
+
+  public String getExternalSyncStatus() {
+    return externalSyncStatus;
   }
 
   public String getFailureReason() {

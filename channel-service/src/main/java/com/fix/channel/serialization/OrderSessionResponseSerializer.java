@@ -45,6 +45,7 @@ public class OrderSessionResponseSerializer extends StdSerializer<OrderSessionRe
     writeNullableField(generator, "leavesQty", value.leavesQty());
     writeNullableField(generator, "executedPrice", value.executedPrice());
     writeNullableField(generator, "externalOrderId", value.externalOrderId());
+    writeNullableField(generator, "externalSyncStatus", value.externalSyncStatus());
     writeNullableField(generator, "failureReason", value.failureReason());
     writeNullableField(generator, "executedAt", value.executedAt());
     writeNullableField(generator, "canceledAt", value.canceledAt());

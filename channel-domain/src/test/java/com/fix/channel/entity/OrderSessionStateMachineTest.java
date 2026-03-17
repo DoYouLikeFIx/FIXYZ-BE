@@ -135,6 +135,7 @@ class OrderSessionStateMachineTest {
         BigDecimal.ZERO,
         BigDecimal.valueOf(72000),
         "FEP-0001",
+        "CONFIRMED",
         Instant.parse("2026-03-12T00:02:00Z")
     );
 
@@ -145,7 +146,7 @@ class OrderSessionStateMachineTest {
   }
 
   @Test
-  void shouldEscalateExecutingSessionAndClearExecutionOutcome() {
+  void shouldEscalateExecutingSessionAndPreserveExecutionOutcomeWhenSnapshotExists() {
     OrderSession session = OrderSession.initiated(
         1L,
         101L,
@@ -162,15 +163,25 @@ class OrderSessionStateMachineTest {
     );
 
     session.startExecuting();
-    session.escalate(OrderSession.ESCALATED_MANUAL_REVIEW);
+    session.escalate(
+        OrderSession.ESCALATED_MANUAL_REVIEW,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "FEP-0002",
+        "FAILED",
+        Instant.parse("2026-03-12T00:06:30Z")
+    );
 
     assertEquals(OrderSessionStatus.ESCALATED, session.getStatus());
     assertEquals(OrderSession.ESCALATED_MANUAL_REVIEW, session.getFailureReason());
-    assertNull(session.getExecutionResult());
-    assertNull(session.getExecutedQty());
-    assertNull(session.getLeavesQty());
-    assertNull(session.getExecutedPrice());
-    assertNull(session.getExternalOrderId());
-    assertNull(session.getExecutedAt());
+    assertEquals("FILLED", session.getExecutionResult());
+    assertEquals(BigDecimal.TEN, session.getExecutedQty());
+    assertEquals(BigDecimal.ZERO, session.getLeavesQty());
+    assertEquals(BigDecimal.valueOf(72000), session.getExecutedPrice());
+    assertEquals("FEP-0002", session.getExternalOrderId());
+    assertEquals("FAILED", session.getExternalSyncStatus());
+    assertEquals(Instant.parse("2026-03-12T00:06:30Z"), session.getExecutedAt());
   }
 }

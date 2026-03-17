@@ -1,18 +1,21 @@
 package com.fix.fepsimulator.filter;
 
+import java.util.List;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fix.common.web.CommonHeaders;
 import com.fix.fepsimulator.controller.FepSimulatorController;
+import com.fix.fepsimulator.repository.SimulatorRuleRepository;
+import com.fix.fepsimulator.service.FepSimulatorControlService;
 import com.fix.fepsimulator.support.FepSimulatorStandaloneMvcSupport;
-import java.util.List;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.web.servlet.MockMvc;
 
 @ExtendWith(MockitoExtension.class)
 class CorrelationIdFilterTest {
@@ -23,7 +26,7 @@ class CorrelationIdFilterTest {
   void setUp() {
     mockMvc = FepSimulatorStandaloneMvcSupport.build(
         List.of(new CorrelationIdFilter()),
-        new FepSimulatorController()
+      new FepSimulatorController(new FepSimulatorControlService((SimulatorRuleRepository) null))
     );
   }
 

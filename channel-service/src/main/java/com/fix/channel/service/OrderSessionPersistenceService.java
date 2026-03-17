@@ -147,9 +147,18 @@ public class OrderSessionPersistenceService {
       BigDecimal leavesQty,
       BigDecimal executedPrice,
       String externalOrderId,
+      String externalSyncStatus,
       Instant executedAt
   ) {
-    session.complete(executionResult, executedQty, leavesQty, executedPrice, externalOrderId, executedAt);
+    session.complete(
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
     orderSessionRepository.flush();
     auditLogRepository.save(AuditLog.of(
         session.getMemberId(),
@@ -171,6 +180,41 @@ public class OrderSessionPersistenceService {
         ORDER_SESSION_TARGET_TYPE,
         session.getOrderSessionId(),
         "clOrdId=" + session.getClOrdId() + ", reason=" + failureReason
+    ));
+    return session;
+  }
+
+  @Transactional
+  OrderSession markEscalated(
+      OrderSession session,
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
+    session.escalate(
+        failureReason,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
+    orderSessionRepository.flush();
+    auditLogRepository.save(AuditLog.of(
+        session.getMemberId(),
+        AuditAction.ORDER_SESSION_ESCALATED,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        "clOrdId=" + session.getClOrdId()
+            + ", reason=" + failureReason
+            + ", externalSyncStatus=" + externalSyncStatus
     ));
     return session;
   }

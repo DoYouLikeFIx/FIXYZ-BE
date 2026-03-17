@@ -59,7 +59,14 @@ public class OrderExecutionService {
       if (requiresEscalation(result)) {
         OrderSession escalatedSession = orderSessionService.markEscalated(
             executingSession,
-            OrderSession.ESCALATED_MANUAL_REVIEW
+            OrderSession.ESCALATED_MANUAL_REVIEW,
+            result.getExecutionResult(),
+            result.getExecutedQty(),
+            result.getLeavesQty(),
+            result.getExecutedPrice(),
+            result.getExternalOrderId(),
+            result.getExternalSyncStatus(),
+            result.getExecutedAt()
         );
         persistTerminalNotification(escalatedSession, "ESCALATED");
         return orderSessionService.toResult(escalatedSession, false);
@@ -72,6 +79,7 @@ public class OrderExecutionService {
           result.getLeavesQty(),
           result.getExecutedPrice(),
           result.getExternalOrderId(),
+          result.getExternalSyncStatus(),
           result.getExecutedAt()
       );
         persistTerminalNotification(completedSession, "COMPLETED");

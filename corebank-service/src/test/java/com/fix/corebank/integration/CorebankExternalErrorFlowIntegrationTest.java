@@ -421,6 +421,73 @@ class CorebankExternalErrorFlowIntegrationTest {
   }
 
   @Test
+  void shouldPreserveCanonicalPendingStatusWhenRequeryReturnsRejected() throws Exception {
+    Order order = Order.accepted(
+        1L,
+        CL_ORD_ID_REQUERY,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000")
+    );
+    order.completeExecution(
+        "PENDING",
+        "FILLED",
+        new BigDecimal("2.0000"),
+        BigDecimal.ZERO.setScale(4),
+        new BigDecimal("70100.0000"),
+        java.time.Instant.parse("2026-03-01T10:00:00Z")
+    );
+    orderRepository.saveAndFlush(order);
+
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID_REQUERY)))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "clOrdId": "%s",
+                    "fepOrderId": "FEP-KRX-%s",
+                    "execType": "REJECTED",
+                    "ordStatus": "REJECTED",
+                    "queryTime": "2026-03-01T10:11:00Z",
+                    "rejectReason": "INSUFFICIENT_FUNDS"
+                  },
+                  "error": null
+                }
+                """.formatted(CL_ORD_ID_REQUERY, CL_ORD_ID_REQUERY))));
+
+    mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+            "/internal/v1/orders/{clOrdId}/requery",
+            CL_ORD_ID_REQUERY
+        )
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-rejected")
+            .param("attemptCount", "2"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-core-requery-rejected"))
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID_REQUERY))
+        .andExpect(jsonPath("$.data.status").value("PENDING"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("ESCALATED"))
+        .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
+        .andExpect(jsonPath("$.data.executedQty").value(2.0))
+        .andExpect(jsonPath("$.data.executedPrice").value(70100.0))
+        .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-" + CL_ORD_ID_REQUERY))
+        .andExpect(jsonPath("$.data.message").value("INSUFFICIENT_FUNDS"))
+        .andExpect(jsonPath("$.data.retriable").value(false))
+        .andExpect(jsonPath("$.data.escalationRequired").value(true));
+
+    Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_REQUERY).orElseThrow();
+    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(persistedOrder.getFepReferenceId()).isEqualTo("FEP-KRX-" + CL_ORD_ID_REQUERY);
+    assertThat(persistedOrder.getFailureReason()).isEqualTo("INSUFFICIENT_FUNDS");
+    assertThat(persistedOrder.getExecutionResult()).isEqualTo("FILLED");
+  }
+
+  @Test
   void shouldPreserveTerminalOrderWhenSeparateTransactionWinsDuringRequery() throws Exception {
     Order order = Order.accepted(
         1L,
