@@ -1,11 +1,11 @@
 package com.fix.channel.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.service.ChannelSessionInvalidationService;
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
-import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
 import jakarta.servlet.http.Cookie;
 import java.util.Arrays;
@@ -53,7 +53,7 @@ public class ChannelSecurityConfig {
         .sessionFixation(sessionFixation -> sessionFixation.changeSessionId()))
         .exceptionHandling(exceptionHandling -> exceptionHandling
             .authenticationEntryPoint((request, response, authException) -> {
-              String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
+              String correlationId = ChannelCorrelationIdSupport.ensureCorrelationId(request);
               String staleReason = resolveStaleSessionReason(
                   request.getCookies(),
                   sessionCookieName,
@@ -81,7 +81,7 @@ public class ChannelSecurityConfig {
                 return;
               }
 
-              String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
+              String correlationId = ChannelCorrelationIdSupport.ensureCorrelationId(request);
               ErrorCode errorCode = ErrorCode.AUTH_ACCESS_DENIED;
 
               response.setStatus(errorCode.httpStatus());
