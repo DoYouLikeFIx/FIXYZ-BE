@@ -1,6 +1,7 @@
 package com.fix.channel.integration;
 
 import java.util.Map;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -132,7 +133,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(header().string("Set-Cookie", containsString("HttpOnly")))
         .andExpect(header().string("Set-Cookie", containsString("SameSite=strict")))
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.memberId").value(saved.getId()))
+        .andExpect(jsonPath("$.data.memberUuid").value(saved.getMemberNo()))
         .andReturn();
 
     String loginSessionId = extractSessionId(verifyResult);
@@ -305,7 +306,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(jsonPath("$.data.email").value("session.user@fixyz.com"))
         .andExpect(jsonPath("$.data.name").value("Session User"))
         .andExpect(jsonPath("$.data.role").value("ROLE_USER"))
-        .andExpect(jsonPath("$.data.totpEnrolled").value(false));
+        .andExpect(jsonPath("$.data.totpEnrolled").value(true));
   }
 
   @Test
@@ -442,9 +443,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
 
     mockMvc.perform(get("/api/v1/auth/session")
             .cookie(new Cookie("SESSION", sessionId)))
-        .andExpect(status().isGone())
-        .andExpect(jsonPath("$.code").value("CHANNEL-001"))
-        .andExpect(jsonPath("$.message").value("channel session expired"));
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-016"))
+        .andExpect(jsonPath("$.message").value("stale session after password change"));
 
     mockMvc.perform(post("/api/v1/auth/login")
             .with(csrf())
@@ -517,6 +518,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     assertThat(loginToken).isNotBlank();
 
     if ("VERIFY_TOTP".equals(nextAction)) {
+      waitForNextTotpWindow();
       MvcResult verifyResult = mockMvc.perform(post("/api/v1/auth/otp/verify")
               .cookie(preAuthSession.sessionCookie())
               .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
@@ -564,6 +566,13 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
 
   private String json(Object payload) throws Exception {
     return objectMapper.writeValueAsString(payload);
+  }
+
+  private void waitForNextTotpWindow() throws InterruptedException {
+    long offset = Instant.now().getEpochSecond() % 30L;
+    if (offset > 0L) {
+      Thread.sleep((30L - offset) * 1000L);
+    }
   }
 
   private String extractSessionId(MvcResult result) {
