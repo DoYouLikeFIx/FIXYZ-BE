@@ -115,6 +115,11 @@ class ChannelFlywayMigrationTest {
             + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'TARGET_ID'",
         Integer.class
     );
+    Integer auditIpAddressLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'IP_ADDRESS'",
+        Integer.class
+    );
     Integer auditUserAgentLength = jdbcTemplate.queryForObject(
         "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
             + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'USER_AGENT'",
@@ -128,6 +133,11 @@ class ChannelFlywayMigrationTest {
     Integer securityStatusColumnCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
             + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'STATUS'",
+        Integer.class
+    );
+    Integer securityIpAddressLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'IP_ADDRESS'",
         Integer.class
     );
     Integer securityAdminMemberIdColumnCount = jdbcTemplate.queryForObject(
@@ -169,9 +179,11 @@ class ChannelFlywayMigrationTest {
     assertThat(auditOrderSessionIdColumnCount).isEqualTo(1);
     assertThat(auditCorrelationUuidColumnCount).isEqualTo(1);
     assertThat(auditTargetIdLength).isEqualTo(100);
+    assertThat(auditIpAddressLength).isEqualTo(45);
     assertThat(auditUserAgentLength).isEqualTo(1000);
     assertThat(securityEventUuidColumnCount).isEqualTo(1);
     assertThat(securityStatusColumnCount).isEqualTo(1);
+    assertThat(securityIpAddressLength).isEqualTo(45);
     assertThat(securityAdminMemberIdColumnCount).isEqualTo(1);
     assertThat(securityOccurredAtColumnCount).isEqualTo(1);
   }

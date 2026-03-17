@@ -2,6 +2,7 @@ package com.fix.channel.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.SecurityEventRepository;
@@ -94,6 +95,36 @@ class AuditSecurityRetentionIntegrationTest {
     assertThat(persisted.getStatus()).isEqualTo("OPEN");
     assertThat(persisted.getOccurredAt()).isNotNull();
     assertThat(persisted.getDetail()).isEqualTo("reason=admin_force_logout");
+  }
+
+  @Test
+  void shouldPopulateBaseAndCanonicalTimestampsOnPersist() {
+    AuditLog savedAuditLog = auditLogRepository.saveAndFlush(AuditLog.ofOrderSession(
+        101L,
+        777L,
+        "ORDER_SESSION_CREATE",
+        "ORDER_SESSION",
+        "123e4567-e89b-42d3-a456-426614174260",
+        "clOrdId=123e4567-e89b-42d3-a456-426614174260",
+        "127.0.0.1",
+        "JUnit",
+        "123e4567-e89b-42d3-a456-426614174299"
+    ));
+    SecurityEvent savedSecurityEvent = securityEventRepository.saveAndFlush(SecurityEvent.of(
+        101L,
+        "ACCOUNT_LOCKED",
+        "127.0.0.1",
+        "JUnit",
+        "HIGH"
+    ).withCorrelationId("123e4567-e89b-42d3-a456-426614174299"));
+
+    assertThat(savedAuditLog.getAuditUuid()).isNotBlank();
+    assertThat(savedAuditLog.getCreatedAt()).isNotNull();
+    assertThat(savedAuditLog.getUpdatedAt()).isNotNull();
+    assertThat(savedSecurityEvent.getSecurityEventUuid()).isNotBlank();
+    assertThat(savedSecurityEvent.getOccurredAt()).isNotNull();
+    assertThat(savedSecurityEvent.getCreatedAt()).isNotNull();
+    assertThat(savedSecurityEvent.getUpdatedAt()).isNotNull();
   }
 
   private void insertAuditLog(String auditUuid, Instant createdAt) {
