@@ -68,8 +68,12 @@ public class OrderExecutionService {
             result.getExternalSyncStatus(),
             result.getExecutedAt()
         );
+<<<<<<< FIX-73-Story-7.2-CH-Notification-Persistence-APIs
         persistTerminalNotification(escalatedSession, "ESCALATED");
         return orderSessionService.toResult(escalatedSession, false);
+=======
+        return orderSessionService.toResult(escalatedSession, false, result.isIdempotent());
+>>>>>>> main
       }
 
       OrderSession completedSession = orderSessionService.completeExecution(
@@ -83,7 +87,7 @@ public class OrderExecutionService {
           result.getExecutedAt()
       );
       persistTerminalNotification(completedSession, "COMPLETED");
-      return orderSessionService.toResult(completedSession, false);
+      return orderSessionService.toResult(completedSession, false, result.isIdempotent());
     } finally {
       orderSessionExecutionLockService.release(orderSessionId);
     }

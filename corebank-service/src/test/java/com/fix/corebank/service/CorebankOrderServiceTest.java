@@ -803,6 +803,86 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldRejectIdempotentReplayWhenAccountDiffers() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            IDEMPOTENT_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("3.0000"),
+            new BigDecimal("70200.0000")
+        ),
+        9002L
+    );
+    existingOrder.completeExecution(
+        "FILLED",
+        "FILLED",
+        new BigDecimal("3.0000"),
+        new BigDecimal("0.0000"),
+        new BigDecimal("70200.0000"),
+        Instant.parse("2026-03-01T10:05:30Z")
+    );
+    existingOrder.updateState("FILLED", Order.EXTERNAL_SYNC_CONFIRMED, "FEP-KRX-" + IDEMPOTENT_CL_ORD_ID, null);
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        2002L,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP));
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectIdempotentReplayWhenPayloadDiffers() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            IDEMPOTENT_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("3.0000"),
+            new BigDecimal("70200.0000")
+        ),
+        9004L
+    );
+    existingOrder.completeExecution(
+        "FILLED",
+        "FILLED",
+        new BigDecimal("3.0000"),
+        new BigDecimal("0.0000"),
+        new BigDecimal("70200.0000"),
+        Instant.parse("2026-03-01T10:05:30Z")
+    );
+    existingOrder.updateState("FILLED", Order.EXTERNAL_SYNC_CONFIRMED, "FEP-KRX-" + IDEMPOTENT_CL_ORD_ID, null);
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("4.0000"),
+        new BigDecimal("70200.0000")
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.ORD_INVALID_REQUEST));
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
   void shouldBindGatewayReferenceIdToLocalClOrdIdOnSubmit() {
     Account account = persistedAccount();
     Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
