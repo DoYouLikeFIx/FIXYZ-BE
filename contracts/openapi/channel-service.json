@@ -1119,6 +1119,10 @@
           "externalOrderId": {
             "type": "string"
           },
+          "externalSyncStatus": {
+            "type": "string",
+            "description": "External synchronization state reported by corebank."
+          },
           "failureReason": {
             "type": "string"
           },
