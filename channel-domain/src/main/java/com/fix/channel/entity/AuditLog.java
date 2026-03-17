@@ -154,8 +154,7 @@ public class AuditLog extends BaseTimeEntity {
   }
 
   @PrePersist
-  protected void onCreate() {
-    super.onCreate();
+  protected void applyAuditDefaultsOnPersist() {
     correlationUuid = normalizeCorrelationId(correlationUuid);
     if (auditUuid == null || auditUuid.isBlank()) {
       auditUuid = UUID.randomUUID().toString();

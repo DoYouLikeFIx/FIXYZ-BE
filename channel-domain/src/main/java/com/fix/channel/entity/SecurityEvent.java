@@ -108,7 +108,7 @@ public class SecurityEvent extends BaseTimeEntity {
   }
 
   @PrePersist
-  protected void onCreate() {
+  protected void applySecurityDefaultsOnPersist() {
     correlationUuid = normalizeCorrelationId(correlationUuid);
     if (securityEventUuid == null || securityEventUuid.isBlank()) {
       securityEventUuid = UUID.randomUUID().toString();
@@ -119,7 +119,6 @@ public class SecurityEvent extends BaseTimeEntity {
     if (occurredAt == null) {
       occurredAt = Instant.now();
     }
-    super.onCreate();
   }
 
   public SecurityEvent withAdminMemberId(Long adminMemberId) {
