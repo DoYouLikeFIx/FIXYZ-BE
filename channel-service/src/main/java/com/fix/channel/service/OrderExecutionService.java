@@ -82,7 +82,7 @@ public class OrderExecutionService {
           result.getExternalSyncStatus(),
           result.getExecutedAt()
       );
-        persistTerminalNotification(completedSession, "COMPLETED");
+      persistTerminalNotification(completedSession, "COMPLETED");
       return orderSessionService.toResult(completedSession, false);
     } finally {
       orderSessionExecutionLockService.release(orderSessionId);
