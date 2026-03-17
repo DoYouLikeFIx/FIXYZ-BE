@@ -239,6 +239,7 @@ public class OrderSessionService {
       BigDecimal leavesQty,
       BigDecimal executedPrice,
       String externalOrderId,
+      String externalSyncStatus,
       Instant executedAt
   ) {
     return orderSessionPersistenceService.markCompleted(
@@ -248,12 +249,37 @@ public class OrderSessionService {
         leavesQty,
         executedPrice,
         externalOrderId,
+        externalSyncStatus,
         executedAt
     );
   }
 
   public OrderSession markEscalated(OrderSession session, String failureReason) {
     return orderSessionPersistenceService.markEscalated(session, failureReason);
+  }
+
+  public OrderSession markEscalated(
+      OrderSession session,
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
+    return orderSessionPersistenceService.markEscalated(
+        session,
+        failureReason,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
   }
 
   public OrderSession markFailed(OrderSession session, String failureReason) {
@@ -317,6 +343,7 @@ public class OrderSessionService {
         session.getLeavesQty(),
         session.getExecutedPrice(),
         session.getExternalOrderId(),
+        session.getExternalSyncStatus(),
         session.getFailureReason(),
         session.getExecutedAt(),
         session.getCanceledAt(),

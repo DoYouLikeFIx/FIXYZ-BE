@@ -178,6 +178,7 @@ class ChannelOpenApiCompatibilityTest {
             "leavesQty",
             "executedPrice",
             "externalOrderId",
+            "externalSyncStatus",
             "failureReason",
             "executedAt",
             "canceledAt",

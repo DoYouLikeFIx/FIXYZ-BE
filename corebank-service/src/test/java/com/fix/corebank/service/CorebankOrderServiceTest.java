@@ -1108,12 +1108,19 @@ class CorebankOrderServiceTest {
         ),
         9002L
     );
-    existingOrder.updateStatus("PENDING");
+    existingOrder.completeExecution(
+        "PENDING",
+        "FILLED",
+        new BigDecimal("2.0000"),
+        BigDecimal.ZERO.setScale(4),
+        new BigDecimal("70100.0000"),
+        Instant.parse("2026-03-01T10:00:00Z")
+    );
 
     when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
     fepClient.setQueryResult(new FepOrderResult(
         REQUERY_CL_ORD_ID,
-        null,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
         null,
         FepOrdStatus.UNKNOWN,
         null,
@@ -1129,9 +1136,13 @@ class CorebankOrderServiceTest {
 
     InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID));
 
-    assertThat(result.getStatus()).isEqualTo("UNKNOWN");
+    assertThat(result.getStatus()).isEqualTo("PENDING");
     assertThat(result.getMessage()).isEqualTo("order not found in exchange");
     assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(result.getExecutionResult()).isEqualTo("FILLED");
+    assertThat(result.getExecutedQty()).isEqualByComparingTo("2.0000");
+    assertThat(result.getExecutedPrice()).isEqualByComparingTo("70100.0000");
+    assertThat(result.getExternalOrderId()).isEqualTo("FEP-KRX-" + REQUERY_CL_ORD_ID);
     assertThat(result.getRetriable()).isTrue();
     assertThat(result.getEscalationRequired()).isFalse();
     assertThat(result.getAttemptCount()).isEqualTo(1);
@@ -1502,12 +1513,19 @@ class CorebankOrderServiceTest {
         ),
         9007L
     );
-    existingOrder.updateStatus("PENDING");
+    existingOrder.completeExecution(
+        "PENDING",
+        "FILLED",
+        new BigDecimal("2.0000"),
+        BigDecimal.ZERO.setScale(4),
+        new BigDecimal("70100.0000"),
+        Instant.parse("2026-03-01T10:00:00Z")
+    );
 
     when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
     fepClient.setQueryResult(new FepOrderResult(
         REQUERY_CL_ORD_ID,
-        null,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
         FepExecType.REJECTED,
         FepOrdStatus.REJECTED,
         null,
@@ -1523,9 +1541,12 @@ class CorebankOrderServiceTest {
 
     InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
 
-    assertThat(result.getStatus()).isEqualTo("REJECTED");
+    assertThat(result.getStatus()).isEqualTo("PENDING");
     assertThat(result.getMessage()).isEqualTo("INSUFFICIENT_FUNDS");
     assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(result.getExecutionResult()).isEqualTo("FILLED");
+    assertThat(result.getExecutedQty()).isEqualByComparingTo("2.0000");
+    assertThat(result.getExternalOrderId()).isEqualTo("FEP-KRX-" + REQUERY_CL_ORD_ID);
     assertThat(result.getRetriable()).isFalse();
     assertThat(result.getEscalationRequired()).isTrue();
     assertThat(existingOrder.getFailureReason()).isEqualTo("INSUFFICIENT_FUNDS");
@@ -1544,12 +1565,19 @@ class CorebankOrderServiceTest {
         ),
         9008L
     );
-    existingOrder.updateStatus("PENDING");
+    existingOrder.completeExecution(
+        "PENDING",
+        "FILLED",
+        new BigDecimal("2.0000"),
+        BigDecimal.ZERO.setScale(4),
+        new BigDecimal("70100.0000"),
+        Instant.parse("2026-03-01T10:00:00Z")
+    );
 
     when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
     fepClient.setQueryResult(new FepOrderResult(
         REQUERY_CL_ORD_ID,
-        null,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
         null,
         FepOrdStatus.MALFORMED,
         null,
@@ -1565,12 +1593,115 @@ class CorebankOrderServiceTest {
 
     InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
 
-    assertThat(result.getStatus()).isEqualTo("MALFORMED");
+    assertThat(result.getStatus()).isEqualTo("PENDING");
     assertThat(result.getMessage()).isEqualTo("PARSE_ERROR:Tag 39 missing or invalid");
     assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+    assertThat(result.getExecutionResult()).isEqualTo("FILLED");
+    assertThat(result.getExecutedQty()).isEqualByComparingTo("2.0000");
+    assertThat(result.getExternalOrderId()).isEqualTo("FEP-KRX-" + REQUERY_CL_ORD_ID);
     assertThat(result.getRetriable()).isTrue();
     assertThat(result.getEscalationRequired()).isFalse();
     assertThat(existingOrder.getFailureReason()).isEqualTo("PARSE_ERROR:Tag 39 missing or invalid");
+  }
+
+  @Test
+  void shouldEscalateCanceledRequeryWhilePreservingCanonicalExecutionState() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9009L
+    );
+    existingOrder.completeExecution(
+        "PENDING",
+        "FILLED",
+        new BigDecimal("2.0000"),
+        BigDecimal.ZERO.setScale(4),
+        new BigDecimal("70100.0000"),
+        Instant.parse("2026-03-01T10:00:00Z")
+    );
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+    fepClient.setQueryResult(new FepOrderResult(
+        REQUERY_CL_ORD_ID,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
+        FepExecType.CANCELED,
+        FepOrdStatus.CANCELED,
+        2L,
+        70100L,
+        0L,
+        Instant.parse("2026-03-01T10:10:00Z"),
+        Instant.parse("2026-03-01T10:11:00Z"),
+        "exchange canceled after canonical posting",
+        null,
+        2L,
+        null
+    ));
+
+    InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
+
+    assertThat(result.getStatus()).isEqualTo("PENDING");
+    assertThat(result.getMessage()).isEqualTo("exchange canceled after canonical posting");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(result.getExecutionResult()).isEqualTo("FILLED");
+    assertThat(result.getExecutedQty()).isEqualByComparingTo("2.0000");
+    assertThat(result.getLeavesQty()).isEqualByComparingTo("0.0000");
+    assertThat(result.getExecutedPrice()).isEqualByComparingTo("70100.0000");
+    assertThat(result.getExternalOrderId()).isEqualTo("FEP-KRX-" + REQUERY_CL_ORD_ID);
+    assertThat(result.getRetriable()).isFalse();
+    assertThat(result.getEscalationRequired()).isTrue();
+  }
+
+  @Test
+  void shouldNotConfirmFilledRequeryWhenTerminalCanonicalStateIsDifferent() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9010L
+    );
+    existingOrder.updateState(
+        "REJECTED",
+        Order.EXTERNAL_SYNC_ESCALATED,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
+        "ORDER_REJECTED"
+    );
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+    fepClient.setQueryResult(new FepOrderResult(
+        REQUERY_CL_ORD_ID,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
+        FepExecType.FILL,
+        FepOrdStatus.FILLED,
+        2L,
+        70100L,
+        0L,
+        Instant.parse("2026-03-01T10:10:00Z"),
+        Instant.parse("2026-03-01T10:11:00Z"),
+        null,
+        null,
+        null,
+        null
+    ));
+
+    InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
+
+    assertThat(result.getStatus()).isEqualTo("REJECTED");
+    assertThat(result.getMessage()).isEqualTo("ORDER_REJECTED");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(result.getRetriable()).isFalse();
+    assertThat(result.getEscalationRequired()).isTrue();
+    assertThat(existingOrder.getFailureReason()).isEqualTo("ORDER_REJECTED");
   }
 
   @Test

@@ -158,6 +158,12 @@ public class OrderSessionTestFixture {
         .orElse(null);
   }
 
+  public String externalSyncStatusOf(String orderSessionId) {
+    return orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .map(OrderSession::getExternalSyncStatus)
+        .orElse(null);
+  }
+
   private void activateTtl(OrderSession session) {
     OrderSessionTtlStore orderSessionTtlStore = orderSessionTtlStoreProvider.getIfAvailable();
     if (orderSessionTtlStore == null) {

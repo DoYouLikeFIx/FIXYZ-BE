@@ -477,6 +477,7 @@ class OrderSessionServiceTest {
         BigDecimal.ZERO,
         BigDecimal.valueOf(72000),
         "FEP-0001",
+        "CONFIRMED",
         Instant.parse("2026-03-12T00:05:30Z")
     );
     orderSessionRepository.saveAndFlush(completed);

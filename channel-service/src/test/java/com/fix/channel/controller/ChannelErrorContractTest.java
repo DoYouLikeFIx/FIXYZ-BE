@@ -210,6 +210,7 @@ class ChannelErrorContractTest {
     assertThat(orderSessionTestFixture.executionResultOf(orderSessionId)).isNull();
     assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isNull();
     assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isNull();
+    assertThat(orderSessionTestFixture.externalSyncStatusOf(orderSessionId)).isNull();
 
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
@@ -272,6 +273,7 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.data.leavesQty").value(0))
         .andExpect(jsonPath("$.data.executedPrice").value(70100))
         .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-90001"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("CONFIRMED"))
         .andExpect(jsonPath("$.data.failureReason").value(org.hamcrest.Matchers.nullValue()))
         .andExpect(jsonPath("$.data.canceledAt").value(org.hamcrest.Matchers.nullValue()))
         .andExpect(jsonPath("$.data.executedAt").value("2026-03-12T00:06:00Z"))
@@ -284,6 +286,7 @@ class ChannelErrorContractTest {
     assertThat(orderSessionTestFixture.leavesQtyOf(orderSessionId)).isEqualByComparingTo("0");
     assertThat(orderSessionTestFixture.executedPriceOf(orderSessionId)).isEqualByComparingTo("70100");
     assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isEqualTo("FEP-KRX-90001");
+    assertThat(orderSessionTestFixture.externalSyncStatusOf(orderSessionId)).isEqualTo("CONFIRMED");
 
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
@@ -340,21 +343,23 @@ class ChannelErrorContractTest {
         .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-escalated"))
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.status").value("ESCALATED"))
-        .andExpect(jsonPath("$.data.executionResult").value(org.hamcrest.Matchers.nullValue()))
-        .andExpect(jsonPath("$.data.executedQty").value(org.hamcrest.Matchers.nullValue()))
-        .andExpect(jsonPath("$.data.leavesQty").value(org.hamcrest.Matchers.nullValue()))
-        .andExpect(jsonPath("$.data.executedPrice").value(org.hamcrest.Matchers.nullValue()))
-        .andExpect(jsonPath("$.data.externalOrderId").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
+        .andExpect(jsonPath("$.data.executedQty").value(2))
+        .andExpect(jsonPath("$.data.leavesQty").value(0))
+        .andExpect(jsonPath("$.data.executedPrice").value(70100))
+        .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-90002"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("FAILED"))
         .andExpect(jsonPath("$.data.failureReason").value("ESCALATED_MANUAL_REVIEW"))
-        .andExpect(jsonPath("$.data.executedAt").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.executedAt").value("2026-03-12T00:06:30Z"))
         .andExpect(jsonPath("$.data.expiresAt").doesNotExist())
         .andExpect(jsonPath("$.data.remainingSeconds").doesNotExist());
 
     assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("ESCALATED");
     assertThat(orderSessionTestFixture.failureReasonOf(orderSessionId)).isEqualTo("ESCALATED_MANUAL_REVIEW");
-    assertThat(orderSessionTestFixture.executionResultOf(orderSessionId)).isNull();
-    assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isNull();
-    assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isNull();
+    assertThat(orderSessionTestFixture.executionResultOf(orderSessionId)).isEqualTo("FILLED");
+    assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isEqualByComparingTo("2");
+    assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isEqualTo("FEP-KRX-90002");
+    assertThat(orderSessionTestFixture.externalSyncStatusOf(orderSessionId)).isEqualTo("FAILED");
   }
 
   @Test
