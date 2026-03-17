@@ -69,7 +69,16 @@ class OrderExecutionServiceTest {
         "CONFIRMED",
         Instant.now()
       ));
-    when(orderSessionService.completeExecution(eq(authedSession), any(), any(), any(), any(), any(), any()))
+    when(orderSessionService.completeExecution(
+        eq(authedSession),
+        any(),
+        any(),
+        any(),
+        any(),
+        any(),
+        any(),
+        any()
+    ))
         .thenReturn(completedSession);
     when(orderSessionService.toResult(completedSession, false)).thenReturn(mockResult());
 
@@ -141,6 +150,7 @@ class OrderExecutionServiceTest {
         BigDecimal.ZERO,
         BigDecimal.valueOf(72000),
         "EXT-1",
+        null,
         null,
         Instant.now(),
         null,
