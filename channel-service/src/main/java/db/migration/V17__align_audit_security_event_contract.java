@@ -73,6 +73,7 @@ public class V17__align_audit_security_event_contract extends BaseJavaMigration 
     backfillSecurityEventUuids(connection);
     backfillSecurityEventStatus(connection);
     backfillSecurityEventOccurredAt(connection);
+    applySecurityEventColumnContracts(connection, statement);
     applySecurityEventNotNullConstraints(connection, statement);
 
     createIndexIfMissing(
@@ -267,10 +268,21 @@ public class V17__align_audit_security_event_contract extends BaseJavaMigration 
     if (databaseName.contains("h2")) {
       statement.execute("ALTER TABLE audit_logs ALTER COLUMN target_id VARCHAR(100)");
       statement.execute("ALTER TABLE audit_logs ALTER COLUMN user_agent VARCHAR(1000)");
+      statement.execute("ALTER TABLE audit_logs ALTER COLUMN ip_address VARCHAR(45)");
       return;
     }
     statement.execute("ALTER TABLE audit_logs MODIFY COLUMN target_id VARCHAR(100)");
     statement.execute("ALTER TABLE audit_logs MODIFY COLUMN user_agent VARCHAR(1000)");
+    statement.execute("ALTER TABLE audit_logs MODIFY COLUMN ip_address VARCHAR(45)");
+  }
+
+  private void applySecurityEventColumnContracts(Connection connection, Statement statement) throws SQLException {
+    String databaseName = connection.getMetaData().getDatabaseProductName().toLowerCase(Locale.ROOT);
+    if (databaseName.contains("h2")) {
+      statement.execute("ALTER TABLE security_events ALTER COLUMN ip_address VARCHAR(45)");
+      return;
+    }
+    statement.execute("ALTER TABLE security_events MODIFY COLUMN ip_address VARCHAR(45)");
   }
 
   private void applyAuditNotNullConstraints(Connection connection, Statement statement) throws SQLException {
