@@ -1,14 +1,15 @@
 package com.fix.fepsimulator.contract;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.TreeSet;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 class FepSimulatorOpenApiCompatibilityTest {
 
@@ -19,12 +20,19 @@ class FepSimulatorOpenApiCompatibilityTest {
     JsonNode contract = objectMapper.readTree(Files.readString(openApiContract()));
 
     JsonNode paths = contract.path("paths");
+    JsonNode putRulePath = paths.path("/fep-internal/rules").path("put");
     JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
-    JsonNode ruleResponse = contract.path("components").path("schemas").path("ApiResponseSimulatorRuleResponse");
-    JsonNode chaosResponse = contract.path("components").path("schemas").path("ApiResponseSimulatorChaosResponse");
+    JsonNode upsertRuleResponse = contract.path("components").path("schemas").path("ApiResponseSimulatorRuleResponse");
+    JsonNode listRuleResponse = contract.path("components").path("schemas").path("ApiResponseSimulatorRuleListResponse");
+    JsonNode clearRuleResponse = contract.path("components").path("schemas").path("ApiResponseSimulatorRuleClearResponse");
 
     assertThat(fieldNames(paths))
-        .contains("/simulator/v1/rules", "/simulator/v1/chaos", "/simulator/v1/rules/{ruleCode}");
+      .contains("/fep-internal/rules");
+
+    assertThat(putRulePath.path("requestBody").path("content").path("application/json")
+      .path("schema").path("$ref").asText())
+      .isEqualTo("#/components/schemas/SimulatorRuleUpsertRequest");
+    assertThat(putRulePath.path("parameters").isArray()).isFalse();
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
         .contains(
@@ -39,9 +47,11 @@ class FepSimulatorOpenApiCompatibilityTest {
         );
     assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();
 
-    assertThat(ruleResponse.path("properties").path("error").path("$ref").asText())
+    assertThat(upsertRuleResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
-    assertThat(chaosResponse.path("properties").path("error").path("$ref").asText())
+    assertThat(listRuleResponse.path("properties").path("error").path("$ref").asText())
+      .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(clearRuleResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
   }
 
