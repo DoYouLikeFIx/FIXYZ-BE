@@ -5,7 +5,6 @@ import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.SecurityEvent;
-import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
@@ -41,6 +40,7 @@ public class OrderSessionService {
   private static final String AUTHORIZATION_REASON_ELEVATED_ORDER_RISK = "ELEVATED_ORDER_RISK";
   private static final String AUTHORIZATION_REASON_TRUSTED_AUTH_SESSION = "TRUSTED_AUTH_SESSION";
   private static final String ORDER_SESSION_TARGET_TYPE = "ORDER_SESSION";
+  private static final AuditAction OTP_FAILURE_AUDIT_ACTION = AuditAction.ORDER_SESSION_OTP_FAILED;
   private static final AuditAction OTP_DEBOUNCE_AUDIT_ACTION = AuditAction.ORDER_SESSION_OTP_RATE_LIMITED;
   private static final String OTP_DEBOUNCE_EVENT_TYPE = OTP_DEBOUNCE_AUDIT_ACTION.value();
   private static final AuditAction OTP_REPLAY_AUDIT_ACTION = AuditAction.ORDER_SESSION_OTP_REPLAYED;
@@ -55,7 +55,8 @@ public class OrderSessionService {
 
   private final OrderSessionRepository orderSessionRepository;
   private final MemberRepository memberRepository;
-  private final AuditLogRepository auditLogRepository;
+  private final AuditLogService auditLogService;
+  private final SecurityEventService securityEventService;
   private final SecurityEventRepository securityEventRepository;
   private final SessionOwnershipValidator sessionOwnershipValidator;
   private final OrderSessionPersistenceService orderSessionPersistenceService;
@@ -167,6 +168,7 @@ public class OrderSessionService {
       throw ex;
     }
     if (orderSessionOtpChallengeService.remainingAttempts(session.getOrderSessionId()) < 1) {
+      recordOtpFailureEvidence(session, "remaining_attempts_exhausted");
       markFailed(session, "OTP_EXCEEDED");
       throw new BusinessException(ErrorCode.CHANNEL_OTP_ATTEMPTS_EXCEEDED, "otp attempts exceeded");
     }
@@ -175,9 +177,11 @@ public class OrderSessionService {
     if (!verification.matched()) {
       int remainingAttempts = orderSessionOtpChallengeService.consumeFailure(session.getOrderSessionId());
       if (remainingAttempts < 1) {
+        recordOtpFailureEvidence(session, "otp_exhausted");
         markFailed(session, "OTP_EXCEEDED");
         throw new BusinessException(ErrorCode.CHANNEL_OTP_ATTEMPTS_EXCEEDED, "otp attempts exceeded");
       }
+      recordOtpFailureEvidence(session, "otp_mismatch");
       throw new BusinessException(
           ErrorCode.CHANNEL_OTP_MISMATCH,
           "otp code mismatch",
@@ -408,43 +412,65 @@ public class OrderSessionService {
         ).stream()
         .anyMatch(event ->
             RECENT_RISK_SECURITY_EVENTS.contains(event.getEventType())
-                && event.getCreatedAt() != null
-                && !event.getCreatedAt().isBefore(threshold)
+                && event.getOccurredAt() != null
+                && !event.getOccurredAt().isBefore(threshold)
         );
   }
 
-  private void recordOtpDebounceEvidence(OrderSession session) {
-    auditLogRepository.save(AuditLog.of(
+  private void recordOtpFailureEvidence(OrderSession session, String reason) {
+    auditLogService.record(AuditLog.ofOrderSession(
         session.getMemberId(),
+        session.getId(),
+        OTP_FAILURE_AUDIT_ACTION,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        "clOrdId=" + session.getClOrdId() + ", reason=" + reason,
+        null,
+        null,
+        null
+    ));
+  }
+
+  private void recordOtpDebounceEvidence(OrderSession session) {
+    auditLogService.record(AuditLog.ofOrderSession(
+        session.getMemberId(),
+        session.getId(),
         OTP_DEBOUNCE_AUDIT_ACTION,
         ORDER_SESSION_TARGET_TYPE,
         session.getOrderSessionId(),
-        "clOrdId=" + session.getClOrdId() + ", reason=debounce"
+        "clOrdId=" + session.getClOrdId() + ", reason=debounce",
+        null,
+        null,
+        null
     ));
-    securityEventRepository.save(SecurityEvent.of(
+    securityEventService.record(SecurityEvent.of(
         session.getMemberId(),
         OTP_DEBOUNCE_EVENT_TYPE,
         null,
         null,
         "MEDIUM"
-    ));
+    ).withOrderSessionId(session.getId()).withDetail("clOrdId=" + session.getClOrdId() + ", reason=debounce"));
   }
 
   private void recordOtpReplayEvidence(OrderSession session) {
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.ofOrderSession(
         session.getMemberId(),
+        session.getId(),
         OTP_REPLAY_AUDIT_ACTION,
         ORDER_SESSION_TARGET_TYPE,
         session.getOrderSessionId(),
-        "clOrdId=" + session.getClOrdId() + ", reason=replay"
+        "clOrdId=" + session.getClOrdId() + ", reason=replay",
+        null,
+        null,
+        null
     ));
-    securityEventRepository.save(SecurityEvent.of(
+    securityEventService.record(SecurityEvent.of(
         session.getMemberId(),
         OTP_REPLAY_EVENT_TYPE,
         null,
         null,
         "HIGH"
-    ));
+    ).withOrderSessionId(session.getId()).withDetail("clOrdId=" + session.getClOrdId() + ", reason=replay"));
   }
 
   private void validatePreTradeEligibility(OrderSessionCreateCommand command) {

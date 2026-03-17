@@ -5,12 +5,12 @@ import org.springframework.stereotype.Service;
 import com.fix.channel.client.CorebankClient;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
 import com.fix.channel.vo.OrderSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
-import com.fix.common.web.CorrelationIdSupport;
 
 import lombok.RequiredArgsConstructor;
 
@@ -46,7 +46,7 @@ public class OrderExecutionService {
       OrderSession executingSession = orderSessionService.beginExecution(session);
       OrderExecuteResult result;
       try {
-        result = corebankClient.executeOrder(toCommand(executingSession), CorrelationIdSupport.currentOrGenerate());
+        result = corebankClient.executeOrder(toCommand(executingSession), ChannelCorrelationIdSupport.currentOrGenerate());
       } catch (RuntimeException ex) {
         try {
           handleExecutionFailure(executingSession, ex);
