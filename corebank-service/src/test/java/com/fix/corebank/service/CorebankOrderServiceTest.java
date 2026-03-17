@@ -1658,6 +1658,53 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldNotConfirmFilledRequeryWhenTerminalCanonicalStateIsDifferent() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9010L
+    );
+    existingOrder.updateState(
+        "REJECTED",
+        Order.EXTERNAL_SYNC_ESCALATED,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
+        "ORDER_REJECTED"
+    );
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+    fepClient.setQueryResult(new FepOrderResult(
+        REQUERY_CL_ORD_ID,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
+        FepExecType.FILL,
+        FepOrdStatus.FILLED,
+        2L,
+        70100L,
+        0L,
+        Instant.parse("2026-03-01T10:10:00Z"),
+        Instant.parse("2026-03-01T10:11:00Z"),
+        null,
+        null,
+        null,
+        null
+    ));
+
+    InternalOrderResult result = corebankOrderService.requeryOrder(InternalOrderRequeryCommand.of(REQUERY_CL_ORD_ID, 2));
+
+    assertThat(result.getStatus()).isEqualTo("REJECTED");
+    assertThat(result.getMessage()).isEqualTo("ORDER_REJECTED");
+    assertThat(result.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
+    assertThat(result.getRetriable()).isFalse();
+    assertThat(result.getEscalationRequired()).isTrue();
+    assertThat(existingOrder.getFailureReason()).isEqualTo("ORDER_REJECTED");
+  }
+
+  @Test
   void shouldEscalateUnknownRequeryWhenAttemptThresholdIsReached() {
     Order existingOrder = persistedOrder(
         Order.accepted(

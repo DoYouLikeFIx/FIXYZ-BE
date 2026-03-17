@@ -270,12 +270,23 @@ public class CorebankOrderService {
       FepOrderResult gatewayStatus = success.gatewayStatus();
       CorebankOrderPersistenceService.OrderSnapshot currentOrder = findCurrentOrder(command.getClOrdId())
           .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "order not found"));
-      String requeryMessage = failureReasonForRequery(gatewayStatus);
+      String targetStatus = statusForRequery(currentOrder.status(), gatewayStatus.ordStatus());
+      String requeryExternalSyncStatus = externalSyncStatusForRequery(
+          targetStatus,
+          gatewayStatus.ordStatus(),
+          command.getAttemptCount()
+      );
+      String requeryMessage = failureReasonForRequery(
+          currentOrder,
+          targetStatus,
+          gatewayStatus,
+          requeryExternalSyncStatus
+      );
       CorebankOrderPersistenceService.OrderStateUpdateResult updateResult =
           orderPersistenceService.updateOrderStateIfSnapshotMatches(
               currentOrder,
-              statusForRequery(currentOrder.status(), gatewayStatus.ordStatus()),
-              externalSyncStatusForRequery(gatewayStatus.ordStatus(), command.getAttemptCount()),
+              targetStatus,
+              requeryExternalSyncStatus,
               resolveFepReferenceId(currentOrder, gatewayStatus.fepOrderId()),
               requeryMessage
           );
@@ -283,13 +294,11 @@ public class CorebankOrderService {
       if (resolvedOrder == null) {
         throw new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "order not found");
       }
-      if (!updateResult.updated()) {
-        return mapSnapshotRequeryResult(resolvedOrder, requeryMessage, gatewayStatus.ordStatus(), command.getAttemptCount());
-      }
-      return mapToRequeryResult(
+      return mapSnapshotRequeryResult(
           resolvedOrder,
           requeryMessage,
-          classifyRequeryOutcome(gatewayStatus.ordStatus(), command.getAttemptCount())
+          gatewayStatus.ordStatus(),
+          command.getAttemptCount()
       );
     }
     StatusQueryFailure failure = (StatusQueryFailure) outcome;
@@ -499,9 +508,11 @@ public class CorebankOrderService {
     );
   }
 
-  private String externalSyncStatusForRequery(FepOrdStatus ordStatus, int attemptCount) {
+  private String externalSyncStatusForRequery(String targetStatus, FepOrdStatus ordStatus, int attemptCount) {
     return switch (ordStatus) {
-      case FILLED -> Order.EXTERNAL_SYNC_CONFIRMED;
+      case FILLED -> FepOrdStatus.FILLED.name().equals(targetStatus)
+          ? Order.EXTERNAL_SYNC_CONFIRMED
+          : Order.EXTERNAL_SYNC_ESCALATED;
       case PARTIALLY_FILLED, CANCELED, REJECTED -> Order.EXTERNAL_SYNC_ESCALATED;
       case UNKNOWN, PENDING, MALFORMED -> externalSyncStatusForRetriableFailure(attemptCount);
     };
@@ -631,6 +642,21 @@ public class CorebankOrderService {
     return gatewayFepOrderId != null && !gatewayFepOrderId.isBlank()
         ? gatewayFepOrderId
         : order.fepReferenceId();
+  }
+
+  private String failureReasonForRequery(
+      CorebankOrderPersistenceService.OrderSnapshot currentOrder,
+      String targetStatus,
+      FepOrderResult result,
+      String externalSyncStatus
+  ) {
+    if (Order.EXTERNAL_SYNC_CONFIRMED.equals(externalSyncStatus)) {
+      return null;
+    }
+    if (result.ordStatus() == FepOrdStatus.FILLED && !FepOrdStatus.FILLED.name().equals(targetStatus)) {
+      return firstNonBlank(currentOrder.failureReason(), result.message());
+    }
+    return failureReasonForRequery(result);
   }
 
   private String failureReasonForRequery(FepOrderResult result) {
