@@ -1125,7 +1125,8 @@
           },
           "idempotent": {
             "type": "boolean",
-            "description": "Whether the execute call replayed an already-posted corebank order."
+            "description": "Whether the execute call replayed an already-posted corebank order.",
+            "nullable": true
           },
           "failureReason": {
             "type": "string"

@@ -31,7 +31,10 @@ public record OrderSessionResponse(
     String externalOrderId,
     @Schema(description = "External synchronization state reported by corebank.")
     String externalSyncStatus,
-    @Schema(description = "Whether the execute call replayed an already-posted corebank order.")
+    @Schema(
+        description = "Whether the execute call replayed an already-posted corebank order.",
+        nullable = true
+    )
     Boolean idempotent,
     String failureReason,
     Instant executedAt,
