@@ -1,5 +1,6 @@
 package com.fix.channel.exception;
 
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -8,7 +9,6 @@ import com.fix.common.error.FixException;
 import com.fix.common.error.RetryAfterBusinessException;
 import com.fix.common.error.SystemException;
 import com.fix.common.web.CommonHeaders;
-import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -101,7 +101,7 @@ public class GlobalExceptionHandler {
       HttpServletRequest request,
       Long retryAfterSeconds
   ) {
-    String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
+    String correlationId = ChannelCorrelationIdSupport.ensureCorrelationId(request);
     ApiErrorResponse response = ApiErrorResponse.from(
         errorCode,
         message,
