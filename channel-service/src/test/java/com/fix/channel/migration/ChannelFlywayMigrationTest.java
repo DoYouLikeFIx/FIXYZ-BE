@@ -7,6 +7,7 @@ import db.migration.V10__add_order_session_expires_at_contract;
 import db.migration.V11__add_order_session_prepare_contract_columns;
 import db.migration.V13__add_order_session_authorization_decision_columns;
 import db.migration.V14__add_order_session_execution_columns;
+import db.migration.V15__add_order_session_external_sync_status_column;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
@@ -83,6 +84,11 @@ class ChannelFlywayMigrationTest {
             + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXECUTED_AT'",
         Integer.class
     );
+    Integer orderSessionExternalSyncStatusColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXTERNAL_SYNC_STATUS'",
+        Integer.class
+    );
     Integer membersTableCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MEMBERS'",
         Integer.class
@@ -108,6 +114,8 @@ class ChannelFlywayMigrationTest {
     assertThat(orderSessionExecutionResultColumnCount).isEqualTo(1);
     assertThat(orderSessionExecutedAtColumnCount).isNotNull();
     assertThat(orderSessionExecutedAtColumnCount).isEqualTo(1);
+    assertThat(orderSessionExternalSyncStatusColumnCount).isNotNull();
+    assertThat(orderSessionExternalSyncStatusColumnCount).isEqualTo(1);
     assertThat(membersTableCount).isNotNull();
     assertThat(membersTableCount).isEqualTo(1);
   }
@@ -412,6 +420,64 @@ class ChannelFlywayMigrationTest {
     assertThat(executionResultColumnCount).isEqualTo(1);
     assertThat(executedQtyColumnCount).isEqualTo(1);
     assertThat(failureReasonColumnCount).isEqualTo(1);
+  }
+
+  @Test
+  void shouldAddExternalSyncStatusColumnAndRemainIdempotent() throws Exception {
+    String jdbcUrl = "jdbc:h2:mem:channel_migration_external_sync_status;MODE=MySQL;DB_CLOSE_DELAY=-1";
+
+    try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+         Statement statement = connection.createStatement()) {
+      statement.execute("""
+          CREATE TABLE order_sessions (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_session_id CHAR(36) NOT NULL,
+            member_id BIGINT NOT NULL,
+            cl_ord_id VARCHAR(64) NOT NULL UNIQUE,
+            order_ref VARCHAR(64) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            account_id BIGINT,
+            symbol VARCHAR(16),
+            side VARCHAR(16),
+            order_type VARCHAR(16),
+            qty DECIMAL(19, 4),
+            price DECIMAL(19, 4),
+            challenge_required BOOLEAN NOT NULL,
+            authorization_reason VARCHAR(64) NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            execution_result VARCHAR(32),
+            executed_qty DECIMAL(19, 4),
+            leaves_qty DECIMAL(19, 4),
+            executed_price DECIMAL(19, 4),
+            external_order_id VARCHAR(64),
+            failure_reason VARCHAR(64),
+            executed_at TIMESTAMP,
+            canceled_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            version BIGINT
+          )
+          """);
+
+      Context context = new TestFlywayContext(connection);
+      V15__add_order_session_external_sync_status_column migration =
+          new V15__add_order_session_external_sync_status_column();
+
+      migration.migrate(context);
+      migration.migrate(context);
+    }
+
+    JdbcTemplate externalSyncStatusJdbcTemplate = new JdbcTemplate(
+        new org.springframework.jdbc.datasource.DriverManagerDataSource(jdbcUrl, "sa", "")
+    );
+
+    Integer externalSyncStatusColumnCount = externalSyncStatusJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXTERNAL_SYNC_STATUS'",
+        Integer.class
+    );
+
+    assertThat(externalSyncStatusColumnCount).isEqualTo(1);
   }
 
   private record TestFlywayContext(Connection connection) implements Context {

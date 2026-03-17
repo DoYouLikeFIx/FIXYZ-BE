@@ -3,6 +3,7 @@ package com.fix.channel.dto.response;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fix.channel.serialization.OrderSessionResponseSerializer;
 import com.fix.channel.vo.OrderSessionResult;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -28,6 +29,8 @@ public record OrderSessionResponse(
     BigDecimal leavesQty,
     BigDecimal executedPrice,
     String externalOrderId,
+    @Schema(description = "External synchronization state reported by corebank.")
+    String externalSyncStatus,
     String failureReason,
     Instant executedAt,
     Instant canceledAt,
@@ -59,6 +62,7 @@ public record OrderSessionResponse(
         result.getLeavesQty(),
         result.getExecutedPrice(),
         result.getExternalOrderId(),
+        result.getExternalSyncStatus(),
         result.getFailureReason(),
         result.getExecutedAt(),
         result.getCanceledAt(),

@@ -50,6 +50,7 @@ class OrderSessionResponseSerializationTest {
         null,
         null,
         null,
+        null,
         Instant.parse("2026-03-12T00:00:00Z"),
         Instant.parse("2026-03-12T00:14:15Z"),
         false
@@ -95,7 +96,8 @@ class OrderSessionResponseSerializationTest {
         BigDecimal.TEN,
         BigDecimal.ZERO,
         BigDecimal.valueOf(72000),
-        null,
+        "FEP-KRX-90001",
+        "CONFIRMED",
         null,
         Instant.parse("2026-03-12T00:05:30Z"),
         null,
@@ -114,7 +116,8 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.path("leavesQty").decimalValue()).isEqualByComparingTo("0");
     assertThat(data.path("executedPrice").decimalValue()).isEqualByComparingTo("72000");
     assertThat(data.has("externalOrderId")).isTrue();
-    assertThat(data.path("externalOrderId").isNull()).isTrue();
+    assertThat(data.path("externalOrderId").asText()).isEqualTo("FEP-KRX-90001");
+    assertThat(data.path("externalSyncStatus").asText()).isEqualTo("CONFIRMED");
     assertThat(data.path("failureReason").isNull()).isTrue();
     assertThat(data.path("canceledAt").isNull()).isTrue();
   }
@@ -144,6 +147,7 @@ class OrderSessionResponseSerializationTest {
         null,
         null,
         null,
+        null,
         "OTP_EXCEEDED",
         null,
         null,
@@ -161,13 +165,14 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.path("executionResult").isNull()).isTrue();
     assertThat(data.has("externalOrderId")).isTrue();
     assertThat(data.path("externalOrderId").isNull()).isTrue();
+    assertThat(data.path("externalSyncStatus").isNull()).isTrue();
     assertThat(data.path("failureReason").asText()).isEqualTo("OTP_EXCEEDED");
     assertThat(data.path("executedAt").isNull()).isTrue();
     assertThat(data.path("canceledAt").isNull()).isTrue();
   }
 
   @Test
-  void shouldRenderEscalatedTerminalContractWithoutExecutionFields() throws Exception {
+  void shouldRenderEscalatedTerminalContractWithPreservedExecutionFields() throws Exception {
     OrderSessionResponse response = OrderSessionResponse.from(OrderSessionResult.of(
         "sess-esc",
         "cl-esc",
@@ -186,13 +191,14 @@ class OrderSessionResponseSerializationTest {
         null,
         Instant.parse("2026-03-12T01:00:00Z"),
         15L,
-        null,
-        null,
-        null,
-        null,
-        null,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "FEP-KRX-90002",
+        "FAILED",
         "ESCALATED_MANUAL_REVIEW",
-        null,
+        Instant.parse("2026-03-12T00:06:30Z"),
         null,
         Instant.parse("2026-03-12T00:00:00Z"),
         Instant.parse("2026-03-12T00:07:00Z"),
@@ -204,13 +210,14 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.path("status").asText()).isEqualTo("ESCALATED");
     assertThat(data.has("expiresAt")).isFalse();
     assertThat(data.has("remainingSeconds")).isFalse();
-    assertThat(data.path("executionResult").isNull()).isTrue();
-    assertThat(data.path("executedQty").isNull()).isTrue();
-    assertThat(data.path("leavesQty").isNull()).isTrue();
-    assertThat(data.path("executedPrice").isNull()).isTrue();
-    assertThat(data.path("externalOrderId").isNull()).isTrue();
+    assertThat(data.path("executionResult").asText()).isEqualTo("FILLED");
+    assertThat(data.path("executedQty").decimalValue()).isEqualByComparingTo("10");
+    assertThat(data.path("leavesQty").decimalValue()).isEqualByComparingTo("0");
+    assertThat(data.path("executedPrice").decimalValue()).isEqualByComparingTo("72000");
+    assertThat(data.path("externalOrderId").asText()).isEqualTo("FEP-KRX-90002");
+    assertThat(data.path("externalSyncStatus").asText()).isEqualTo("FAILED");
     assertThat(data.path("failureReason").asText()).isEqualTo("ESCALATED_MANUAL_REVIEW");
-    assertThat(data.path("executedAt").isNull()).isTrue();
+    assertThat(data.path("executedAt").asText()).isEqualTo("2026-03-12T00:06:30Z");
     assertThat(data.path("canceledAt").isNull()).isTrue();
   }
 
@@ -241,6 +248,7 @@ class OrderSessionResponseSerializationTest {
         null,
         null,
         null,
+        null,
         Instant.parse("2026-03-12T00:06:00Z"),
         Instant.parse("2026-03-12T00:00:00Z"),
         Instant.parse("2026-03-12T00:06:00Z"),
@@ -256,6 +264,7 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.path("executedQty").decimalValue()).isEqualByComparingTo("3");
     assertThat(data.path("leavesQty").decimalValue()).isEqualByComparingTo("7");
     assertThat(data.path("executedPrice").decimalValue()).isEqualByComparingTo("72000");
+    assertThat(data.path("externalSyncStatus").isNull()).isTrue();
     assertThat(data.path("failureReason").isNull()).isTrue();
     assertThat(data.path("canceledAt").asText()).isEqualTo("2026-03-12T00:06:00Z");
   }

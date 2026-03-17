@@ -85,6 +85,9 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "external_order_id", length = 64)
   private String externalOrderId;
 
+  @Column(name = "external_sync_status", length = 32)
+  private String externalSyncStatus;
+
   @Column(name = "failure_reason", length = 64)
   private String failureReason;
 
@@ -239,6 +242,10 @@ public class OrderSession extends BaseTimeEntity {
     return externalOrderId;
   }
 
+  public String getExternalSyncStatus() {
+    return externalSyncStatus;
+  }
+
   public String getFailureReason() {
     return failureReason;
   }
@@ -303,17 +310,20 @@ public class OrderSession extends BaseTimeEntity {
       BigDecimal leavesQty,
       BigDecimal executedPrice,
       String externalOrderId,
+      String externalSyncStatus,
       Instant executedAt
   ) {
     transitionTo(OrderSessionStatus.COMPLETED, transitionMessage(OrderSessionStatus.COMPLETED));
     this.status = OrderSessionStatus.COMPLETED;
-    this.executionResult = executionResult;
-    this.executedQty = executedQty;
-    this.leavesQty = leavesQty;
-    this.executedPrice = executedPrice;
-    this.externalOrderId = externalOrderId;
-    this.executedAt = executedAt;
-    this.canceledAt = null;
+    applyExecutionOutcome(
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
     this.failureReason = null;
   }
 
@@ -321,6 +331,30 @@ public class OrderSession extends BaseTimeEntity {
     transitionTo(OrderSessionStatus.ESCALATED, transitionMessage(OrderSessionStatus.ESCALATED));
     this.status = OrderSessionStatus.ESCALATED;
     clearExecutionOutcome();
+    this.failureReason = requireFailureReason(failureReason);
+  }
+
+  public void escalate(
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
+    transitionTo(OrderSessionStatus.ESCALATED, transitionMessage(OrderSessionStatus.ESCALATED));
+    this.status = OrderSessionStatus.ESCALATED;
+    applyExecutionOutcome(
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
     this.failureReason = requireFailureReason(failureReason);
   }
 
@@ -350,7 +384,27 @@ public class OrderSession extends BaseTimeEntity {
     this.leavesQty = null;
     this.executedPrice = null;
     this.externalOrderId = null;
+    this.externalSyncStatus = null;
     this.executedAt = null;
+    this.canceledAt = null;
+  }
+
+  private void applyExecutionOutcome(
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
+    this.executionResult = executionResult;
+    this.executedQty = executedQty;
+    this.leavesQty = leavesQty;
+    this.executedPrice = executedPrice;
+    this.externalOrderId = externalOrderId;
+    this.externalSyncStatus = externalSyncStatus;
+    this.executedAt = executedAt;
     this.canceledAt = null;
   }
 
