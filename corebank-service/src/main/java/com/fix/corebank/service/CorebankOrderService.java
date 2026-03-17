@@ -259,7 +259,7 @@ public class CorebankOrderService {
 
   public InternalOrderResult createOrder(InternalOrderCreateCommand command) {
     return orderPersistenceService.findOrder(command.getClOrdId())
-        .map(existing -> mapToOrderResult(existing, true))
+        .map(existing -> resolveIdempotentReplay(existing, command))
         .orElseGet(() -> createFreshOrder(command));
   }
 
@@ -398,7 +398,7 @@ public class CorebankOrderService {
       }
     } catch (DataIntegrityViolationException e) {
       return orderPersistenceService.findOrder(command.getClOrdId())
-          .map(existing -> mapToOrderResult(existing, true))
+          .map(existing -> resolveIdempotentReplay(existing, command))
           .orElseThrow(() -> e);
     }
   }
@@ -434,6 +434,46 @@ public class CorebankOrderService {
         order.fepReferenceId(),
         order.executedAt()
     );
+  }
+
+  private InternalOrderResult resolveIdempotentReplay(
+      CorebankOrderPersistenceService.OrderSnapshot existingOrder,
+      InternalOrderCreateCommand command
+  ) {
+    validateReplayOwnership(existingOrder, command);
+    validateReplayPayload(existingOrder, command);
+    return mapToOrderResult(existingOrder, true);
+  }
+
+  private void validateReplayOwnership(
+      CorebankOrderPersistenceService.OrderSnapshot existingOrder,
+      InternalOrderCreateCommand command
+  ) {
+    if (!existingOrder.accountId().equals(command.getAccountId())) {
+      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
+    }
+  }
+
+  private void validateReplayPayload(
+      CorebankOrderPersistenceService.OrderSnapshot existingOrder,
+      InternalOrderCreateCommand command
+  ) {
+    if (!existingOrder.symbol().equals(command.getSymbol())
+        || !existingOrder.side().equals(normalizeSide(command.getSide()))
+        || compareNumeric(existingOrder.orderQty(), command.getQuantity()) != 0
+        || compareNumeric(existingOrder.orderPrice(), command.getPrice()) != 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "clOrdId replay payload mismatch");
+    }
+  }
+
+  private int compareNumeric(BigDecimal left, BigDecimal right) {
+    if (left == null && right == null) {
+      return 0;
+    }
+    if (left == null || right == null) {
+      return -1;
+    }
+    return left.compareTo(right);
   }
 
   private InternalOrderResult mapToRequeryResult(
@@ -686,6 +726,13 @@ public class CorebankOrderService {
       }
     }
     return null;
+  }
+
+  private String normalizeSide(String side) {
+    if (side == null) {
+      return null;
+    }
+    return side.trim().toUpperCase(java.util.Locale.ROOT);
   }
 
   private String failureReason(BusinessException ex) {

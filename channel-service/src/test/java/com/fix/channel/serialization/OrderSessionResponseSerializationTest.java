@@ -67,6 +67,7 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.path("leavesQty").isNull()).isTrue();
     assertThat(data.path("executedPrice").isNull()).isTrue();
     assertThat(data.path("externalOrderId").isNull()).isTrue();
+    assertThat(data.path("idempotent").isNull()).isTrue();
     assertThat(data.path("failureReason").isNull()).isTrue();
     assertThat(data.path("executedAt").isNull()).isTrue();
     assertThat(data.path("canceledAt").isNull()).isTrue();
@@ -98,6 +99,7 @@ class OrderSessionResponseSerializationTest {
         BigDecimal.valueOf(72000),
         "FEP-KRX-90001",
         "CONFIRMED",
+        Boolean.TRUE,
         null,
         Instant.parse("2026-03-12T00:05:30Z"),
         null,
@@ -118,6 +120,7 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.has("externalOrderId")).isTrue();
     assertThat(data.path("externalOrderId").asText()).isEqualTo("FEP-KRX-90001");
     assertThat(data.path("externalSyncStatus").asText()).isEqualTo("CONFIRMED");
+    assertThat(data.path("idempotent").asBoolean()).isTrue();
     assertThat(data.path("failureReason").isNull()).isTrue();
     assertThat(data.path("canceledAt").isNull()).isTrue();
   }
@@ -166,6 +169,7 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.has("externalOrderId")).isTrue();
     assertThat(data.path("externalOrderId").isNull()).isTrue();
     assertThat(data.path("externalSyncStatus").isNull()).isTrue();
+    assertThat(data.path("idempotent").isNull()).isTrue();
     assertThat(data.path("failureReason").asText()).isEqualTo("OTP_EXCEEDED");
     assertThat(data.path("executedAt").isNull()).isTrue();
     assertThat(data.path("canceledAt").isNull()).isTrue();
@@ -216,6 +220,7 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.path("executedPrice").decimalValue()).isEqualByComparingTo("72000");
     assertThat(data.path("externalOrderId").asText()).isEqualTo("FEP-KRX-90002");
     assertThat(data.path("externalSyncStatus").asText()).isEqualTo("FAILED");
+    assertThat(data.path("idempotent").isNull()).isTrue();
     assertThat(data.path("failureReason").asText()).isEqualTo("ESCALATED_MANUAL_REVIEW");
     assertThat(data.path("executedAt").asText()).isEqualTo("2026-03-12T00:06:30Z");
     assertThat(data.path("canceledAt").isNull()).isTrue();
@@ -265,6 +270,7 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.path("leavesQty").decimalValue()).isEqualByComparingTo("7");
     assertThat(data.path("executedPrice").decimalValue()).isEqualByComparingTo("72000");
     assertThat(data.path("externalSyncStatus").isNull()).isTrue();
+    assertThat(data.path("idempotent").isNull()).isTrue();
     assertThat(data.path("failureReason").isNull()).isTrue();
     assertThat(data.path("canceledAt").asText()).isEqualTo("2026-03-12T00:06:00Z");
   }

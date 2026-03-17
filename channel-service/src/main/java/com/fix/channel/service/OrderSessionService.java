@@ -319,6 +319,10 @@ public class OrderSessionService {
   }
 
   OrderSessionResult toResult(OrderSession session, boolean created) {
+    return toResult(session, created, null);
+  }
+
+  OrderSessionResult toResult(OrderSession session, boolean created, Boolean idempotent) {
     ActiveWindowMetadata activeWindow = resolveActiveWindowMetadata(session);
     return OrderSessionResult.of(
         session.getOrderSessionId(),
@@ -344,6 +348,7 @@ public class OrderSessionService {
         session.getExecutedPrice(),
         session.getExternalOrderId(),
         session.getExternalSyncStatus(),
+        idempotent,
         session.getFailureReason(),
         session.getExecutedAt(),
         session.getCanceledAt(),

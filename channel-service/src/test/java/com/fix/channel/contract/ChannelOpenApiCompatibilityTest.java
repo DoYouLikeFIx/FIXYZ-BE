@@ -179,6 +179,7 @@ class ChannelOpenApiCompatibilityTest {
             "executedPrice",
             "externalOrderId",
             "externalSyncStatus",
+            "idempotent",
             "failureReason",
             "executedAt",
             "canceledAt",
