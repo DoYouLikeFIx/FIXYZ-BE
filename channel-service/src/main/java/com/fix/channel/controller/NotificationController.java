@@ -1,13 +1,14 @@
 package com.fix.channel.controller;
 
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.fix.channel.dto.request.NotificationStreamRequest;
 import com.fix.channel.dto.response.NotificationItemResponse;
@@ -20,7 +21,6 @@ import com.fix.common.error.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.constraints.Min;
-import org.springframework.validation.annotation.Validated;
 
 @RestController
 @Validated
@@ -45,13 +45,11 @@ public class NotificationController {
   }
 
   @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-  public ResponseEntity<String> stream(
+  public SseEmitter stream(
       HttpServletRequest httpServletRequest
   ) {
-    resolveAuthenticatedMemberId(httpServletRequest);
-    return ResponseEntity.ok()
-        .contentType(MediaType.TEXT_EVENT_STREAM)
-        .body("event:heartbeat\\ndata:ok\\n\\n");
+    Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
+    return channelScaffoldService.openNotificationStream(memberId);
   }
 
   @PatchMapping("/{notificationId}/read")

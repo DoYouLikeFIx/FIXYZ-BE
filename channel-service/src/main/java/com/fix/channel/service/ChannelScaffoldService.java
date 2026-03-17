@@ -4,6 +4,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -11,6 +14,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.fix.channel.entity.Notification;
 import com.fix.channel.repository.NotificationRepository;
@@ -34,10 +38,12 @@ public class ChannelScaffoldService {
 
   private static final int DEFAULT_LIMIT = 20;
   private static final int MAX_LIMIT = 100;
+  private static final long SSE_TIMEOUT_MS = Long.MAX_VALUE;
 
   private final NotificationRepository notificationRepository;
   private final SecurityEventRepository securityEventRepository;
   private final Clock clock;
+  private final ConcurrentMap<Long, Set<SseEmitter>> notificationEmitters = new ConcurrentHashMap<>();
 
   @Transactional(readOnly = true)
   public CsrfBootstrapResult bootstrapCsrf(CsrfBootstrapCommand command, CsrfToken token) {
@@ -85,7 +91,34 @@ public class ChannelScaffoldService {
 
   @Transactional
   public void bootstrapNotification(Long memberId, String channel, String message) {
-    Objects.requireNonNull(notificationRepository.save(Notification.pending(memberId, channel, message)));
+    Notification notification = Objects.requireNonNull(
+        notificationRepository.save(Notification.pending(memberId, channel, message))
+    );
+
+    NotificationItemVo item = NotificationItemVo.of(
+        notification.getId(),
+        notification.getChannel(),
+        notification.getMessage(),
+        notification.isDelivered(),
+        notification.getReadAt()
+    );
+    publishNotification(memberId, item);
+  }
+
+  @Transactional(readOnly = true)
+  public SseEmitter openNotificationStream(Long memberId) {
+    SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
+    notificationEmitters.computeIfAbsent(memberId, key -> ConcurrentHashMap.newKeySet()).add(emitter);
+
+    emitter.onCompletion(() -> unregisterEmitter(memberId, emitter));
+    emitter.onTimeout(() -> {
+      unregisterEmitter(memberId, emitter);
+      emitter.complete();
+    });
+    emitter.onError((error) -> unregisterEmitter(memberId, emitter));
+
+    sendHeartbeat(emitter);
+    return emitter;
   }
 
   @Transactional
@@ -111,5 +144,36 @@ public class ChannelScaffoldService {
 
   private Pageable firstPageByIdDesc(int size) {
     return PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "id"));
+  }
+
+  private void publishNotification(Long memberId, NotificationItemVo item) {
+    Set<SseEmitter> emitters = notificationEmitters.get(memberId);
+    if (emitters == null || emitters.isEmpty()) {
+      return;
+    }
+
+    for (SseEmitter emitter : emitters) {
+      try {
+        emitter.send(SseEmitter.event().name("notification").data(item));
+      } catch (Exception ex) {
+        unregisterEmitter(memberId, emitter);
+        emitter.completeWithError(ex);
+      }
+    }
+  }
+
+  private void sendHeartbeat(SseEmitter emitter) {
+    try {
+      emitter.send(SseEmitter.event().name("heartbeat").data("ok"));
+    } catch (Exception ex) {
+      emitter.completeWithError(ex);
+    }
+  }
+
+  private void unregisterEmitter(Long memberId, SseEmitter emitter) {
+    notificationEmitters.computeIfPresent(memberId, (key, emitters) -> {
+      emitters.remove(emitter);
+      return emitters.isEmpty() ? null : emitters;
+    });
   }
 }
