@@ -19,10 +19,11 @@ import com.fix.common.error.ErrorCode;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import org.springframework.validation.annotation.Validated;
 
 @RestController
+@Validated
 @RequestMapping("/api/v1/notifications")
 public class NotificationController {
 
@@ -36,7 +37,7 @@ public class NotificationController {
 
   @GetMapping
   public ApiResponse<NotificationStreamResponse> list(
-      @Valid @ModelAttribute NotificationStreamRequest request,
+      @Validated @ModelAttribute NotificationStreamRequest request,
       HttpServletRequest httpServletRequest
   ) {
     Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
@@ -45,10 +46,8 @@ public class NotificationController {
 
   @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
   public ResponseEntity<String> stream(
-      @Valid @ModelAttribute NotificationStreamRequest request,
       HttpServletRequest httpServletRequest
   ) {
-    // Keep heartbeat SSE contract for existing clients while list/read APIs use persisted history.
     resolveAuthenticatedMemberId(httpServletRequest);
     return ResponseEntity.ok()
         .contentType(MediaType.TEXT_EVENT_STREAM)
@@ -73,9 +72,9 @@ public class NotificationController {
     }
 
     Object memberIdAttr = session.getAttribute(AUTH_MEMBER_ID);
-    if (!(memberIdAttr instanceof Long memberId)) {
+    if (!(memberIdAttr instanceof Number memberId)) {
       throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
-    return memberId;
+    return memberId.longValue();
   }
 }
