@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import org.mockito.Mock;
@@ -80,7 +81,7 @@ class OrderExecutionServiceTest {
         any()
     ))
         .thenReturn(completedSession);
-    when(orderSessionService.toResult(completedSession, false)).thenReturn(mockResult());
+    when(orderSessionService.toResult(completedSession, false, anyBoolean())).thenReturn(mockResult());
 
     orderExecutionService.execute(1L, authedSession.getOrderSessionId());
 
