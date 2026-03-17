@@ -44,12 +44,17 @@ public final class CorrelationIdSupport {
   }
 
   public static String normalize(String correlationId) {
+    return normalize(correlationId, MAX_CORRELATION_ID_LENGTH);
+  }
+
+  public static String normalize(String correlationId, int maxLength) {
     if (correlationId == null || correlationId.isBlank()) {
       return null;
     }
-    if (correlationId.length() <= MAX_CORRELATION_ID_LENGTH) {
+    int effectiveMaxLength = Math.max(1, maxLength);
+    if (correlationId.length() <= effectiveMaxLength) {
       return correlationId;
     }
-    return correlationId.substring(0, MAX_CORRELATION_ID_LENGTH);
+    return correlationId.substring(0, effectiveMaxLength);
   }
 }
