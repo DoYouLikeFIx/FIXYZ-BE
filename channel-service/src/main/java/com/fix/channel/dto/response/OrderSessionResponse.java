@@ -31,6 +31,8 @@ public record OrderSessionResponse(
     String externalOrderId,
     @Schema(description = "External synchronization state reported by corebank.")
     String externalSyncStatus,
+    @Schema(description = "Whether the execute call replayed an already-posted corebank order.")
+    Boolean idempotent,
     String failureReason,
     Instant executedAt,
     Instant canceledAt,
@@ -63,6 +65,7 @@ public record OrderSessionResponse(
         result.getExecutedPrice(),
         result.getExternalOrderId(),
         result.getExternalSyncStatus(),
+        result.getIdempotent(),
         result.getFailureReason(),
         result.getExecutedAt(),
         result.getCanceledAt(),

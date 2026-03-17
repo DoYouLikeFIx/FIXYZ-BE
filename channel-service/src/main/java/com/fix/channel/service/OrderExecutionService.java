@@ -64,7 +64,7 @@ public class OrderExecutionService {
             result.getExternalSyncStatus(),
             result.getExecutedAt()
         );
-        return orderSessionService.toResult(escalatedSession, false);
+        return orderSessionService.toResult(escalatedSession, false, result.isIdempotent());
       }
 
       OrderSession completedSession = orderSessionService.completeExecution(
@@ -77,7 +77,7 @@ public class OrderExecutionService {
           result.getExternalSyncStatus(),
           result.getExecutedAt()
       );
-      return orderSessionService.toResult(completedSession, false);
+      return orderSessionService.toResult(completedSession, false, result.isIdempotent());
     } finally {
       orderSessionExecutionLockService.release(orderSessionId);
     }

@@ -27,6 +27,7 @@ public record OrderSessionResult(
     BigDecimal executedPrice,
     String externalOrderId,
     String externalSyncStatus,
+    Boolean idempotent,
     String failureReason,
     Instant executedAt,
     Instant canceledAt,
@@ -66,6 +67,72 @@ public record OrderSessionResult(
       Instant updatedAt,
       boolean created
   ) {
+    return of(
+        orderSessionId,
+        clOrdId,
+        status,
+        challengeRequired,
+        authorizationReason,
+        accountId,
+        symbol,
+        side,
+        orderType,
+        qty,
+        price,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode,
+        preTradePrice,
+        expiresAt,
+        remainingSeconds,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        null,
+        failureReason,
+        executedAt,
+        canceledAt,
+        createdAt,
+        updatedAt,
+        created
+    );
+  }
+
+  public static OrderSessionResult of(
+      String orderSessionId,
+      String clOrdId,
+      String status,
+      boolean challengeRequired,
+      String authorizationReason,
+      Long accountId,
+      String symbol,
+      String side,
+      String orderType,
+      BigDecimal qty,
+      BigDecimal price,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      String quoteSourceMode,
+      BigDecimal preTradePrice,
+      Instant expiresAt,
+      Long remainingSeconds,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Boolean idempotent,
+      String failureReason,
+      Instant executedAt,
+      Instant canceledAt,
+      Instant createdAt,
+      Instant updatedAt,
+      boolean created
+  ) {
     return new OrderSessionResult(
         orderSessionId,
         clOrdId,
@@ -90,6 +157,7 @@ public record OrderSessionResult(
         executedPrice,
         externalOrderId,
         externalSyncStatus,
+        idempotent,
         failureReason,
         executedAt,
         canceledAt,
@@ -189,6 +257,10 @@ public record OrderSessionResult(
 
   public String getExternalSyncStatus() {
     return externalSyncStatus;
+  }
+
+  public Boolean getIdempotent() {
+    return idempotent;
   }
 
   public String getFailureReason() {

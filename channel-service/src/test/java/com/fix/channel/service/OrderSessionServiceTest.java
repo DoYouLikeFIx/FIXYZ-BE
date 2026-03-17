@@ -496,6 +496,35 @@ class OrderSessionServiceTest {
   }
 
   @Test
+  void shouldCarryExecuteIdempotencyIntoOrderSessionResult() {
+    var created = orderSessionService.createOrderSession(ownerLimitCommand(
+        "123e4567-e89b-42d3-a456-426614174289",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000)
+    ));
+    OrderSession completed = orderSessionRepository.findByOrderSessionId(created.getOrderSessionId()).orElseThrow();
+    completed.authorize();
+    completed.startExecuting();
+    completed.complete(
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "FEP-0002",
+        "CONFIRMED",
+        Instant.parse("2026-03-12T00:05:30Z")
+    );
+    orderSessionRepository.saveAndFlush(completed);
+
+    var result = orderSessionService.toResult(completed, false, true);
+
+    assertThat(result.getStatus()).isEqualTo("COMPLETED");
+    assertThat(result.getIdempotent()).isTrue();
+    assertThat(result.getExternalOrderId()).isEqualTo("FEP-0002");
+    assertThat(result.getExternalSyncStatus()).isEqualTo("CONFIRMED");
+  }
+
+  @Test
   void shouldTreatExpiredReplayAsNotFoundBeforePayloadValidation() {
     var created = orderSessionService.createOrderSession(ownerLimitCommand(
         "123e4567-e89b-42d3-a456-426614174265",
