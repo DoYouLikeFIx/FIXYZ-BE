@@ -1,7 +1,18 @@
 package com.fix.channel.service;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
+
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.fix.channel.entity.Notification;
-import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.NotificationRepository;
 import com.fix.channel.repository.SecurityEventRepository;
 import com.fix.channel.vo.AdminSecurityEventCommand;
@@ -12,14 +23,10 @@ import com.fix.channel.vo.NotificationItemVo;
 import com.fix.channel.vo.NotificationStreamCommand;
 import com.fix.channel.vo.NotificationStreamResult;
 import com.fix.channel.vo.SecurityEventItemVo;
-import java.util.List;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
+
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.security.web.csrf.CsrfToken;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +37,7 @@ public class ChannelScaffoldService {
 
   private final NotificationRepository notificationRepository;
   private final SecurityEventRepository securityEventRepository;
+  private final Clock clock;
 
   @Transactional(readOnly = true)
   public CsrfBootstrapResult bootstrapCsrf(CsrfBootstrapCommand command, CsrfToken token) {
@@ -48,7 +56,8 @@ public class ChannelScaffoldService {
             notification.getId(),
             notification.getChannel(),
             notification.getMessage(),
-            notification.isDelivered()
+            notification.isDelivered(),
+            notification.getReadAt()
         ))
         .toList();
 
@@ -76,7 +85,21 @@ public class ChannelScaffoldService {
 
   @Transactional
   public void bootstrapNotification(Long memberId, String channel, String message) {
-    notificationRepository.save(Notification.pending(memberId, channel, message));
+    Objects.requireNonNull(notificationRepository.save(Notification.pending(memberId, channel, message)));
+  }
+
+  @Transactional
+  public NotificationItemVo markNotificationRead(Long memberId, Long notificationId) {
+    Notification notification = notificationRepository.findByIdAndMemberId(notificationId, memberId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_OWNERSHIP_MISMATCH, "access denied"));
+    notification.markRead(Instant.now(clock));
+    return NotificationItemVo.of(
+        notification.getId(),
+        notification.getChannel(),
+        notification.getMessage(),
+        notification.isDelivered(),
+        notification.getReadAt()
+    );
   }
 
   private int resolvePageSize(Integer requestedLimit) {
