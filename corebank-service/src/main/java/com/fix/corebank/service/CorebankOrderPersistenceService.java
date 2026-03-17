@@ -533,9 +533,13 @@ public class CorebankOrderPersistenceService {
 
   public record OrderSnapshot(
       Long orderId,
+      Long accountId,
       String clOrdId,
+      String symbol,
+      String side,
       String status,
       BigDecimal orderQty,
+      BigDecimal orderPrice,
       String externalSyncStatus,
       String fepReferenceId,
       String failureReason,
@@ -549,9 +553,13 @@ public class CorebankOrderPersistenceService {
     private static OrderSnapshot from(Order order) {
       return new OrderSnapshot(
           order.getId(),
+          order.getAccountId(),
           order.getClOrdId(),
+          order.getSymbol(),
+          order.getSide(),
           order.getStatus(),
           order.getOrderQty(),
+          order.getOrderPrice(),
           order.getExternalSyncStatus(),
           order.getFepReferenceId(),
           order.getFailureReason(),
