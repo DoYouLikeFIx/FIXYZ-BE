@@ -1175,6 +1175,11 @@
             "type": "string",
             "description": "External synchronization state reported by corebank."
           },
+          "idempotent": {
+            "type": "boolean",
+            "description": "Whether the execute call replayed an already-posted corebank order.",
+            "nullable": true
+          },
           "failureReason": {
             "type": "string"
           },
