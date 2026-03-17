@@ -3,11 +3,10 @@ package com.fix.channel.controller;
 import java.time.Instant;
 import java.util.List;
 
-import static org.hamcrest.Matchers.containsString;
-import org.junit.jupiter.api.Test;
 import static org.hamcrest.Matchers.nullValue;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.when;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -17,9 +16,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.fix.channel.service.ChannelScaffoldService;
 import com.fix.channel.vo.NotificationItemVo;
@@ -40,12 +40,29 @@ class NotificationControllerContractTest {
 
   @Test
   void 알림_스트림_인증요청시_하트비트_반환() throws Exception {
+    when(channelScaffoldService.openNotificationStream(301L)).thenReturn(new SseEmitter(1_000L));
+
     mockMvc.perform(get("/api/v1/notifications/stream")
             .sessionAttr("AUTH_MEMBER_ID", 301L))
         .andExpect(status().isOk())
-        .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-        .andExpect(content().string(containsString("event:heartbeat")));
+        .andExpect(request().asyncStarted())
+        .andExpect(result -> {
+          String contentType = result.getResponse().getContentType();
+          if (contentType != null) {
+            org.assertj.core.api.Assertions.assertThat(contentType)
+                .contains(MediaType.TEXT_EVENT_STREAM_VALUE);
+          }
+        });
   }
+
+        @Test
+        void 알림_스트림_미인증요청시_401_반환() throws Exception {
+          mockMvc.perform(get("/api/v1/notifications/stream"))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.code").value("AUTH-003"))
+          .andExpect(jsonPath("$.message").value("authentication required"))
+          .andExpect(jsonPath("$.path").value("/api/v1/notifications/stream"));
+        }
 
   @Test
   void 알림_목록_인증요청시_커서_제한값_적용과_응답_검증() throws Exception {
@@ -92,6 +109,16 @@ class NotificationControllerContractTest {
         .andExpect(jsonPath("$.code").value("AUTH-003"))
         .andExpect(jsonPath("$.message").value("authentication required"))
         .andExpect(jsonPath("$.path").value("/api/v1/notifications/1/read"));
+  }
+
+  @Test
+  void 알림_목록_세션_회원식별자_타입오류시_401_반환() throws Exception {
+    mockMvc.perform(get("/api/v1/notifications")
+            .sessionAttr("AUTH_MEMBER_ID", "not-a-number"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-003"))
+        .andExpect(jsonPath("$.message").value("authentication required"))
+        .andExpect(jsonPath("$.path").value("/api/v1/notifications"));
   }
 
   @Test

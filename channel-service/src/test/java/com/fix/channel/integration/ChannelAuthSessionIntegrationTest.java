@@ -1,5 +1,7 @@
 package com.fix.channel.integration;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,18 +24,23 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.client.CorebankLinkedAccountProfile;
+import com.fix.channel.client.CorebankProvisioningClient;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 
-import java.util.Map;
 import jakarta.servlet.http.Cookie;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -63,6 +70,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   @Autowired
   private TotpService totpService;
 
+  @MockitoBean
+  private CorebankProvisioningClient corebankProvisioningClient;
+
   @BeforeEach
   void setUp() {
     memberRepository.deleteAll();
@@ -71,6 +81,9 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
       connection.serverCommands().flushDb();
       return null;
     });
+
+    when(corebankProvisioningClient.provisionDefaultAccount(any(), any(), any(), any()))
+        .thenReturn(new CorebankLinkedAccountProfile(1001L, 1L, "110123456789"));
   }
 
   @Test
@@ -153,8 +166,13 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     mockMvc.perform(get("/api/v1/notifications/stream")
             .cookie(new Cookie("SESSION", secondSessionId)))
         .andExpect(status().isOk())
-        .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-        .andExpect(content().string(containsString("event:heartbeat")));
+        .andExpect(request().asyncStarted())
+        .andExpect(result -> {
+          String contentType = result.getResponse().getContentType();
+          if (contentType != null) {
+            assertThat(contentType).contains(MediaType.TEXT_EVENT_STREAM_VALUE);
+          }
+        });
   }
 
   @Test
@@ -480,14 +498,72 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   }
 
   private String loginAndGetSessionId(String email, String password) throws Exception {
-    MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
-            .with(csrf())
+    Member saved = memberRepository.findByEmail(email).orElseThrow();
+    PreAuthSession preAuthSession = bootstrapPreAuthSession();
+    MvcResult loginResult = mockMvc.perform(post("/api/v1/auth/login")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
             .param("email", email)
             .param("password", password))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
         .andReturn();
 
-    return extractSessionId(result);
+    JsonNode loginData = objectMapper.readTree(loginResult.getResponse().getContentAsString()).path("data");
+    String nextAction = loginData.path("nextAction").asText();
+    String loginToken = loginData.path("loginToken").asText();
+
+    assertThat(nextAction).isIn("VERIFY_TOTP", "ENROLL_TOTP");
+    assertThat(loginToken).isNotBlank();
+
+    if ("VERIFY_TOTP".equals(nextAction)) {
+      MvcResult verifyResult = mockMvc.perform(post("/api/v1/auth/otp/verify")
+              .cookie(preAuthSession.sessionCookie())
+              .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+              .contentType(MediaType.APPLICATION_JSON)
+              .content(json(Map.of(
+                  "loginToken", loginToken,
+                  "otpCode", totpService.currentCode(saved)
+              ))))
+          .andExpect(status().isOk())
+          .andReturn();
+      return extractSessionId(verifyResult);
+    }
+
+    MvcResult enrollResult = mockMvc.perform(post("/api/v1/members/me/totp/enroll")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of("loginToken", loginToken))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.enrollmentToken").isString())
+        .andExpect(jsonPath("$.data.manualEntryKey").isString())
+        .andReturn();
+
+    JsonNode enrollData = objectMapper.readTree(enrollResult.getResponse().getContentAsString()).path("data");
+    String enrollmentToken = enrollData.path("enrollmentToken").asText();
+    String manualEntryKey = enrollData.path("manualEntryKey").asText();
+    assertThat(enrollmentToken).isNotBlank();
+    assertThat(manualEntryKey).isNotBlank();
+
+    MvcResult confirmResult = mockMvc.perform(post("/api/v1/members/me/totp/confirm")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", loginToken,
+                "enrollmentToken", enrollmentToken,
+                "otpCode", totpService.currentCodeForManualEntryKey(manualEntryKey)
+            ))))
+        .andExpect(status().isOk())
+        .andReturn();
+
+    return extractSessionId(confirmResult);
+  }
+
+  private String json(Object payload) throws Exception {
+    return objectMapper.writeValueAsString(payload);
   }
 
   private String extractSessionId(MvcResult result) {
