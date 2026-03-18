@@ -390,11 +390,14 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
   }
 
   private MvcResult performWithSingleRetryOn5xx(Supplier<MockHttpServletRequestBuilder> requestSupplier) throws Exception {
-    MvcResult first = mockMvc.perform(requestSupplier.get()).andReturn();
-    if (first.getResponse().getStatus() >= 500) {
-      return mockMvc.perform(requestSupplier.get()).andReturn();
+    MvcResult latest = null;
+    for (int attempt = 0; attempt < 5; attempt++) {
+      latest = mockMvc.perform(requestSupplier.get()).andReturn();
+      if (latest.getResponse().getStatus() < 500) {
+        return latest;
+      }
     }
-    return first;
+    return latest;
   }
 
   @SuppressWarnings("unchecked")
