@@ -98,6 +98,19 @@ tasks.named('check') {
   dependsOn tasks.named('verifyCommittedOpenApi')
 }
 
+tasks.register('criticalContractSuites', Test) {
+  description = 'Runs channel critical contract suites used by CI and local verification.'
+  group = 'verification'
+  useJUnitPlatform()
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  filter {
+    includeTestsMatching('com.fix.channel.integration.AdminSessionAuditIntegrationTest')
+    includeTestsMatching('com.fix.channel.contract.ChannelOpenApiCompatibilityTest')
+    includeTestsMatching('com.fix.channel.controller.ChannelErrorContractTest')
+  }
+}
+
 dependencies {
   implementation project(':core-common')
   implementation project(':channel-domain')
@@ -114,6 +127,7 @@ dependencies {
   implementation 'io.micrometer:micrometer-registry-prometheus'
   implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.15'
   implementation 'org.apache.httpcomponents.client5:httpclient5'
+  implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
 
   runtimeOnly 'com.mysql:mysql-connector-j'
   runtimeOnly 'com.h2database:h2'
