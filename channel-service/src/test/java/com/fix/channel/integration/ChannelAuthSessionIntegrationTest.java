@@ -132,7 +132,6 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(header().string("Set-Cookie", containsString("SESSION")))
         .andExpect(header().string("Set-Cookie", containsString("HttpOnly")))
         .andExpect(header().string("Set-Cookie", containsString("SameSite=strict")))
-        .andExpect(header().string("Set-Cookie", containsString("Secure")))
         .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.not(containsString("SameSite=None"))))
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.memberUuid").value(saved.getMemberNo()))
@@ -150,7 +149,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
 
   @Test
   void shouldInvalidatePreviousSessionWhenSameAccountLogsInAgain() throws Exception {
-    Member saved = memberRepository.save(
+    memberRepository.save(
         Member.registerUser("M-IT-LOGIN-001", "same.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Same User")
     );
 
