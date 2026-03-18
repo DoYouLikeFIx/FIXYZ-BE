@@ -1,12 +1,14 @@
 package com.fix.channel.integration;
 
-import java.util.Map;
 import java.time.Instant;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,6 +19,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import org.springframework.session.Session;
 import org.springframework.session.SessionRepository;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -39,9 +42,6 @@ import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 
 import jakarta.servlet.http.Cookie;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -132,6 +132,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .andExpect(header().string("Set-Cookie", containsString("SESSION")))
         .andExpect(header().string("Set-Cookie", containsString("HttpOnly")))
         .andExpect(header().string("Set-Cookie", containsString("SameSite=strict")))
+        .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.not(containsString("SameSite=None"))))
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.memberUuid").value(saved.getMemberNo()))
         .andReturn();
@@ -148,7 +149,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
 
   @Test
   void shouldInvalidatePreviousSessionWhenSameAccountLogsInAgain() throws Exception {
-    Member saved = memberRepository.save(
+    memberRepository.save(
         Member.registerUser("M-IT-LOGIN-001", "same.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Same User")
     );
 

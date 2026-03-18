@@ -1,26 +1,11 @@
 package com.fix.channel.integration;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fix.channel.entity.AuditAction;
-import com.fix.channel.entity.AuditLog;
-import com.fix.channel.entity.Member;
-import com.fix.channel.dto.request.AdminAuditLogQueryRequest;
-import com.fix.channel.repository.AuditLogRepository;
-import com.fix.channel.repository.MemberRepository;
-import com.fix.channel.service.AuditLogService;
-import com.fix.channel.support.ChannelContainersIntegrationTestBase;
-import jakarta.servlet.http.Cookie;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.Supplier;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -29,20 +14,38 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.session.Session;
 import org.springframework.session.SessionRepository;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.dto.request.AdminAuditLogQueryRequest;
+import com.fix.channel.entity.AuditAction;
+import com.fix.channel.entity.AuditLog;
+import com.fix.channel.entity.Member;
+import com.fix.channel.repository.AuditLogRepository;
+import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.service.AuditLogService;
+import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+
+import jakarta.servlet.http.Cookie;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -209,19 +212,20 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
   void shouldRejectAuditQueryWhenFromIsAfterTo() throws Exception {
     String from = Instant.now().plusSeconds(3600).toString();
     String to = Instant.now().minusSeconds(3600).toString();
-    BusinessException exception = org.junit.jupiter.api.Assertions.assertThrows(
-        BusinessException.class,
-        () -> new AdminAuditLogQueryRequest(
-            0,
-            20,
-            Instant.parse(from),
-            Instant.parse(to),
-            null,
-            null
-        )
-    );
-    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED);
-    assertThat(exception.getMessage()).contains("from must be before or equal to to");
+    assertThatThrownBy(() -> new AdminAuditLogQueryRequest(
+        0,
+        20,
+        Instant.parse(from),
+        Instant.parse(to),
+        null,
+        null
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+          assertThat(businessException.getMessage()).contains("from must be before or equal to to");
+        });
   }
 
   @Test
@@ -245,6 +249,87 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
         .andExpect(status().isTooManyRequests())
         .andExpect(header().exists(HttpHeaders.RETRY_AFTER))
         .andExpect(jsonPath("$.code").value("RATE_001"));
+  }
+
+  @Test
+  void shouldUseIndependentRateLimitBucketsPerAdminEndpoint() throws Exception {
+    resetStores();
+    Member admin = createMember("M-ADMIN-005", "admin5@fixyz.com", "ROLE_ADMIN");
+    Member target = createMember("M-USER-005", "user5@fixyz.com", "ROLE_USER");
+
+    String adminSessionId = createAuthenticatedSession(admin, "ROLE_ADMIN");
+    String csrfToken = fetchCsrfToken(adminSessionId);
+
+    for (int attempt = 0; attempt < 20; attempt++) {
+      mockMvc.perform(get("/api/v1/admin/audit-logs")
+              .cookie(sessionCookie(adminSessionId))
+              .param("page", "0")
+              .param("size", "1"))
+          .andExpect(status().isOk());
+    }
+
+    mockMvc.perform(delete("/api/v1/admin/members/{memberUuid}/sessions", target.getMemberNo())
+            .cookie(sessionCookie(adminSessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .header(HttpHeaders.USER_AGENT, "JUnit-Admin-Client/1.0"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  void shouldUseIndependentRateLimitBucketsFromSessionInvalidationToAuditLogs() throws Exception {
+    resetStores();
+    Member admin = createMember("M-ADMIN-012", "admin12@fixyz.com", "ROLE_ADMIN");
+    Member target = createMember("M-USER-012", "user12@fixyz.com", "ROLE_USER");
+
+    String adminSessionId = createAuthenticatedSession(admin, "ROLE_ADMIN");
+    String csrfToken = fetchCsrfToken(adminSessionId);
+
+    for (int attempt = 0; attempt < 20; attempt++) {
+      mockMvc.perform(delete("/api/v1/admin/members/{memberUuid}/sessions", target.getMemberNo())
+              .cookie(sessionCookie(adminSessionId))
+              .header("X-CSRF-TOKEN", csrfToken)
+              .header(HttpHeaders.USER_AGENT, "JUnit-Admin-Client/1.0"))
+          .andExpect(status().isOk());
+    }
+
+    mockMvc.perform(get("/api/v1/admin/audit-logs")
+            .cookie(sessionCookie(adminSessionId))
+            .param("page", "0")
+            .param("size", "1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  void shouldRejectAdminSessionInvalidationWhenCsrfTokenMissing() throws Exception {
+    resetStores();
+    Member admin = createMember("M-ADMIN-010", "admin10@fixyz.com", "ROLE_ADMIN");
+    Member target = createMember("M-USER-010", "user10@fixyz.com", "ROLE_USER");
+    String adminSessionId = createAuthenticatedSession(admin, "ROLE_ADMIN");
+
+    mockMvc.perform(delete("/api/v1/admin/members/{memberUuid}/sessions", target.getMemberNo())
+            .cookie(sessionCookie(adminSessionId)))
+        .andExpect(status().isForbidden());
+
+    assertThat(auditLogRepository.findAll())
+        .noneSatisfy(log -> assertThat(log.getAction()).isEqualTo(AuditAction.ADMIN_FORCE_LOGOUT.value()));
+  }
+
+  @Test
+  void shouldRejectAdminSessionInvalidationWhenCsrfTokenInvalid() throws Exception {
+    resetStores();
+    Member admin = createMember("M-ADMIN-011", "admin11@fixyz.com", "ROLE_ADMIN");
+    Member target = createMember("M-USER-011", "user11@fixyz.com", "ROLE_USER");
+    String adminSessionId = createAuthenticatedSession(admin, "ROLE_ADMIN");
+
+    mockMvc.perform(delete("/api/v1/admin/members/{memberUuid}/sessions", target.getMemberNo())
+            .cookie(sessionCookie(adminSessionId))
+            .header("X-CSRF-TOKEN", "invalid-token"))
+        .andExpect(status().isForbidden());
+
+    assertThat(auditLogRepository.findAll())
+        .noneSatisfy(log -> assertThat(log.getAction()).isEqualTo(AuditAction.ADMIN_FORCE_LOGOUT.value()));
   }
 
   @Test

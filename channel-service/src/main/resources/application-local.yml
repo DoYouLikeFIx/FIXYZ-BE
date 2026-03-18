@@ -16,3 +16,9 @@ auth:
 corebank:
   internal:
     base-url: ${COREBANK_INTERNAL_BASE_URL:http://corebank-service:8081}
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: false

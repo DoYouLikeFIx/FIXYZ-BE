@@ -7,7 +7,7 @@ server:
         name: SESSION
         http-only: true
         same-site: strict
-        secure: ${SESSION_COOKIE_SECURE:false}
+        secure: ${SESSION_COOKIE_SECURE:true}
 
 spring:
   application:

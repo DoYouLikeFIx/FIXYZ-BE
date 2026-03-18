@@ -3,17 +3,16 @@ package com.fix.channel.controller;
 import java.time.Instant;
 import java.util.List;
 
-import static org.hamcrest.Matchers.nullValue;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.when;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Import;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -22,18 +21,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.fix.channel.service.ChannelScaffoldService;
+import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import com.fix.channel.vo.NotificationItemVo;
 import com.fix.channel.vo.NotificationStreamResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
-@WebMvcTest(NotificationController.class)
+@SpringBootTest
 @AutoConfigureMockMvc(addFilters = false)
-@Import(com.fix.channel.exception.GlobalExceptionHandler.class)
-class NotificationControllerContractTest {
+class NotificationControllerContractTest extends ChannelContainersIntegrationTestBase {
 
   @Autowired
   private MockMvc mockMvc;
+
+  @Autowired
+  private ObjectMapper objectMapper;
 
   @MockitoBean
   private ChannelScaffoldService channelScaffoldService;
@@ -75,7 +78,7 @@ class NotificationControllerContractTest {
         NotificationItemVo.of(801L, "SECURITY", "device logged in", true, Instant.parse("2026-03-17T00:00:10Z"))
     )));
 
-    mockMvc.perform(get("/api/v1/notifications")
+    MvcResult result = mockMvc.perform(get("/api/v1/notifications")
             .sessionAttr("AUTH_MEMBER_ID", 301L)
             .param("limit", "2")
             .param("cursorId", "999"))
@@ -85,12 +88,20 @@ class NotificationControllerContractTest {
         .andExpect(jsonPath("$.data.items[0].channel").value("ORDER"))
         .andExpect(jsonPath("$.data.items[0].message").value("order created"))
         .andExpect(jsonPath("$.data.items[0].read").value(false))
-        .andExpect(jsonPath("$.data.items[0].readAt").value(nullValue()))
         .andExpect(jsonPath("$.data.items[1].notificationId").value(801))
         .andExpect(jsonPath("$.data.items[1].channel").value("SECURITY"))
         .andExpect(jsonPath("$.data.items[1].message").value("device logged in"))
         .andExpect(jsonPath("$.data.items[1].read").value(true))
-        .andExpect(jsonPath("$.data.items[1].readAt").value("2026-03-17T00:00:10Z"));
+        .andExpect(jsonPath("$.data.items[1].readAt").value("2026-03-17T00:00:10Z"))
+        .andReturn();
+
+    // NON_NULL serialization may omit readAt when it is null.
+    var root = objectMapper.readTree(result.getResponse().getContentAsString());
+    var firstItem = root.path("data").path("items").get(0);
+    if (firstItem != null) {
+      org.assertj.core.api.Assertions.assertThat(firstItem.path("readAt").isMissingNode() || firstItem.path("readAt").isNull())
+          .isTrue();
+    }
   }
 
   @Test

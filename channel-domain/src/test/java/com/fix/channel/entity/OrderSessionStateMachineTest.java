@@ -1,9 +1,7 @@
 package com.fix.channel.entity;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -31,17 +29,17 @@ class OrderSessionStateMachineTest {
         expiresAt
     );
 
-    assertNotNull(session.getOrderSessionId());
-    assertEquals(OrderSessionStatus.PENDING_NEW, session.getStatus());
-    assertEquals(101L, session.getAccountId());
-    assertEquals("005930", session.getSymbol());
-    assertEquals("BUY", session.getSide());
-    assertEquals("LIMIT", session.getOrderType());
-    assertEquals(expiresAt, session.getExpiresAt());
+    assertThat(session.getOrderSessionId()).isNotNull();
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.PENDING_NEW);
+    assertThat(session.getAccountId()).isEqualTo(101L);
+    assertThat(session.getSymbol()).isEqualTo("005930");
+    assertThat(session.getSide()).isEqualTo("BUY");
+    assertThat(session.getOrderType()).isEqualTo("LIMIT");
+    assertThat(session.getExpiresAt()).isEqualTo(expiresAt);
 
     session.expire();
 
-    assertEquals(OrderSessionStatus.EXPIRED, session.getStatus());
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.EXPIRED);
   }
 
   @Test
@@ -61,7 +59,7 @@ class OrderSessionStateMachineTest {
         Instant.parse("2026-03-12T00:10:00Z")
     );
 
-    assertEquals(OrderSessionStatus.AUTHED, session.getStatus());
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED);
   }
 
   @Test
@@ -81,10 +79,11 @@ class OrderSessionStateMachineTest {
         Instant.parse("2026-03-12T00:10:00Z")
     );
 
-    BusinessException exception = assertThrows(BusinessException.class, session::startExecuting);
-
-    assertEquals(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED, exception.getErrorCode());
-    assertEquals(OrderSessionStatus.PENDING_NEW, session.getStatus());
+    assertThatThrownBy(session::startExecuting)
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED));
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.PENDING_NEW);
   }
 
   @Test
@@ -104,10 +103,11 @@ class OrderSessionStateMachineTest {
         Instant.parse("2026-03-12T00:10:00Z")
     );
 
-    BusinessException exception = assertThrows(BusinessException.class, lowRiskSession::authorize);
-
-    assertEquals(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED, exception.getErrorCode());
-    assertEquals(OrderSessionStatus.AUTHED, lowRiskSession.getStatus());
+    assertThatThrownBy(lowRiskSession::authorize)
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED));
+    assertThat(lowRiskSession.getStatus()).isEqualTo(OrderSessionStatus.AUTHED);
   }
 
   @Test
@@ -139,10 +139,11 @@ class OrderSessionStateMachineTest {
         Instant.parse("2026-03-12T00:02:00Z")
     );
 
-    BusinessException exception = assertThrows(BusinessException.class, session::authorize);
-
-    assertEquals(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED, exception.getErrorCode());
-    assertEquals(OrderSessionStatus.COMPLETED, session.getStatus());
+    assertThatThrownBy(session::authorize)
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED));
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.COMPLETED);
   }
 
   @Test
@@ -174,14 +175,14 @@ class OrderSessionStateMachineTest {
         Instant.parse("2026-03-12T00:06:30Z")
     );
 
-    assertEquals(OrderSessionStatus.ESCALATED, session.getStatus());
-    assertEquals(OrderSession.ESCALATED_MANUAL_REVIEW, session.getFailureReason());
-    assertEquals("FILLED", session.getExecutionResult());
-    assertEquals(BigDecimal.TEN, session.getExecutedQty());
-    assertEquals(BigDecimal.ZERO, session.getLeavesQty());
-    assertEquals(BigDecimal.valueOf(72000), session.getExecutedPrice());
-    assertEquals("FEP-0002", session.getExternalOrderId());
-    assertEquals("FAILED", session.getExternalSyncStatus());
-    assertEquals(Instant.parse("2026-03-12T00:06:30Z"), session.getExecutedAt());
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.ESCALATED);
+    assertThat(session.getFailureReason()).isEqualTo(OrderSession.ESCALATED_MANUAL_REVIEW);
+    assertThat(session.getExecutionResult()).isEqualTo("FILLED");
+    assertThat(session.getExecutedQty()).isEqualTo(BigDecimal.TEN);
+    assertThat(session.getLeavesQty()).isEqualTo(BigDecimal.ZERO);
+    assertThat(session.getExecutedPrice()).isEqualTo(BigDecimal.valueOf(72000));
+    assertThat(session.getExternalOrderId()).isEqualTo("FEP-0002");
+    assertThat(session.getExternalSyncStatus()).isEqualTo("FAILED");
+    assertThat(session.getExecutedAt()).isEqualTo(Instant.parse("2026-03-12T00:06:30Z"));
   }
 }

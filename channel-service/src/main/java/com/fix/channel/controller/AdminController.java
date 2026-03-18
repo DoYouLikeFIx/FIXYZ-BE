@@ -1,4 +1,21 @@
 package com.fix.channel.controller;
+
+import java.time.Instant;
+
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.fix.channel.dto.request.AdminAccountStatusTransitionRequest;
 import com.fix.channel.dto.request.AdminAuditLogQueryRequest;
 import com.fix.channel.dto.request.AdminSecurityEventRequest;
@@ -16,6 +33,7 @@ import com.fix.channel.vo.AdminActorContext;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -25,20 +43,6 @@ import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import java.time.Instant;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.session.FindByIndexNameSessionRepository;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -118,7 +122,7 @@ public class AdminController {
       HttpServletRequest httpServletRequest
   ) {
     AdminActorContext actor = resolveAdminActorContext(httpServletRequest);
-    adminApiRateLimitService.enforce(actor.getSessionId());
+    adminApiRateLimitService.enforceSessionInvalidation(actor.getSessionId());
     return ApiResponse.success(AdminSessionInvalidationResponse.from(
         adminMemberSessionService.invalidateMemberSessions(memberUuid, actor)
     ));
@@ -139,7 +143,7 @@ public class AdminController {
     if (session == null) {
       throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
-    adminApiRateLimitService.enforce(session.getId());
+    adminApiRateLimitService.enforceAuditLogs(session.getId());
   }
 
   private AdminActorContext resolveAdminActorContext(HttpServletRequest request) {
