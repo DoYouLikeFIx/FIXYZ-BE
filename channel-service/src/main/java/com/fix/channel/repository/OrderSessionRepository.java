@@ -22,4 +22,18 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
       Instant referenceTime,
       Pageable pageable
   );
+
+  List<OrderSession> findByStatusAndExecutingStartedAtLessThanEqualOrderByExecutingStartedAtAsc(
+      OrderSessionStatus status,
+      Instant referenceTime,
+      Pageable pageable
+  );
+
+  List<OrderSession> findByStatusAndExecutingStartedAtIsNullAndUpdatedAtLessThanEqualOrderByUpdatedAtAsc(
+      OrderSessionStatus status,
+      Instant referenceTime,
+      Pageable pageable
+  );
+
+  List<OrderSession> findByStatusOrderByUpdatedAtAsc(OrderSessionStatus status, Pageable pageable);
 }
