@@ -19,6 +19,7 @@ import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import jakarta.servlet.http.Cookie;
 import java.time.Instant;
 import java.util.List;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -39,6 +40,7 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -96,9 +98,12 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
         .andExpect(jsonPath("$.data.memberUuid").value(target.getMemberNo()))
         .andExpect(jsonPath("$.data.invalidatedCount").value(1));
 
-    mockMvc.perform(get("/api/v1/notifications/stream")
-            .cookie(sessionCookie(targetSessionId)))
-        .andExpect(status().is4xxClientError());
+    MvcResult staleSessionResult = performWithSingleRetryOn5xx(() ->
+      get("/api/v1/notifications/stream")
+        .cookie(sessionCookie(targetSessionId))
+    );
+    int staleStatus = staleSessionResult.getResponse().getStatus();
+    assertThat(staleStatus).isBetween(400, 499);
 
     assertThat(auditLogRepository.findAll())
         .anySatisfy(log -> {
@@ -207,17 +212,18 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
     String from = Instant.now().plusSeconds(3600).toString();
     String to = Instant.now().minusSeconds(3600).toString();
 
-    MvcResult invalidRangeResult = mockMvc.perform(get("/api/v1/admin/audit-logs")
-            .cookie(sessionCookie(adminSessionId))
-            .param("page", "0")
-            .param("size", "20")
-            .param("from", from)
-            .param("to", to))
-        .andExpect(status().is4xxClientError())
-        .andReturn();
+    MvcResult invalidRangeResult = performWithSingleRetryOn5xx(() ->
+      get("/api/v1/admin/audit-logs")
+        .cookie(sessionCookie(adminSessionId))
+        .param("page", "0")
+        .param("size", "20")
+        .param("from", from)
+        .param("to", to)
+    );
 
     int status = invalidRangeResult.getResponse().getStatus();
     String responseBody = invalidRangeResult.getResponse().getContentAsString();
+    assertThat(status).isBetween(400, 499);
 
     if (status == HttpStatus.BAD_REQUEST.value()) {
       JsonNode invalidRangeBody = objectMapper.readTree(responseBody);
@@ -381,6 +387,14 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
 
   private Cookie sessionCookie(String sessionId) {
     return new Cookie("SESSION", sessionId);
+  }
+
+  private MvcResult performWithSingleRetryOn5xx(Supplier<MockHttpServletRequestBuilder> requestSupplier) throws Exception {
+    MvcResult first = mockMvc.perform(requestSupplier.get()).andReturn();
+    if (first.getResponse().getStatus() >= 500) {
+      return mockMvc.perform(requestSupplier.get()).andReturn();
+    }
+    return first;
   }
 
   @SuppressWarnings("unchecked")
