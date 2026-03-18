@@ -232,4 +232,33 @@ class CoreFlywayMigrationTest {
     assertThat(anomalyIndexCount).isEqualTo(1);
     assertThat(eventCaseIndexCount).isEqualTo(1);
   }
+
+  @Test
+  void shouldCreateLedgerReconciliationRepairsTable() {
+    Integer repairTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_REPAIRS'",
+        Integer.class
+    );
+    Integer repairTypeLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_REPAIRS' AND COLUMN_NAME = 'REPAIR_TYPE'",
+        Integer.class
+    );
+    Integer rerunRunIdExists = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_REPAIRS' AND COLUMN_NAME = 'RERUN_RUN_ID'",
+        Integer.class
+    );
+    Integer uniqueKeyIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_REPAIRS' "
+            + "AND INDEX_NAME = 'UK_LEDGER_RECONCILIATION_REPAIRS_CASE_KEY'",
+        Integer.class
+    );
+
+    assertThat(repairTableCount).isEqualTo(1);
+    assertThat(repairTypeLength).isEqualTo(64);
+    assertThat(rerunRunIdExists).isEqualTo(1);
+    assertThat(uniqueKeyIndexCount).isEqualTo(1);
+  }
 }
