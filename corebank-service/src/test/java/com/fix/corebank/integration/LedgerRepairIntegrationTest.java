@@ -42,12 +42,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 
 @SpringBootTest(properties = {
     "spring.jpa.hibernate.ddl-auto=none",
     "internal.secret=test-secret",
     "corebank.ledger-integrity.enabled=false"
 })
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class LedgerRepairIntegrationTest extends CorebankContainersIntegrationTestBase {
 
   private static final long ACCOUNT_ID = 1L;
