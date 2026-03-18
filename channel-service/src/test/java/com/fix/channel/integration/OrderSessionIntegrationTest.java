@@ -737,7 +737,9 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .content(orderSessionPayload(122L, "005930", "BUY", "LIMIT", 10, 72000L)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.code").value("ORD-001"))
-        .andExpect(jsonPath("$.message").value("available cash is insufficient"));
+        .andExpect(jsonPath("$.message").value("available cash is insufficient"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.order.insufficient_cash"))
+        .andExpect(jsonPath("$.operatorCode").value("INSUFFICIENT_CASH"));
   }
 
   @Test
@@ -755,7 +757,9 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
             .content(orderSessionPayload(123L, "005930", "SELL", "LIMIT", 10, 72000L)))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.code").value("ORD-003"))
-        .andExpect(jsonPath("$.message").value("insufficient position quantity"));
+        .andExpect(jsonPath("$.message").value("insufficient position quantity"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.order.insufficient_position"))
+        .andExpect(jsonPath("$.operatorCode").value("INSUFFICIENT_POSITION"));
   }
 
   @Test
