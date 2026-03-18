@@ -99,6 +99,25 @@ public class Position extends BaseTimeEntity {
     }
   }
 
+  public void rebuildTo(BigDecimal rebuiltQty, BigDecimal rebuiltAvgPrice) {
+    if (rebuiltQty == null || rebuiltAvgPrice == null) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "rebuilt position values are required");
+    }
+    BigDecimal normalizedQty = rebuiltQty.setScale(SCALE, RoundingMode.HALF_UP);
+    BigDecimal normalizedAvgPrice = rebuiltAvgPrice.setScale(SCALE, RoundingMode.HALF_UP);
+    if (normalizedQty.signum() < 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "rebuilt quantity must be non-negative");
+    }
+    if (normalizedAvgPrice.signum() < 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "rebuilt average price must be non-negative");
+    }
+    if (normalizedQty.signum() == 0) {
+      normalizedAvgPrice = BigDecimal.ZERO.setScale(SCALE, RoundingMode.HALF_UP);
+    }
+    this.qty = normalizedQty;
+    this.avgPrice = normalizedAvgPrice;
+  }
+
   private BigDecimal normalizePositive(BigDecimal value, String nullMessage) {
     if (value == null) {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, nullMessage);

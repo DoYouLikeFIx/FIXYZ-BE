@@ -4,4 +4,5 @@ import com.fix.corebank.entity.LedgerEntryRef;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface LedgerEntryRefRepository extends JpaRepository<LedgerEntryRef, Long> {
+  boolean existsByLedgerEntryIdAndRefTypeAndRefValue(Long ledgerEntryId, String refType, String refValue);
 }

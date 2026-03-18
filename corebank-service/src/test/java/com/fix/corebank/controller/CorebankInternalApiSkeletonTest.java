@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fix.common.error.BusinessException;
@@ -18,6 +19,8 @@ import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderPersistenceService;
 import com.fix.corebank.service.CorebankOrderService;
+import com.fix.corebank.service.LedgerReconciliationService;
+import com.fix.corebank.service.LedgerRepairService;
 import com.fix.corebank.service.PositionLockMetrics;
 import com.fix.corebank.support.CorebankStandaloneMvcSupport;
 import com.fix.corebank.vo.AccountProvisioningCommand;
@@ -71,7 +74,12 @@ class CorebankInternalApiSkeletonTest {
                 JsonMapper.builder().findAndAddModules().build()
             )
         ),
-        new InternalCorebankController(corebankOrderService, accountProvisioningService)
+        new InternalCorebankController(
+            corebankOrderService,
+            accountProvisioningService,
+            mock(LedgerReconciliationService.class),
+            mock(LedgerRepairService.class)
+        )
     );
   }
 

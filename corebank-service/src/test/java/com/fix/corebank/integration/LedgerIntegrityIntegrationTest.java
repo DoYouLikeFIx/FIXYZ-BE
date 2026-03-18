@@ -26,12 +26,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 
 @SpringBootTest(properties = {
     "spring.jpa.hibernate.ddl-auto=none",
     "internal.secret=test-secret",
     "corebank.ledger-integrity.enabled=false"
 })
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBase {
 
   private static final long ACCOUNT_ID = 1L;
@@ -206,8 +208,13 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
     LedgerIntegrityCheckResult result = ledgerIntegrityService.runCheckAndStore();
 
     assertThat(result.isPassed()).isTrue();
+    assertThat(result.getRunId()).isNotNull();
     assertThat(count("ledger_integrity_runs")).isEqualTo(1);
     assertThat(count("ledger_integrity_anomalies")).isEqualTo(0);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT id FROM ledger_integrity_runs",
+        Long.class
+    )).isEqualTo(result.getRunId());
     assertThat(jdbcTemplate.queryForObject(
         "SELECT passed FROM ledger_integrity_runs",
         Boolean.class
@@ -229,8 +236,13 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
     LedgerIntegrityCheckResult result = ledgerIntegrityService.runCheckAndStore();
 
     assertThat(result.isPassed()).isFalse();
+    assertThat(result.getRunId()).isNotNull();
     assertThat(count("ledger_integrity_runs")).isEqualTo(1);
     assertThat(count("ledger_integrity_anomalies")).isEqualTo(1);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT run_id FROM ledger_integrity_anomalies",
+        Long.class
+    )).isEqualTo(result.getRunId());
     assertThat(jdbcTemplate.queryForObject(
         "SELECT type FROM ledger_integrity_anomalies",
         String.class

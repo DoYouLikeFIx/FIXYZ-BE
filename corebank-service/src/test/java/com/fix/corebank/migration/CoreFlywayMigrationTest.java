@@ -191,4 +191,81 @@ class CoreFlywayMigrationTest {
     assertThat(anomalyRunIndexCount).isEqualTo(1);
     assertThat(anomalyTypeIndexCount).isEqualTo(1);
   }
+
+  @Test
+  void shouldCreateLedgerReconciliationTables() {
+    Integer caseTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASES'",
+        Integer.class
+    );
+    Integer eventTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASE_EVENTS'",
+        Integer.class
+    );
+    Integer statusLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASES' AND COLUMN_NAME = 'STATUS'",
+        Integer.class
+    );
+    Integer lastTransitionExists = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASES' AND COLUMN_NAME = 'LAST_TRANSITION_AT'",
+        Integer.class
+    );
+    Integer anomalyIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASES' "
+            + "AND INDEX_NAME = 'IDX_LEDGER_RECONCILIATION_CASES_ANOMALY_ID'",
+        Integer.class
+    );
+    Integer uniqueAnomalyIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASES' "
+            + "AND INDEX_NAME = 'UK_LEDGER_RECONCILIATION_CASES_ANOMALY_ID'",
+        Integer.class
+    );
+    Integer eventCaseIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASE_EVENTS' "
+            + "AND INDEX_NAME = 'IDX_LEDGER_RECONCILIATION_CASE_EVENTS_CASE_ID'",
+        Integer.class
+    );
+
+    assertThat(caseTableCount).isEqualTo(1);
+    assertThat(eventTableCount).isEqualTo(1);
+    assertThat(statusLength).isEqualTo(32);
+    assertThat(lastTransitionExists).isEqualTo(1);
+    assertThat(anomalyIndexCount).isEqualTo(1);
+    assertThat(uniqueAnomalyIndexCount).isEqualTo(1);
+    assertThat(eventCaseIndexCount).isEqualTo(1);
+  }
+
+  @Test
+  void shouldCreateLedgerReconciliationRepairsTable() {
+    Integer repairTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_REPAIRS'",
+        Integer.class
+    );
+    Integer repairTypeLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_REPAIRS' AND COLUMN_NAME = 'REPAIR_TYPE'",
+        Integer.class
+    );
+    Integer rerunRunIdExists = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_REPAIRS' AND COLUMN_NAME = 'RERUN_RUN_ID'",
+        Integer.class
+    );
+    Integer uniqueKeyIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_REPAIRS' "
+            + "AND INDEX_NAME = 'UK_LEDGER_RECONCILIATION_REPAIRS_CASE_KEY'",
+        Integer.class
+    );
+
+    assertThat(repairTableCount).isEqualTo(1);
+    assertThat(repairTypeLength).isEqualTo(64);
+    assertThat(rerunRunIdExists).isEqualTo(1);
+    assertThat(uniqueKeyIndexCount).isEqualTo(1);
+  }
 }
