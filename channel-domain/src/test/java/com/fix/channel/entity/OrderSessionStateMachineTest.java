@@ -185,4 +185,30 @@ class OrderSessionStateMachineTest {
     assertThat(session.getExternalSyncStatus()).isEqualTo("FAILED");
     assertThat(session.getExecutedAt()).isEqualTo(Instant.parse("2026-03-12T00:06:30Z"));
   }
+
+  @Test
+  void shouldTransitionExecutingToRequeryingForTimeoutRecovery() {
+    OrderSession session = OrderSession.initiated(
+        1L,
+        101L,
+        "123e4567-e89b-42d3-a456-426614174266",
+        "fingerprint",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(70000),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.parse("2026-03-12T00:10:00Z")
+    );
+    session.startExecuting();
+    assertThat(session.getExecutingStartedAt()).isNotNull();
+
+    session.beginRequerying("EXECUTING_TIMEOUT");
+
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.REQUERYING);
+    assertThat(session.getExecutingStartedAt()).isNull();
+    assertThat(session.getFailureReason()).isEqualTo("EXECUTING_TIMEOUT");
+  }
 }
