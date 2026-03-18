@@ -196,6 +196,52 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
         });
   }
 
+  @Test
+  void shouldPersistSuccessfulIntegrityRunSummary() {
+    createFilledOrder(SELL_SYMBOL, "SELL", "10.0000", "72000.0000");
+
+    LedgerIntegrityCheckResult result = ledgerIntegrityService.runCheckAndStore();
+
+    assertThat(result.isPassed()).isTrue();
+    assertThat(count("ledger_integrity_runs")).isEqualTo(1);
+    assertThat(count("ledger_integrity_anomalies")).isEqualTo(0);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT passed FROM ledger_integrity_runs",
+        Boolean.class
+    )).isTrue();
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT anomaly_count FROM ledger_integrity_runs",
+        Integer.class
+    )).isEqualTo(0);
+  }
+
+  @Test
+  void shouldPersistAnomalyEvidenceForFailedIntegrityRun() {
+    jdbcTemplate.update(
+        "UPDATE positions SET qty = -1.0000 WHERE account_id = ? AND symbol = ?",
+        ACCOUNT_ID,
+        SELL_SYMBOL
+    );
+
+    LedgerIntegrityCheckResult result = ledgerIntegrityService.runCheckAndStore();
+
+    assertThat(result.isPassed()).isFalse();
+    assertThat(count("ledger_integrity_runs")).isEqualTo(1);
+    assertThat(count("ledger_integrity_anomalies")).isEqualTo(1);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT type FROM ledger_integrity_anomalies",
+        String.class
+    )).isEqualTo("NEGATIVE_POSITION");
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT account_id FROM ledger_integrity_anomalies",
+        Long.class
+    )).isEqualTo(ACCOUNT_ID);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT symbol FROM ledger_integrity_anomalies",
+        String.class
+    )).isEqualTo(SELL_SYMBOL);
+  }
+
   private String createFilledOrder(String symbol, String side, String qty, String price) {
     String clOrdId = UUID.randomUUID().toString();
     corebankOrderService.createOrder(InternalOrderCreateCommand.of(
@@ -258,5 +304,10 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
         null,
         null
     );
+  }
+
+  private int count(String tableName) {
+    Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + tableName, Integer.class);
+    return count == null ? 0 : count;
   }
 }
