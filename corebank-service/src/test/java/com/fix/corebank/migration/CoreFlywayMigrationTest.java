@@ -143,4 +143,52 @@ class CoreFlywayMigrationTest {
     assertThat(executedPriceScale).isEqualTo(4);
     assertThat(executedAtExists).isEqualTo(1);
   }
+
+  @Test
+  void shouldCreateLedgerIntegrityTrackingTables() {
+    Integer runTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'LEDGER_INTEGRITY_RUNS'",
+        Integer.class
+    );
+    Integer anomalyTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'LEDGER_INTEGRITY_ANOMALIES'",
+        Integer.class
+    );
+    Integer summaryMessageLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'LEDGER_INTEGRITY_RUNS' AND COLUMN_NAME = 'SUMMARY_MESSAGE'",
+        Integer.class
+    );
+    Integer checkedAtExists = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'LEDGER_INTEGRITY_RUNS' AND COLUMN_NAME = 'CHECKED_AT'",
+        Integer.class
+    );
+    Integer runIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_INTEGRITY_RUNS' "
+            + "AND INDEX_NAME = 'IDX_LEDGER_INTEGRITY_RUNS_CHECKED_AT'",
+        Integer.class
+    );
+    Integer anomalyRunIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_INTEGRITY_ANOMALIES' "
+            + "AND INDEX_NAME = 'IDX_LEDGER_INTEGRITY_ANOMALIES_RUN_ID'",
+        Integer.class
+    );
+    Integer anomalyTypeIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_INTEGRITY_ANOMALIES' "
+            + "AND INDEX_NAME = 'IDX_LEDGER_INTEGRITY_ANOMALIES_TYPE'",
+        Integer.class
+    );
+
+    assertThat(runTableCount).isEqualTo(1);
+    assertThat(anomalyTableCount).isEqualTo(1);
+    assertThat(summaryMessageLength).isEqualTo(500);
+    assertThat(checkedAtExists).isEqualTo(1);
+    assertThat(runIndexCount).isEqualTo(1);
+    assertThat(anomalyRunIndexCount).isEqualTo(1);
+    assertThat(anomalyTypeIndexCount).isEqualTo(1);
+  }
 }
