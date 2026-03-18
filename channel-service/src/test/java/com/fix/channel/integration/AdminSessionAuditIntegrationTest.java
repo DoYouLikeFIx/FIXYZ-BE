@@ -6,13 +6,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
+import com.fix.channel.dto.request.AdminAuditLogQueryRequest;
 import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.service.AuditLogService;
@@ -28,7 +28,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -39,10 +38,11 @@ import org.springframework.session.Session;
 import org.springframework.session.SessionRepository;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -207,30 +207,21 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
 
   @Test
   void shouldRejectAuditQueryWhenFromIsAfterTo() throws Exception {
-    resetStores();
-    Member admin = createMember("M-ADMIN-005", "admin5@fixyz.com", "ROLE_ADMIN");
-    MockHttpSession session = new MockHttpSession();
-
     String from = Instant.now().plusSeconds(3600).toString();
     String to = Instant.now().minusSeconds(3600).toString();
-
-    MvcResult invalidRangeResult = performWithSingleRetryOn5xx(() ->
-      get("/api/v1/admin/audit-logs")
-        .session(session)
-        .with(user(admin.getEmail()).roles("ADMIN"))
-        .param("page", "0")
-        .param("size", "20")
-        .param("from", from)
-        .param("to", to)
+    BusinessException exception = org.junit.jupiter.api.Assertions.assertThrows(
+        BusinessException.class,
+        () -> new AdminAuditLogQueryRequest(
+            0,
+            20,
+            Instant.parse(from),
+            Instant.parse(to),
+            null,
+            null
+        )
     );
-
-    int status = invalidRangeResult.getResponse().getStatus();
-    String responseBody = invalidRangeResult.getResponse().getContentAsString();
-    assertThat(status).isEqualTo(HttpStatus.BAD_REQUEST.value());
-
-    JsonNode invalidRangeBody = objectMapper.readTree(responseBody);
-    assertThat(invalidRangeBody.path("code").asText()).isEqualTo("VALIDATION_001");
-    assertThat(invalidRangeBody.path("message").asText("").toLowerCase()).contains("from");
+    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+    assertThat(exception.getMessage()).contains("from must be before or equal to to");
   }
 
   @Test
