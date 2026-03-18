@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:critical-contract-suites": "node ../scripts/run-gradle-wrapper.js --cwd BE --no-daemon :channel-service:criticalContractSuites",
     "test:collab-webhook": "node --test tests/collab-webhook/*.test.js",
     "lint:collab-webhook": "node --check .github/scripts/collab-webhook/*.js",
     "prepare": "husky"
