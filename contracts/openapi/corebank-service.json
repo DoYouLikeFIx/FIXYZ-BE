@@ -109,6 +109,202 @@
         }
       }
     },
+    "/internal/v1/ledger-integrity/cases/{caseId}/rerun": {
+      "post": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "rerunLedgerReconciliationCase",
+        "parameters": [
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalLedgerReconciliationRerunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationRerunResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/ledger-integrity/cases/{caseId}/repairs": {
+      "post": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "applyLedgerRepair",
+        "parameters": [
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalLedgerReconciliationRepairRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationRepairResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/ledger-integrity/anomalies/{anomalyId}/cases": {
+      "post": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "createLedgerReconciliationCase",
+        "parameters": [
+          {
+            "name": "anomalyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalLedgerReconciliationCaseCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationCaseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/ledger-integrity/cases/{caseId}": {
+      "patch": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "transitionLedgerReconciliationCase",
+        "parameters": [
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalLedgerReconciliationCaseTransitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationCaseResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/accounts/{accountId}/status": {
       "get": {
         "tags": [
@@ -693,6 +889,334 @@
           "maxRetryCount": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "InternalLedgerReconciliationRerunRequest": {
+        "required": [
+          "actor",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "actor": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "context": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseInternalLedgerReconciliationRerunResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalLedgerReconciliationRerunResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalLedgerReconciliationRerunResponse": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "previousStatus": {
+            "type": "string"
+          },
+          "currentStatus": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "eventId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rerunRunId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "anomalyStillPresent": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalLedgerReconciliationRepairRequest": {
+        "required": [
+          "actor",
+          "reason",
+          "repairKey",
+          "repairType"
+        ],
+        "type": "object",
+        "properties": {
+          "repairKey": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "repairType": {
+            "minLength": 1,
+            "pattern": "REBUILD_POSITION_FROM_EXECUTIONS|ATTACH_LEDGER_CL_ORD_REF|MARK_FALSE_POSITIVE",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "actor": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "context": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseInternalLedgerReconciliationRepairResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalLedgerReconciliationRepairResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalLedgerReconciliationRepairResponse": {
+        "type": "object",
+        "properties": {
+          "repairId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "caseId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repairKey": {
+            "type": "string"
+          },
+          "repairType": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "idempotent": {
+            "type": "boolean"
+          },
+          "mutated": {
+            "type": "boolean"
+          },
+          "caseStatus": {
+            "type": "string"
+          },
+          "rerunRunId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rerunCaseStatus": {
+            "type": "string"
+          },
+          "summaryMessage": {
+            "type": "string"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalLedgerReconciliationCaseCreateRequest": {
+        "required": [
+          "actor",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "actor": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "context": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseInternalLedgerReconciliationCaseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalLedgerReconciliationCaseResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalLedgerReconciliationCaseResponse": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "anomalyId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "runId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "previousStatus": {
+            "type": "string"
+          },
+          "currentStatus": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "eventId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "anomalyType": {
+            "type": "string"
+          },
+          "summaryMessage": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "positionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "orderId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "clOrdId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ledgerEntryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalLedgerReconciliationCaseTransitionRequest": {
+        "required": [
+          "actor",
+          "reason",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "minLength": 1,
+            "pattern": "NEW|ACKNOWLEDGED|WAIVED|REPAIR_PENDING|RESOLVED|REOPENED",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
+          },
+          "actor": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "context": {
+            "maxLength": 255,
+            "minLength": 0,
+            "type": "string"
           }
         }
       },

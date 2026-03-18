@@ -139,6 +139,108 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(parameterByName(requeryParameters, "request").isMissingNode()).isTrue();
   }
 
+  @Test
+  void shouldDocumentLedgerReconciliationContractsInCommittedOpenApi() throws Exception {
+    JsonNode contract = objectMapper.readTree(Files.readString(openApiContract()));
+
+    JsonNode paths = contract.path("paths");
+    JsonNode components = contract.path("components").path("schemas");
+    JsonNode createCaseOperation = paths.path("/internal/v1/ledger-integrity/anomalies/{anomalyId}/cases").path("post");
+    JsonNode transitionCaseOperation = paths.path("/internal/v1/ledger-integrity/cases/{caseId}").path("patch");
+    JsonNode repairOperation = paths.path("/internal/v1/ledger-integrity/cases/{caseId}/repairs").path("post");
+    JsonNode rerunOperation = paths.path("/internal/v1/ledger-integrity/cases/{caseId}/rerun").path("post");
+    JsonNode caseCreateRequest = components.path("InternalLedgerReconciliationCaseCreateRequest");
+    JsonNode caseTransitionRequest = components.path("InternalLedgerReconciliationCaseTransitionRequest");
+    JsonNode repairRequest = components.path("InternalLedgerReconciliationRepairRequest");
+    JsonNode rerunRequest = components.path("InternalLedgerReconciliationRerunRequest");
+    JsonNode caseResponse = components.path("InternalLedgerReconciliationCaseResponse");
+    JsonNode repairResponse = components.path("InternalLedgerReconciliationRepairResponse");
+    JsonNode rerunResponse = components.path("InternalLedgerReconciliationRerunResponse");
+    JsonNode wrappedCaseResponse = components.path("ApiResponseInternalLedgerReconciliationCaseResponse");
+    JsonNode wrappedRepairResponse = components.path("ApiResponseInternalLedgerReconciliationRepairResponse");
+    JsonNode wrappedRerunResponse = components.path("ApiResponseInternalLedgerReconciliationRerunResponse");
+
+    assertThat(fieldNames(paths))
+        .contains(
+            "/internal/v1/ledger-integrity/anomalies/{anomalyId}/cases",
+            "/internal/v1/ledger-integrity/cases/{caseId}",
+            "/internal/v1/ledger-integrity/cases/{caseId}/repairs",
+            "/internal/v1/ledger-integrity/cases/{caseId}/rerun"
+        );
+
+    assertThat(createCaseOperation.path("requestBody").path("content").path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalLedgerReconciliationCaseCreateRequest");
+    assertThat(transitionCaseOperation.path("requestBody").path("content").path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalLedgerReconciliationCaseTransitionRequest");
+    assertThat(repairOperation.path("requestBody").path("content").path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalLedgerReconciliationRepairRequest");
+    assertThat(rerunOperation.path("requestBody").path("content").path("application/json").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalLedgerReconciliationRerunRequest");
+
+    assertThat(createCaseOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseInternalLedgerReconciliationCaseResponse");
+    assertThat(repairOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseInternalLedgerReconciliationRepairResponse");
+    assertThat(rerunOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseInternalLedgerReconciliationRerunResponse");
+
+    assertThat(fieldNames(caseCreateRequest.path("properties"))).contains("reason", "actor", "context");
+    assertThat(fieldNames(caseTransitionRequest.path("properties"))).contains("status", "reason", "actor", "context");
+    assertThat(fieldNames(repairRequest.path("properties"))).contains("repairKey", "repairType", "reason", "actor", "context");
+    assertThat(fieldNames(rerunRequest.path("properties"))).contains("reason", "actor", "context");
+
+    assertThat(fieldNames(caseResponse.path("properties")))
+        .contains(
+            "caseId",
+            "anomalyId",
+            "runId",
+            "currentStatus",
+            "created",
+            "eventId",
+            "anomalyType",
+            "summaryMessage",
+            "clOrdId",
+            "ledgerEntryId",
+            "asOf"
+        );
+    assertThat(fieldNames(repairResponse.path("properties")))
+        .contains(
+            "repairId",
+            "caseId",
+            "repairKey",
+            "repairType",
+            "outcome",
+            "idempotent",
+            "mutated",
+            "caseStatus",
+            "rerunRunId",
+            "rerunCaseStatus",
+            "summaryMessage",
+            "asOf"
+        );
+    assertThat(fieldNames(rerunResponse.path("properties")))
+        .contains(
+            "caseId",
+            "previousStatus",
+            "currentStatus",
+            "changed",
+            "eventId",
+            "rerunRunId",
+            "anomalyStillPresent",
+            "reason",
+            "actor",
+            "context",
+            "asOf"
+        );
+
+    assertThat(wrappedCaseResponse.path("properties").path("data").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalLedgerReconciliationCaseResponse");
+    assertThat(wrappedRepairResponse.path("properties").path("data").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalLedgerReconciliationRepairResponse");
+    assertThat(wrappedRerunResponse.path("properties").path("data").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalLedgerReconciliationRerunResponse");
+  }
+
   private Path openApiContract() {
     Path current = Path.of(System.getProperty("user.dir"));
     for (int i = 0; i < 3 && current != null; i++) {
