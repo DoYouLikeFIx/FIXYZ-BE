@@ -40,17 +40,24 @@ public class ChannelSessionInvalidationService {
   }
 
   public void invalidateAllSessions(String email, String reason) {
+    invalidateAllSessionsWithCount(email, reason);
+  }
+
+  public int invalidateAllSessionsWithCount(String email, String reason) {
+    int invalidatedCount = 0;
     @SuppressWarnings("rawtypes")
     FindByIndexNameSessionRepository sessionRepository = sessionRepositoryProvider.getIfAvailable();
     if (sessionRepository != null) {
       @SuppressWarnings("unchecked")
       Map<String, ? extends Session> sessions = sessionRepository.findByPrincipalName(email);
+      invalidatedCount = sessions.size();
       sessions.keySet().forEach(sessionId -> {
         markStaleSession(sessionId, normalizeReason(reason));
         sessionRepository.deleteById(sessionId);
       });
     }
     clearTrustedSessionMarkers(email);
+    return invalidatedCount;
   }
 
   public boolean consumePasswordChangedMarker(String sessionId) {
