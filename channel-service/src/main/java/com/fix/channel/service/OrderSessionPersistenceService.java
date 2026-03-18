@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -133,6 +134,13 @@ public class OrderSessionPersistenceService {
   }
 
   @Transactional
+  OrderSession markRequerying(OrderSession session, String failureReason) {
+    session.beginRequerying(failureReason);
+    orderSessionRepository.flush();
+    return session;
+  }
+
+  @Transactional
   OrderSession markCompleted(
       OrderSession session,
       String executionResult,
@@ -216,6 +224,36 @@ public class OrderSessionPersistenceService {
         "clOrdId=" + session.getClOrdId() + ", reason=" + failureReason
     );
     return session;
+  }
+
+  @Transactional(readOnly = true)
+  List<OrderSession> findTimedOutExecutingSessions(Instant cutoffTime, int batchSize) {
+    int effectiveBatchSize = Math.max(1, batchSize);
+    List<OrderSession> sessions = new ArrayList<>();
+    sessions.addAll(orderSessionRepository.findByStatusAndExecutingStartedAtLessThanEqualOrderByExecutingStartedAtAsc(
+        OrderSessionStatus.EXECUTING,
+        cutoffTime,
+        PageRequest.of(0, effectiveBatchSize)
+    ));
+    if (sessions.size() >= effectiveBatchSize) {
+      return sessions;
+    }
+
+    int remaining = effectiveBatchSize - sessions.size();
+    sessions.addAll(orderSessionRepository.findByStatusAndExecutingStartedAtIsNullAndUpdatedAtLessThanEqualOrderByUpdatedAtAsc(
+        OrderSessionStatus.EXECUTING,
+        cutoffTime,
+        PageRequest.of(0, remaining)
+    ));
+    return sessions;
+  }
+
+  @Transactional(readOnly = true)
+  List<OrderSession> findRequeryingSessions(int batchSize) {
+    return orderSessionRepository.findByStatusOrderByUpdatedAtAsc(
+        OrderSessionStatus.REQUERYING,
+        PageRequest.of(0, Math.max(1, batchSize))
+    );
   }
 
   private AuditLog expiredAuditLog(OrderSession session) {

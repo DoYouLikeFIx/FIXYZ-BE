@@ -236,6 +236,10 @@ public class OrderSessionService {
     return orderSessionPersistenceService.markExecuting(session);
   }
 
+  public OrderSession beginRequerying(OrderSession session, String failureReason) {
+    return orderSessionPersistenceService.markRequerying(session, failureReason);
+  }
+
   public OrderSession completeExecution(
       OrderSession session,
       String executionResult,
@@ -296,6 +300,14 @@ public class OrderSessionService {
 
   public java.util.List<String> expireOverdueSessionBatch(Instant referenceTime, int batchSize) {
     return orderSessionPersistenceService.expireOverdueSessionBatch(referenceTime, batchSize);
+  }
+
+  public java.util.List<OrderSession> findTimedOutExecutingSessions(Instant cutoffTime, int batchSize) {
+    return orderSessionPersistenceService.findTimedOutExecutingSessions(cutoffTime, batchSize);
+  }
+
+  public java.util.List<OrderSession> findRequeryingSessions(int batchSize) {
+    return orderSessionPersistenceService.findRequeryingSessions(batchSize);
   }
 
   OrderSession requireOwnedSession(Long memberId, String orderSessionId) {
