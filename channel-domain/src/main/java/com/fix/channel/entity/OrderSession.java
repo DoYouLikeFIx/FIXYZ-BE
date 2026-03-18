@@ -88,6 +88,9 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "external_sync_status", length = 32)
   private String externalSyncStatus;
 
+  @Column(name = "executing_started_at")
+  private Instant executingStartedAt;
+
   @Column(name = "failure_reason", length = 64)
   private String failureReason;
 
@@ -250,6 +253,10 @@ public class OrderSession extends BaseTimeEntity {
     return failureReason;
   }
 
+  public Instant getExecutingStartedAt() {
+    return executingStartedAt;
+  }
+
   public Instant getExecutedAt() {
     return executedAt;
   }
@@ -302,6 +309,14 @@ public class OrderSession extends BaseTimeEntity {
   public void startExecuting() {
     transitionTo(OrderSessionStatus.EXECUTING, "order session is not authorized for execution");
     this.status = OrderSessionStatus.EXECUTING;
+    this.executingStartedAt = Instant.now();
+  }
+
+  public void beginRequerying(String failureReason) {
+    transitionTo(OrderSessionStatus.REQUERYING, transitionMessage(OrderSessionStatus.REQUERYING));
+    this.status = OrderSessionStatus.REQUERYING;
+    this.executingStartedAt = null;
+    this.failureReason = requireFailureReason(failureReason);
   }
 
   public void complete(
@@ -325,6 +340,7 @@ public class OrderSession extends BaseTimeEntity {
         executedAt
     );
     this.failureReason = null;
+    this.executingStartedAt = null;
   }
 
   public void escalate(String failureReason) {
@@ -332,6 +348,7 @@ public class OrderSession extends BaseTimeEntity {
     this.status = OrderSessionStatus.ESCALATED;
     clearExecutionOutcome();
     this.failureReason = requireFailureReason(failureReason);
+    this.executingStartedAt = null;
   }
 
   public void escalate(
@@ -356,6 +373,7 @@ public class OrderSession extends BaseTimeEntity {
         executedAt
     );
     this.failureReason = requireFailureReason(failureReason);
+    this.executingStartedAt = null;
   }
 
   public void fail(String failureReason) {
@@ -363,11 +381,13 @@ public class OrderSession extends BaseTimeEntity {
     this.status = OrderSessionStatus.FAILED;
     clearExecutionOutcome();
     this.failureReason = requireFailureReason(failureReason);
+    this.executingStartedAt = null;
   }
 
   public void expire() {
     transitionTo(OrderSessionStatus.EXPIRED, transitionMessage(OrderSessionStatus.EXPIRED));
     this.status = OrderSessionStatus.EXPIRED;
+    this.executingStartedAt = null;
     this.failureReason = null;
     this.canceledAt = null;
   }
