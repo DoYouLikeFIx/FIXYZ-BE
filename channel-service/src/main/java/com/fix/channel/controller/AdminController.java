@@ -1,5 +1,4 @@
 package com.fix.channel.controller;
-
 import com.fix.channel.dto.request.AdminAccountStatusTransitionRequest;
 import com.fix.channel.dto.request.AdminAuditLogQueryRequest;
 import com.fix.channel.dto.request.AdminSecurityEventRequest;
@@ -17,12 +16,20 @@ import com.fix.channel.vo.AdminActorContext;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import java.time.Instant;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.session.FindByIndexNameSessionRepository;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -30,6 +37,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -64,17 +72,47 @@ public class AdminController {
   }
 
   @GetMapping("/audit-logs")
+    @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Bad Request",
+        content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Forbidden",
+        content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Not Found",
+        content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "429", description = "Too Many Requests",
+        headers = @Header(name = "Retry-After", description = "Seconds until the rate-limit window resets",
+          schema = @Schema(type = "string")),
+        content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class)))
+    })
   public ApiResponse<AdminAuditLogQueryResponse> auditLogs(
-      @Valid @ModelAttribute AdminAuditLogQueryRequest request,
+      @RequestParam(required = false) @Min(0) Integer page,
+      @RequestParam(required = false) @Min(1) @Max(100) Integer size,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+      @RequestParam(required = false) Long memberId,
+      @RequestParam(required = false) String eventType,
       HttpServletRequest httpServletRequest
   ) {
     enforceAdminRateLimit(httpServletRequest);
+    AdminAuditLogQueryRequest request = new AdminAuditLogQueryRequest(page, size, from, to, memberId, eventType);
     return ApiResponse.success(AdminAuditLogQueryResponse.from(
         adminAuditLogQueryService.query(request.toVo())
     ));
   }
 
   @DeleteMapping("/members/{memberUuid}/sessions")
+    @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Forbidden",
+        content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Not Found",
+        content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "429", description = "Too Many Requests",
+        headers = @Header(name = "Retry-After", description = "Seconds until the rate-limit window resets",
+          schema = @Schema(type = "string")),
+        content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class)))
+    })
   public ApiResponse<AdminSessionInvalidationResponse> invalidateMemberSessions(
       @PathVariable String memberUuid,
       HttpServletRequest httpServletRequest
