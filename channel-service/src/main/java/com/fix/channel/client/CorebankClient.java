@@ -13,6 +13,7 @@ import com.fix.channel.vo.AccountOrderHistoryItemResult;
 import com.fix.channel.vo.AccountOrderHistoryResult;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
+import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
@@ -40,6 +41,7 @@ import org.springframework.web.client.ResourceAccessException;
 public class CorebankClient {
 
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
+  private static final String COREBANK_ORDER_REQUERY_PATH = "/internal/v1/orders/{clOrdId}/requery";
   private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
   private static final String COREBANK_ACCOUNT_SUMMARY_PATH = "/internal/v1/accounts/{accountId}/summary";
   private static final String COREBANK_ACCOUNT_POSITIONS_PATH = "/internal/v1/accounts/{accountId}/positions/list";
@@ -99,6 +101,44 @@ public class CorebankClient {
           responseBody.externalOrderId(),
           responseBody.externalSyncStatus(),
           responseBody.executedAt()
+      );
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public OrderRequeryResult requeryOrder(String clOrdId, int attemptCount, String correlationId) {
+    try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
+      CorebankApiResponse<CorebankOrderRequeryResponse> response = restClient.get()
+          .uri(uriBuilder -> uriBuilder
+              .path(COREBANK_ORDER_REQUERY_PATH)
+              .queryParam("attemptCount", attemptCount)
+              .build(clOrdId))
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankOrderRequeryResponse responseBody = extractBody(response);
+      return OrderRequeryResult.of(
+          responseBody.orderId(),
+          responseBody.clOrdId(),
+          responseBody.status(),
+          responseBody.externalSyncStatus(),
+          responseBody.executionResult(),
+          responseBody.executedQty(),
+          responseBody.leavesQty(),
+          responseBody.executedPrice(),
+          responseBody.externalOrderId(),
+          responseBody.executedAt(),
+          responseBody.message(),
+          responseBody.retriable(),
+          responseBody.escalationRequired(),
+          responseBody.attemptCount(),
+          responseBody.maxRetryCount()
       );
     } catch (RestClientException ex) {
       throw translateFailure(ex);
@@ -470,6 +510,26 @@ public class CorebankClient {
       String externalOrderId,
       String externalSyncStatus,
       Instant executedAt
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankOrderRequeryResponse(
+      Long orderId,
+      String clOrdId,
+      String status,
+      String externalSyncStatus,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      Instant executedAt,
+      String message,
+      Boolean retriable,
+      Boolean escalationRequired,
+      Integer attemptCount,
+      Integer maxRetryCount
   ) {
   }
 
