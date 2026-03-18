@@ -2,6 +2,8 @@ name: ci-channel
 
 on:
   pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -35,3 +37,8 @@ jobs:
             :core-common:test \
             :channel-domain:test \
             :channel-service:test
+
+      - name: Verify channel critical contract suites
+        run: |
+          ./gradlew --no-daemon --stacktrace \
+            :channel-service:criticalContractSuites

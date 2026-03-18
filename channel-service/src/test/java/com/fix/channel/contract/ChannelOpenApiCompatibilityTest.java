@@ -68,6 +68,8 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode positionsOperation = paths.path("/api/v1/accounts/{accountId}/positions").path("get");
     JsonNode positionsListOperation = paths.path("/api/v1/accounts/{accountId}/positions/list").path("get");
     JsonNode summaryOperation = paths.path("/api/v1/accounts/{accountId}/summary").path("get");
+    JsonNode adminAuditLogsOperation = paths.path("/api/v1/admin/audit-logs").path("get");
+    JsonNode adminMemberSessionDeleteOperation = paths.path("/api/v1/admin/members/{memberUuid}/sessions").path("delete");
 
     assertThat(fieldNames(paths))
         .contains(
@@ -87,7 +89,9 @@ class ChannelOpenApiCompatibilityTest {
             "/api/v1/accounts/{accountId}/summary",
             "/api/v1/accounts/{accountId}/positions/list",
             "/api/v1/accounts/{accountId}/orders",
-            "/api/v1/admin/accounts/{accountId}/status"
+            "/api/v1/admin/accounts/{accountId}/status",
+            "/api/v1/admin/audit-logs",
+            "/api/v1/admin/members/{memberUuid}/sessions"
         )
         .doesNotContain("/api/v1/orders");
 
@@ -227,6 +231,26 @@ class ChannelOpenApiCompatibilityTest {
         .contains("symbol", "symbolName", "side", "qty", "unitPrice", "totalAmount", "status", "clOrdId", "createdAt");
     assertThat(fieldNames(adminStatusTransitionSchema.path("properties")))
         .contains("previousStatus", "newStatus", "changed", "eventId", "reason", "actor", "context", "asOf");
+    assertThat(adminAuditLogsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseAdminAuditLogQueryResponse");
+    assertThat(adminAuditLogsOperation.path("responses").path("403").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminAuditLogsOperation.path("responses").path("429").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminAuditLogsOperation.path("responses").path("400").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminAuditLogsOperation.path("responses").path("429").path("headers").path("Retry-After").path("schema").path("type").asText())
+        .isEqualTo("string");
+    assertThat(adminMemberSessionDeleteOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseAdminSessionInvalidationResponse");
+    assertThat(adminMemberSessionDeleteOperation.path("responses").path("403").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminMemberSessionDeleteOperation.path("responses").path("404").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminMemberSessionDeleteOperation.path("responses").path("429").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminMemberSessionDeleteOperation.path("responses").path("429").path("headers").path("Retry-After").path("schema").path("type").asText())
+        .isEqualTo("string");
   }
 
   private Path openApiContract() {
