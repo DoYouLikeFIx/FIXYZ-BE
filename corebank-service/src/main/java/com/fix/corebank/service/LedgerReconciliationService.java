@@ -13,21 +13,12 @@ import com.fix.corebank.vo.LedgerReconciliationCaseCreateCommand;
 import com.fix.corebank.vo.LedgerReconciliationCaseResult;
 import com.fix.corebank.vo.LedgerReconciliationCaseTransitionCommand;
 import java.time.Instant;
-import java.util.EnumSet;
-import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class LedgerReconciliationService {
-
-  private static final Set<LedgerReconciliationCaseStatus> UNRESOLVED_STATUSES = EnumSet.of(
-      LedgerReconciliationCaseStatus.NEW,
-      LedgerReconciliationCaseStatus.ACKNOWLEDGED,
-      LedgerReconciliationCaseStatus.REPAIR_PENDING,
-      LedgerReconciliationCaseStatus.REOPENED
-  );
 
   private final LedgerIntegrityAnomalyRecordRepository anomalyRecordRepository;
   private final LedgerReconciliationCaseRepository caseRepository;
@@ -48,10 +39,7 @@ public class LedgerReconciliationService {
     validateActorAndReason(command.getActor(), command.getReason());
     validateAnomalyId(command.getAnomalyId());
 
-    LedgerReconciliationCase existing = caseRepository.findFirstByAnomalyIdAndStatusInOrderByIdDesc(
-            command.getAnomalyId(),
-            UNRESOLVED_STATUSES
-        )
+    LedgerReconciliationCase existing = caseRepository.findFirstByAnomalyIdOrderByIdDesc(command.getAnomalyId())
         .orElse(null);
     if (existing != null) {
       return toResult(existing, existing.getStatus().name(), false, false, null, existing.getLastTransitionAt());
