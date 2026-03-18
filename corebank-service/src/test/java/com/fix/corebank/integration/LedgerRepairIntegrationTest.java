@@ -303,6 +303,38 @@ class LedgerRepairIntegrationTest extends CorebankContainersIntegrationTestBase 
         .isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
   }
 
+  @Test
+  void shouldRejectRepairKeyReplayWhenRequestedRepairTypeDiffers() {
+    LedgerReconciliationCaseResult reconciliationCase = createCaseFromMissingReferenceAnomaly();
+
+    LedgerReconciliationRepairResult first = ledgerRepairService.applyRepair(
+        LedgerReconciliationRepairCommand.of(
+            reconciliationCase.getCaseId(),
+            "repair-key-type-mismatch-1",
+            "ATTACH_LEDGER_CL_ORD_REF",
+            "attach missing ref",
+            "ops-reviewer",
+            "type-mismatch-ctx",
+            "corr-type-mismatch-1"
+        )
+    );
+    assertThat(first.isIdempotent()).isFalse();
+
+    assertThatThrownBy(() -> ledgerRepairService.applyRepair(
+        LedgerReconciliationRepairCommand.of(
+            reconciliationCase.getCaseId(),
+            "repair-key-type-mismatch-1",
+            "MARK_FALSE_POSITIVE",
+            "wrong repair type replay",
+            "ops-reviewer",
+            "type-mismatch-ctx",
+            "corr-type-mismatch-2"
+        )
+    )).isInstanceOf(BusinessException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
+  }
+
   private LedgerReconciliationCaseResult createCaseFromMissingReferenceAnomaly() {
     createFilledOrder(SELL_SYMBOL, "SELL", "10.0000", "72000.0000");
     Long ledgerEntryId = jdbcTemplate.queryForObject("SELECT MIN(id) FROM ledger_entries", Long.class);

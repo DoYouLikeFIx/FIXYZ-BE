@@ -70,7 +70,7 @@ public class LedgerIntegrityService {
       );
     }
 
-    return result;
+    return result.withRunId(savedRun.getId());
   }
 
   private String summarize(List<LedgerIntegrityAnomaly> anomalies) {

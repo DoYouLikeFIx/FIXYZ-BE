@@ -5,7 +5,6 @@ import com.fix.common.error.ErrorCode;
 import com.fix.corebank.entity.Execution;
 import com.fix.corebank.entity.LedgerEntryRef;
 import com.fix.corebank.entity.LedgerIntegrityAnomalyRecord;
-import com.fix.corebank.entity.LedgerIntegrityRun;
 import com.fix.corebank.entity.LedgerReconciliationCase;
 import com.fix.corebank.entity.LedgerReconciliationCaseEvent;
 import com.fix.corebank.entity.LedgerReconciliationCaseStatus;
@@ -16,7 +15,6 @@ import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.ExecutionRepository;
 import com.fix.corebank.repository.LedgerEntryRefRepository;
 import com.fix.corebank.repository.LedgerIntegrityAnomalyRecordRepository;
-import com.fix.corebank.repository.LedgerIntegrityRunRepository;
 import com.fix.corebank.repository.LedgerReconciliationCaseEventRepository;
 import com.fix.corebank.repository.LedgerReconciliationCaseRepository;
 import com.fix.corebank.repository.LedgerReconciliationRepairRepository;
@@ -31,6 +29,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,7 +45,6 @@ public class LedgerRepairService {
   private final PositionRepository positionRepository;
   private final ExecutionRepository executionRepository;
   private final LedgerIntegrityService ledgerIntegrityService;
-  private final LedgerIntegrityRunRepository ledgerIntegrityRunRepository;
   private final LedgerIntegrityAnomalyRecordRepository anomalyRecordRepository;
 
   public LedgerRepairService(
@@ -57,7 +55,6 @@ public class LedgerRepairService {
       PositionRepository positionRepository,
       ExecutionRepository executionRepository,
       LedgerIntegrityService ledgerIntegrityService,
-      LedgerIntegrityRunRepository ledgerIntegrityRunRepository,
       LedgerIntegrityAnomalyRecordRepository anomalyRecordRepository
   ) {
     this.caseRepository = caseRepository;
@@ -67,7 +64,6 @@ public class LedgerRepairService {
     this.positionRepository = positionRepository;
     this.executionRepository = executionRepository;
     this.ledgerIntegrityService = ledgerIntegrityService;
-    this.ledgerIntegrityRunRepository = ledgerIntegrityRunRepository;
     this.anomalyRecordRepository = anomalyRecordRepository;
   }
 
@@ -76,10 +72,12 @@ public class LedgerRepairService {
     validateActorAndReason(command.getActor(), command.getReason());
     validateCaseId(command.getCaseId());
     validateRepairKey(command.getRepairKey());
+    LedgerReconciliationRepairType repairType = LedgerReconciliationRepairType.from(command.getRepairType());
 
     LedgerReconciliationRepair existing = repairRepository.findByCaseIdAndRepairKey(command.getCaseId(), command.getRepairKey())
         .orElse(null);
     if (existing != null) {
+      validateReplayType(existing, repairType);
       return toRepairResult(existing, currentCaseStatus(existing.getCaseId()), true);
     }
 
@@ -89,29 +87,37 @@ public class LedgerRepairService {
       throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "cannot repair terminal reconciliation case");
     }
 
-    LedgerReconciliationRepairType repairType = LedgerReconciliationRepairType.from(command.getRepairType());
     RepairMutation mutation = switch (repairType) {
       case REBUILD_POSITION_FROM_EXECUTIONS -> rebuildPositionFromExecutions(reconciliationCase);
       case ATTACH_LEDGER_CL_ORD_REF -> attachLedgerReference(reconciliationCase);
       case MARK_FALSE_POSITIVE -> markFalsePositive(reconciliationCase);
     };
 
-    LedgerReconciliationRepair savedRepair = repairRepository.saveAndFlush(
-        LedgerReconciliationRepair.of(
-            reconciliationCase.getId(),
-            command.getRepairKey(),
-            repairType,
-            mutation.outcome(),
-            mutation.mutated(),
-            command.getReason(),
-            command.getActor(),
-            command.getContext(),
-            command.getCorrelationId(),
-            mutation.summaryMessage()
-        )
-    );
-
-    return toRepairResult(savedRepair, reconciliationCase.getStatus().name(), false);
+    try {
+      LedgerReconciliationRepair savedRepair = repairRepository.saveAndFlush(
+          LedgerReconciliationRepair.of(
+              reconciliationCase.getId(),
+              command.getRepairKey(),
+              repairType,
+              mutation.outcome(),
+              mutation.mutated(),
+              command.getReason(),
+              command.getActor(),
+              command.getContext(),
+              command.getCorrelationId(),
+              mutation.summaryMessage()
+          )
+      );
+      return toRepairResult(savedRepair, reconciliationCase.getStatus().name(), false);
+    } catch (DataIntegrityViolationException ex) {
+      LedgerReconciliationRepair concurrent = repairRepository.findByCaseIdAndRepairKey(
+              command.getCaseId(),
+              command.getRepairKey()
+          )
+          .orElseThrow(() -> ex);
+      validateReplayType(concurrent, repairType);
+      return toRepairResult(concurrent, currentCaseStatus(concurrent.getCaseId()), true);
+    }
   }
 
   @Transactional
@@ -128,17 +134,19 @@ public class LedgerRepairService {
       );
     }
 
-    LedgerIntegrityCheckResult ignored = ledgerIntegrityService.runCheckAndStore();
-    LedgerIntegrityRun rerun = ledgerIntegrityRunRepository.findFirstByOrderByIdDesc()
-        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "integrity run not found"));
-    boolean anomalyStillPresent = anomalyRecordRepository.findAllByRunId(rerun.getId()).stream()
+    LedgerIntegrityCheckResult rerunCheck = ledgerIntegrityService.runCheckAndStore();
+    Long rerunRunId = rerunCheck.getRunId();
+    if (rerunRunId == null) {
+      throw new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "integrity run not found");
+    }
+    boolean anomalyStillPresent = anomalyRecordRepository.findAllByRunId(rerunRunId).stream()
         .anyMatch(anomaly -> matchesCase(reconciliationCase, anomaly));
 
     LedgerReconciliationCaseStatus previousStatus = reconciliationCase.getStatus();
     LedgerReconciliationCaseStatus targetStatus = anomalyStillPresent
         ? LedgerReconciliationCaseStatus.REOPENED
         : LedgerReconciliationCaseStatus.RESOLVED;
-    boolean changed = reconciliationCase.transitionTo(targetStatus, rerun.getCheckedAt());
+    boolean changed = reconciliationCase.transitionTo(targetStatus, rerunCheck.getCheckedAt());
     LedgerReconciliationCase savedCase = caseRepository.saveAndFlush(reconciliationCase);
     LedgerReconciliationCaseEvent savedEvent = eventRepository.saveAndFlush(
         LedgerReconciliationCaseEvent.statusChanged(
@@ -153,7 +161,7 @@ public class LedgerRepairService {
     );
 
     repairRepository.findFirstByCaseIdOrderByIdDesc(savedCase.getId()).ifPresent(repair -> {
-      repair.linkRerun(rerun.getId(), savedCase.getStatus());
+      repair.linkRerun(rerunRunId, savedCase.getStatus());
       repairRepository.saveAndFlush(repair);
     });
 
@@ -163,7 +171,7 @@ public class LedgerRepairService {
         savedCase.getStatus().name(),
         changed,
         savedEvent.getId(),
-        rerun.getId(),
+        rerunRunId,
         anomalyStillPresent,
         command.getReason(),
         command.getActor(),
@@ -319,6 +327,18 @@ public class LedgerRepairService {
 
   private boolean matchesNullable(Object expected, Object actual) {
     return expected == null || expected.equals(actual);
+  }
+
+  private void validateReplayType(
+      LedgerReconciliationRepair existing,
+      LedgerReconciliationRepairType requestedRepairType
+  ) {
+    if (!existing.getRepairType().equals(requestedRepairType)) {
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          "requested repairType does not match existing repair for given caseId and repairKey"
+      );
+    }
   }
 
   private String currentCaseStatus(Long caseId) {
