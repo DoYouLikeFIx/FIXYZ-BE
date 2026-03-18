@@ -52,7 +52,13 @@ class AccountTest {
 
     assertThatThrownBy(() -> account.debitCash(new BigDecimal("1000.0001")))
         .isInstanceOf(BusinessException.class)
-        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_CASH));
+        .satisfies(ex -> {
+          BusinessException actual = (BusinessException) ex;
+          assertThat(actual.getErrorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_CASH);
+          assertThat(actual.getMetadata()).isNotNull();
+          assertThat(actual.getMetadata().userMessageKey()).isEqualTo("error.order.insufficient_cash");
+          assertThat(actual.getMetadata().operatorCode()).isEqualTo("INSUFFICIENT_CASH");
+        });
   }
 
   @Test
