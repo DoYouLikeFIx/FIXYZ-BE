@@ -5,3 +5,7 @@ spring:
     properties:
       hibernate:
         show_sql: false
+
+corebank:
+  ledger-integrity:
+    enabled: false

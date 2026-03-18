@@ -72,6 +72,9 @@ recovery:
 corebank:
   order:
     position-lock-timeout-millis: ${COREBANK_ORDER_POSITION_LOCK_TIMEOUT_MILLIS:1000}
+  ledger-integrity:
+    enabled: ${COREBANK_LEDGER_INTEGRITY_ENABLED:true}
+    fixed-delay-ms: ${COREBANK_LEDGER_INTEGRITY_FIXED_DELAY_MS:60000}
   provisioning:
     # Safe default for shared or misconfigured environments. Local/openapi
     # profiles and explicit env overrides can opt into funded demo balances.
