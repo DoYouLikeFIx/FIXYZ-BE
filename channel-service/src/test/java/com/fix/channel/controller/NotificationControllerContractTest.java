@@ -9,8 +9,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.when;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Import;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -22,15 +21,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.fix.channel.service.ChannelScaffoldService;
+import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import com.fix.channel.vo.NotificationItemVo;
 import com.fix.channel.vo.NotificationStreamResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 
-@WebMvcTest(NotificationController.class)
+@SpringBootTest
 @AutoConfigureMockMvc(addFilters = false)
-@Import(com.fix.channel.exception.GlobalExceptionHandler.class)
-class NotificationControllerContractTest {
+class NotificationControllerContractTest extends ChannelContainersIntegrationTestBase {
 
   @Autowired
   private MockMvc mockMvc;
