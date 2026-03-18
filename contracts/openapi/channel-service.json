@@ -825,6 +825,36 @@
         }
       }
     },
+    "/api/v1/admin/security-events": {
+      "get": {
+        "tags": [
+          "admin-controller"
+        ],
+        "operationId": "securityEvents",
+        "parameters": [
+          {
+            "name": "request",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AdminSecurityEventRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminSecurityEventResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "tags": [
@@ -900,44 +930,6 @@
               }
             }
           },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too Many Requests",
-            "headers": {
-              "Retry-After": {
-                "description": "Seconds until the rate-limit window resets",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -947,66 +939,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/security-events": {
-      "get": {
-        "tags": [
-          "admin-controller"
-        ],
-        "operationId": "securityEvents",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/AdminSecurityEventRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseAdminSecurityEventResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/members/{memberUuid}/sessions": {
-      "delete": {
-        "tags": [
-          "admin-controller"
-        ],
-        "operationId": "invalidateMemberSessions",
-        "parameters": [
-          {
-            "name": "memberUuid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseAdminSessionInvalidationResponse"
-                }
-              }
-            }
           },
           "403": {
             "description": "Forbidden",
@@ -1033,6 +965,7 @@
             "headers": {
               "Retry-After": {
                 "description": "Seconds until the rate-limit window resets",
+                "style": "simple",
                 "schema": {
                   "type": "string"
                 }
@@ -1199,6 +1132,75 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponseAccountOrderHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/members/{memberUuid}/sessions": {
+      "delete": {
+        "tags": [
+          "admin-controller"
+        ],
+        "operationId": "invalidateMemberSessions",
+        "parameters": [
+          {
+            "name": "memberUuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminSessionInvalidationResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the rate-limit window resets",
+                "style": "simple",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             }
@@ -2336,30 +2338,21 @@
           }
         }
       },
-      "AdminAuditLogQueryResponse": {
+      "SecurityEventItemResponse": {
         "type": "object",
         "properties": {
-          "content": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminAuditLogItem"
-            }
-          },
-          "totalElements": {
+          "eventId": {
             "type": "integer",
             "format": "int64"
           },
-          "totalPages": {
-            "type": "integer",
-            "format": "int32"
+          "eventType": {
+            "type": "string"
           },
-          "number": {
-            "type": "integer",
-            "format": "int32"
+          "severity": {
+            "type": "string"
           },
-          "size": {
-            "type": "integer",
-            "format": "int32"
+          "ipAddress": {
+            "type": "string"
           }
         }
       },
@@ -2404,6 +2397,33 @@
           }
         }
       },
+      "AdminAuditLogQueryResponse": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAuditLogItem"
+            }
+          },
+          "totalElements": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "ApiResponseAdminAuditLogQueryResponse": {
         "type": "object",
         "properties": {
@@ -2419,57 +2439,6 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
-          }
-        }
-      },
-      "AdminSessionInvalidationResponse": {
-        "type": "object",
-        "properties": {
-          "memberUuid": {
-            "type": "string"
-          },
-          "invalidatedCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "message": {
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponseAdminSessionInvalidationResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/AdminSessionInvalidationResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "SecurityEventItemResponse": {
-        "type": "object",
-        "properties": {
-          "eventId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "eventType": {
-            "type": "string"
-          },
-          "severity": {
-            "type": "string"
-          },
-          "ipAddress": {
-            "type": "string"
           }
         }
       },
@@ -2623,6 +2592,39 @@
             "type": "string"
           },
           "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AdminSessionInvalidationResponse": {
+        "type": "object",
+        "properties": {
+          "memberUuid": {
+            "type": "string"
+          },
+          "invalidatedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiResponseAdminSessionInvalidationResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminSessionInvalidationResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
             "type": "string",
             "format": "date-time"
           }
