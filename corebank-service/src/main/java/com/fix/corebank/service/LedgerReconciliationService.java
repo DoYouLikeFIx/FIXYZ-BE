@@ -15,6 +15,7 @@ import com.fix.corebank.vo.LedgerReconciliationCaseTransitionCommand;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Set;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,20 +61,33 @@ public class LedgerReconciliationService {
         .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "integrity anomaly not found"));
 
     Instant openedAt = Instant.now();
-    LedgerReconciliationCase savedCase = caseRepository.saveAndFlush(
-        LedgerReconciliationCase.openFromAnomaly(anomaly, openedAt)
-    );
-    LedgerReconciliationCaseEvent savedEvent = eventRepository.saveAndFlush(
-        LedgerReconciliationCaseEvent.created(
-            savedCase.getId(),
-            command.getReason(),
-            command.getActor(),
-            command.getContext(),
-            command.getCorrelationId()
-        )
-    );
+    try {
+      LedgerReconciliationCase savedCase = caseRepository.saveAndFlush(
+          LedgerReconciliationCase.openFromAnomaly(anomaly, openedAt)
+      );
+      LedgerReconciliationCaseEvent savedEvent = eventRepository.saveAndFlush(
+          LedgerReconciliationCaseEvent.created(
+              savedCase.getId(),
+              command.getReason(),
+              command.getActor(),
+              command.getContext(),
+              command.getCorrelationId()
+          )
+      );
 
-    return toResult(savedCase, null, true, true, savedEvent.getId(), savedEvent.getCreatedAt());
+      return toResult(savedCase, null, true, true, savedEvent.getId(), savedEvent.getCreatedAt());
+    } catch (DataIntegrityViolationException ex) {
+      LedgerReconciliationCase concurrentExisting = caseRepository.findFirstByAnomalyIdOrderByIdDesc(command.getAnomalyId())
+          .orElseThrow(() -> ex);
+      return toResult(
+          concurrentExisting,
+          concurrentExisting.getStatus().name(),
+          false,
+          false,
+          null,
+          concurrentExisting.getLastTransitionAt()
+      );
+    }
   }
 
   @Transactional

@@ -218,6 +218,12 @@ class CoreFlywayMigrationTest {
             + "AND INDEX_NAME = 'IDX_LEDGER_RECONCILIATION_CASES_ANOMALY_ID'",
         Integer.class
     );
+    Integer uniqueAnomalyIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASES' "
+            + "AND INDEX_NAME = 'UK_LEDGER_RECONCILIATION_CASES_ANOMALY_ID'",
+        Integer.class
+    );
     Integer eventCaseIndexCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
             + "WHERE TABLE_NAME = 'LEDGER_RECONCILIATION_CASE_EVENTS' "
@@ -230,6 +236,7 @@ class CoreFlywayMigrationTest {
     assertThat(statusLength).isEqualTo(32);
     assertThat(lastTransitionExists).isEqualTo(1);
     assertThat(anomalyIndexCount).isEqualTo(1);
+    assertThat(uniqueAnomalyIndexCount).isEqualTo(1);
     assertThat(eventCaseIndexCount).isEqualTo(1);
   }
 

@@ -171,6 +171,36 @@ class LedgerReconciliationIntegrationTest extends CorebankContainersIntegrationT
   }
 
   @Test
+  void shouldReturnExistingTerminalCaseForDuplicateCreateRequest() {
+    LedgerIntegrityAnomalyRecord anomaly = createStoredNegativePositionAnomaly();
+
+    LedgerReconciliationCaseResult first = ledgerReconciliationService.createCase(
+        LedgerReconciliationCaseCreateCommand.of(anomaly.getId(), "first open", "ops-a", "ctx-a", "corr-a")
+    );
+    LedgerReconciliationCaseResult waived = ledgerReconciliationService.transitionCase(
+        LedgerReconciliationCaseTransitionCommand.of(
+            first.getCaseId(),
+            "WAIVED",
+            "waived terminal case",
+            "ops-waive",
+            "ctx-waive",
+            "corr-waive"
+        )
+    );
+    LedgerReconciliationCaseResult duplicate = ledgerReconciliationService.createCase(
+        LedgerReconciliationCaseCreateCommand.of(anomaly.getId(), "duplicate open", "ops-b", "ctx-b", "corr-b")
+    );
+
+    assertThat(waived.getCurrentStatus()).isEqualTo("WAIVED");
+    assertThat(duplicate.isCreated()).isFalse();
+    assertThat(duplicate.isChanged()).isFalse();
+    assertThat(duplicate.getCaseId()).isEqualTo(first.getCaseId());
+    assertThat(duplicate.getCurrentStatus()).isEqualTo("WAIVED");
+    assertThat(caseRepository.count()).isEqualTo(1);
+    assertThat(eventRepository.count()).isEqualTo(2);
+  }
+
+  @Test
   void shouldTransitionCaseToAcknowledgedAndRecordAuditEvent() {
     LedgerReconciliationCaseResult created = ledgerReconciliationService.createCase(
         LedgerReconciliationCaseCreateCommand.of(

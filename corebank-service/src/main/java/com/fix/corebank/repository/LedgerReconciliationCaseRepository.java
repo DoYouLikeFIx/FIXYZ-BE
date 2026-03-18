@@ -12,4 +12,6 @@ public interface LedgerReconciliationCaseRepository extends JpaRepository<Ledger
       Long anomalyId,
       Collection<LedgerReconciliationCaseStatus> statuses
   );
+
+  Optional<LedgerReconciliationCase> findFirstByAnomalyIdOrderByIdDesc(Long anomalyId);
 }
