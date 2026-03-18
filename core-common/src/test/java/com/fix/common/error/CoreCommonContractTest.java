@@ -1,10 +1,6 @@
 package com.fix.common.error;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -15,10 +11,10 @@ class CoreCommonContractTest {
   void shouldBuildSuccessApiResponse() {
     ApiResponse<String> response = ApiResponse.success("ok");
 
-    assertTrue(response.isSuccess());
-    assertEquals("ok", response.getData());
-    assertNull(response.getError());
-    assertNotNull(response.getTimestamp());
+    assertThat(response.isSuccess()).isTrue();
+    assertThat(response.getData()).isEqualTo("ok");
+    assertThat(response.getError()).isNull();
+    assertThat(response.getTimestamp()).isNotNull();
   }
 
   @Test
@@ -31,14 +27,14 @@ class CoreCommonContractTest {
     );
     ApiResponse<Void> response = ApiResponse.failure(error);
 
-    assertFalse(response.isSuccess());
-    assertEquals("VALIDATION_001", response.getError().getCode());
-    assertEquals("Validation failed", response.getError().getMessage());
-    assertEquals("/api/v1/test", response.getError().getPath());
-    assertEquals("corr-1", response.getError().getCorrelationId());
-    assertNull(response.getError().getUserMessageKey());
-    assertNull(response.getError().getOperatorCode());
-    assertNotNull(response.getTimestamp());
+    assertThat(response.isSuccess()).isFalse();
+    assertThat(response.getError().getCode()).isEqualTo("VALIDATION_001");
+    assertThat(response.getError().getMessage()).isEqualTo("Validation failed");
+    assertThat(response.getError().getPath()).isEqualTo("/api/v1/test");
+    assertThat(response.getError().getCorrelationId()).isEqualTo("corr-1");
+    assertThat(response.getError().getUserMessageKey()).isNull();
+    assertThat(response.getError().getOperatorCode()).isNull();
+    assertThat(response.getTimestamp()).isNotNull();
   }
 
   @Test
@@ -51,9 +47,9 @@ class CoreCommonContractTest {
         new ErrorMetadata("error.fep.timeout", "TIMEOUT")
     );
 
-    assertEquals("FEP-002", error.getCode());
-    assertEquals("error.fep.timeout", error.getUserMessageKey());
-    assertEquals("TIMEOUT", error.getOperatorCode());
+    assertThat(error.getCode()).isEqualTo("FEP-002");
+    assertThat(error.getUserMessageKey()).isEqualTo("error.fep.timeout");
+    assertThat(error.getOperatorCode()).isEqualTo("TIMEOUT");
   }
 
   @Test
@@ -66,8 +62,8 @@ class CoreCommonContractTest {
         new ErrorMetadata(null, null, java.util.Map.of("enrollUrl", "/settings/totp/enroll"))
     );
 
-    assertEquals("/settings/totp/enroll", error.getAdditionalProperties().get("enrollUrl"));
-    assertTrue(error.getAdditionalProperties().containsKey("enrollUrl"));
+    assertThat(error.getAdditionalProperties().get("enrollUrl")).isEqualTo("/settings/totp/enroll");
+    assertThat(error.getAdditionalProperties()).containsKey("enrollUrl");
   }
 
   @Test
@@ -84,42 +80,28 @@ class CoreCommonContractTest {
         )
     );
 
-    assertNotNull(error.getDetails());
-    assertEquals("50.0000", error.getDetails().get("requestedQty"));
-    assertEquals("30.0000", error.getDetails().get("remainingLimit"));
-    assertEquals("error.order.daily_limit_exceeded", error.getUserMessageKey());
-    assertEquals("DAILY_LIMIT_EXCEEDED", error.getOperatorCode());
+    assertThat(error.getDetails()).isNotNull();
+    assertThat(error.getDetails().get("requestedQty")).isEqualTo("50.0000");
+    assertThat(error.getDetails().get("remainingLimit")).isEqualTo("30.0000");
+    assertThat(error.getUserMessageKey()).isEqualTo("error.order.daily_limit_exceeded");
+    assertThat(error.getOperatorCode()).isEqualTo("DAILY_LIMIT_EXCEEDED");
   }
 
   @Test
   void shouldResolveContractErrorCodes() {
-    assertEquals(
-        ErrorCode.AUTH_FORBIDDEN_OWNERSHIP,
-        ErrorCode.fromCode("AUTH-005").orElseThrow()
-    );
-    assertEquals(
-        ErrorCode.CORE_DEPENDENCY_TIMEOUT,
-        ErrorCode.fromCode("CORE-901").orElseThrow()
-    );
-    assertEquals(
-        ErrorCode.CORE_DEPENDENCY_UNAVAILABLE,
-        ErrorCode.fromCode("CORE-902").orElseThrow()
-    );
-    assertEquals(
-        ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED,
-        ErrorCode.fromCode("ORD-012").orElseThrow()
-    );
-    assertEquals(
-        ErrorCode.ORD_DAILY_SELL_LIMIT_EXCEEDED,
-        ErrorCode.fromCode("ORD-002").orElseThrow()
-    );
-    assertEquals(
-        ErrorCode.ORD_INSUFFICIENT_POSITION,
-        ErrorCode.fromCode("ORD-003").orElseThrow()
-    );
-    assertEquals(
-        ErrorCode.AUTH_MFA_REBIND_CURRENT_PASSWORD_MISMATCH,
-        ErrorCode.fromCode("AUTH-026").orElseThrow()
-    );
+    assertThat(ErrorCode.fromCode("AUTH-005").orElseThrow())
+        .isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP);
+    assertThat(ErrorCode.fromCode("CORE-901").orElseThrow())
+        .isEqualTo(ErrorCode.CORE_DEPENDENCY_TIMEOUT);
+    assertThat(ErrorCode.fromCode("CORE-902").orElseThrow())
+        .isEqualTo(ErrorCode.CORE_DEPENDENCY_UNAVAILABLE);
+    assertThat(ErrorCode.fromCode("ORD-012").orElseThrow())
+        .isEqualTo(ErrorCode.ORD_ACCOUNT_STATUS_BLOCKED);
+    assertThat(ErrorCode.fromCode("ORD-002").orElseThrow())
+        .isEqualTo(ErrorCode.ORD_DAILY_SELL_LIMIT_EXCEEDED);
+    assertThat(ErrorCode.fromCode("ORD-003").orElseThrow())
+        .isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION);
+    assertThat(ErrorCode.fromCode("AUTH-026").orElseThrow())
+        .isEqualTo(ErrorCode.AUTH_MFA_REBIND_CURRENT_PASSWORD_MISMATCH);
   }
 }

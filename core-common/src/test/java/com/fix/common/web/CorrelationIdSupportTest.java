@@ -1,7 +1,6 @@
 package com.fix.common.web;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
@@ -9,22 +8,22 @@ class CorrelationIdSupportTest {
 
   @Test
   void shouldNormalizeBlankCorrelationIdToNull() {
-    assertNull(CorrelationIdSupport.normalize(null));
-    assertNull(CorrelationIdSupport.normalize(" "));
+    assertThat(CorrelationIdSupport.normalize(null)).isNull();
+    assertThat(CorrelationIdSupport.normalize(" ")).isNull();
   }
 
   @Test
   void shouldPreservePlatformCorrelationIdsUpToSixtyFourCharacters() {
     String correlationId = "trace-channel-auth-very-long-correlation-id-000001";
 
-    assertEquals(correlationId, CorrelationIdSupport.normalize(correlationId));
+    assertThat(CorrelationIdSupport.normalize(correlationId)).isEqualTo(correlationId);
   }
 
   @Test
   void shouldAllowExplicitCanonicalLengthNormalization() {
     String correlationId = "trace-channel-auth-very-long-correlation-id-000001";
 
-    assertEquals(36, CorrelationIdSupport.normalize(correlationId, 36).length());
-    assertEquals(correlationId.substring(0, 36), CorrelationIdSupport.normalize(correlationId, 36));
+    assertThat(CorrelationIdSupport.normalize(correlationId, 36)).hasSize(36);
+    assertThat(CorrelationIdSupport.normalize(correlationId, 36)).isEqualTo(correlationId.substring(0, 36));
   }
 }
