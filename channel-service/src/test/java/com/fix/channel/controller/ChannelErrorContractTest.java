@@ -9,6 +9,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -761,6 +762,33 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.message").value("Access denied."))
         .andExpect(jsonPath("$.path").value("/api/v1/admin/accounts/1/status"));
   }
+
+        @Test
+        @WithMockUser(username = "qa-user")
+        void shouldRequireAdminRoleForAuditLogsBoundary() throws Exception {
+          mockMvc.perform(get("/api/v1/admin/audit-logs")
+          .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-audit-access-denied")
+          .param("page", "0")
+          .param("size", "20"))
+          .andExpect(status().isForbidden())
+            .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
+          .andExpect(jsonPath("$.code").value("AUTH-006"))
+          .andExpect(jsonPath("$.message").value("Access denied."))
+          .andExpect(jsonPath("$.path").value("/api/v1/admin/audit-logs"));
+        }
+
+        @Test
+        @WithMockUser(username = "qa-user")
+        void shouldRequireAdminRoleForForceLogoutBoundary() throws Exception {
+          mockMvc.perform(delete("/api/v1/admin/members/{memberUuid}/sessions", "M-NON-ADMIN-TARGET")
+          .with(csrf())
+          .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-force-logout-access-denied"))
+          .andExpect(status().isForbidden())
+            .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
+          .andExpect(jsonPath("$.code").value("AUTH-006"))
+          .andExpect(jsonPath("$.message").value("Access denied."))
+          .andExpect(jsonPath("$.path").value("/api/v1/admin/members/M-NON-ADMIN-TARGET/sessions"));
+        }
 
   @Test
   @WithMockUser(username = "qa-user")
