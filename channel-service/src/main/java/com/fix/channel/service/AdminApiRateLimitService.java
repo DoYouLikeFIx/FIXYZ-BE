@@ -59,10 +59,16 @@ public class AdminApiRateLimitService {
 
   private long retryAfterSeconds(StringRedisTemplate redisTemplate, String key) {
     Long rawTtl = redisTemplate.getExpire(key);
-    if (rawTtl == null || rawTtl < 1L) {
+    if (rawTtl == null) {
       return Math.max(1L, windowSeconds);
     }
-    return rawTtl;
+    if (rawTtl > 0L) {
+      return rawTtl;
+    }
+    if (rawTtl == -1L) {
+      return Math.max(1L, windowSeconds);
+    }
+    return 1L;
   }
 
   private StringRedisTemplate requireRateLimitRedis() {
