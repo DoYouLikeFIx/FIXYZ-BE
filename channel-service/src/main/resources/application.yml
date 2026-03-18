@@ -136,3 +136,13 @@ corebank:
   internal:
     base-url: ${COREBANK_INTERNAL_BASE_URL:http://localhost:8081}
     secret: ${COREBANK_INTERNAL_SECRET:${INTERNAL_SECRET:local-internal-secret}}
+
+order:
+  session:
+    recovery:
+      enabled: ${ORDER_SESSION_RECOVERY_ENABLED:true}
+      fixed-delay-ms: ${ORDER_SESSION_RECOVERY_FIXED_DELAY_MS:60000}
+      batch-size: ${ORDER_SESSION_RECOVERY_BATCH_SIZE:100}
+      executing-timeout: ${ORDER_SESSION_RECOVERY_EXECUTING_TIMEOUT:30s}
+      manual-queue:
+        local-max-size: ${ORDER_SESSION_RECOVERY_MANUAL_QUEUE_LOCAL_MAX_SIZE:10000}
