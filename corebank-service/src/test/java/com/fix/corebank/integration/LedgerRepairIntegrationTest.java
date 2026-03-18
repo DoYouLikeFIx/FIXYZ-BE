@@ -28,6 +28,7 @@ import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.LedgerReconciliationCaseCreateCommand;
 import com.fix.corebank.vo.LedgerReconciliationCaseResult;
+import com.fix.corebank.vo.LedgerReconciliationCaseTransitionCommand;
 import com.fix.corebank.vo.LedgerReconciliationRepairCommand;
 import com.fix.corebank.vo.LedgerReconciliationRepairResult;
 import com.fix.corebank.vo.LedgerReconciliationRerunCommand;
@@ -335,6 +336,74 @@ class LedgerRepairIntegrationTest extends CorebankContainersIntegrationTestBase 
         .isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
   }
 
+  @Test
+  void shouldResolveWhenSameTypeRerunAnomalyLacksStableFingerprintMatch() {
+    Long runId = insertIntegrityRun(false, 1, "ORPHAN_EXECUTION: seeded anomaly");
+    Long anomalyId = insertIntegrityAnomaly(
+        runId,
+        "ORPHAN_EXECUTION",
+        "seeded orphan anomaly without stable identifier",
+        ACCOUNT_ID,
+        SELL_SYMBOL,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+    );
+
+    LedgerReconciliationCaseResult reconciliationCase = ledgerReconciliationService.createCase(
+        LedgerReconciliationCaseCreateCommand.of(
+            anomalyId,
+            "open seeded case",
+            "ops-open",
+            "seeded-ctx",
+            "corr-seeded-open"
+        )
+    );
+    LedgerReconciliationCaseResult repairPending = ledgerReconciliationService.transitionCase(
+        LedgerReconciliationCaseTransitionCommand.of(
+            reconciliationCase.getCaseId(),
+            "REPAIR_PENDING",
+            "prepare rerun",
+            "ops-reviewer",
+            "seeded-rerun-ctx",
+            "corr-seeded-rerun"
+        )
+    );
+    assertThat(repairPending.getCurrentStatus()).isEqualTo("REPAIR_PENDING");
+
+    jdbcTemplate.update(
+        """
+            INSERT INTO executions (
+              order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, executed_at, created_at, updated_at, version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+            """,
+        999999L,
+        ACCOUNT_ID,
+        UUID.randomUUID().toString(),
+        SELL_SYMBOL,
+        "SELL",
+        new BigDecimal("5.0000"),
+        new BigDecimal("72000.0000"),
+        EXECUTED_AT
+    );
+
+    LedgerReconciliationRerunResult rerun = ledgerRepairService.rerunCase(
+        LedgerReconciliationRerunCommand.of(
+            reconciliationCase.getCaseId(),
+            "verify seeded rerun",
+            "ops-rerun",
+            "seeded-rerun-ctx",
+            "corr-seeded-rerun"
+        )
+    );
+
+    assertThat(rerun.isAnomalyStillPresent()).isFalse();
+    assertThat(rerun.getCurrentStatus()).isEqualTo("RESOLVED");
+  }
+
   private LedgerReconciliationCaseResult createCaseFromMissingReferenceAnomaly() {
     createFilledOrder(SELL_SYMBOL, "SELL", "10.0000", "72000.0000");
     Long ledgerEntryId = jdbcTemplate.queryForObject("SELECT MIN(id) FROM ledger_entries", Long.class);
@@ -370,6 +439,56 @@ class LedgerRepairIntegrationTest extends CorebankContainersIntegrationTestBase 
         new BigDecimal(price)
     ));
     return clOrdId;
+  }
+
+  private Long insertIntegrityRun(boolean passed, int anomalyCount, String summaryMessage) {
+    jdbcTemplate.update(
+        """
+            INSERT INTO ledger_integrity_runs (
+              checked_at, passed, anomaly_count, summary_message, created_at, updated_at, version
+            ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+            """,
+        EXECUTED_AT,
+        passed,
+        anomalyCount,
+        summaryMessage
+    );
+    return jdbcTemplate.queryForObject("SELECT MAX(id) FROM ledger_integrity_runs", Long.class);
+  }
+
+  private Long insertIntegrityAnomaly(
+      Long runId,
+      String type,
+      String message,
+      Long accountId,
+      String symbol,
+      Long positionId,
+      Long executionId,
+      Long orderId,
+      String clOrdId,
+      Long journalEntryId,
+      Long ledgerEntryId
+  ) {
+    jdbcTemplate.update(
+        """
+            INSERT INTO ledger_integrity_anomalies (
+              run_id, type, message, account_id, symbol, position_id, execution_id, order_id,
+              cl_ord_id, journal_entry_id, ledger_entry_id, created_at, updated_at, version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+            """,
+        runId,
+        type,
+        message,
+        accountId,
+        symbol,
+        positionId,
+        executionId,
+        orderId,
+        clOrdId,
+        journalEntryId,
+        ledgerEntryId
+    );
+    return jdbcTemplate.queryForObject("SELECT MAX(id) FROM ledger_integrity_anomalies", Long.class);
   }
 
   private FepOrderResult toFilledResult(FepOutboundOrderPayload payload) {

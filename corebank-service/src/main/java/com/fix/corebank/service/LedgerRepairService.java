@@ -29,6 +29,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -301,32 +302,69 @@ public class LedgerRepairService {
     if (!reconciliationCase.getAnomalyType().equals(anomaly.getType())) {
       return false;
     }
-    if (!matchesNullable(reconciliationCase.getAccountId(), anomaly.getAccountId())) {
-      return false;
-    }
-    if (!matchesNullable(reconciliationCase.getSymbol(), anomaly.getSymbol())) {
-      return false;
-    }
-    if (!matchesNullable(reconciliationCase.getPositionId(), anomaly.getPositionId())) {
-      return false;
-    }
-    if (!matchesNullable(reconciliationCase.getExecutionId(), anomaly.getExecutionId())) {
-      return false;
-    }
-    if (!matchesNullable(reconciliationCase.getOrderId(), anomaly.getOrderId())) {
-      return false;
-    }
-    if (!matchesNullable(reconciliationCase.getClOrdId(), anomaly.getClOrdId())) {
-      return false;
-    }
-    if (!matchesNullable(reconciliationCase.getJournalEntryId(), anomaly.getJournalEntryId())) {
-      return false;
-    }
-    return matchesNullable(reconciliationCase.getLedgerEntryId(), anomaly.getLedgerEntryId());
+
+    // Match rerun anomalies by the stable identifier for each anomaly type.
+    return switch (reconciliationCase.getAnomalyType()) {
+      case "NEGATIVE_POSITION" -> matchesNegativePosition(reconciliationCase, anomaly);
+      case "ORPHAN_EXECUTION" -> matchesOrphanExecution(reconciliationCase, anomaly);
+      case "JOURNAL_LEDGER_COUNT_MISMATCH", "JOURNAL_LEDGER_BALANCE_MISMATCH" ->
+          Objects.equals(reconciliationCase.getJournalEntryId(), anomaly.getJournalEntryId());
+      case "MISSING_LEDGER_CL_ORD_REF" -> matchesMissingLedgerReference(reconciliationCase, anomaly);
+      default -> matchesExactSnapshot(reconciliationCase, anomaly);
+    };
   }
 
-  private boolean matchesNullable(Object expected, Object actual) {
-    return expected == null || expected.equals(actual);
+  private boolean matchesNegativePosition(
+      LedgerReconciliationCase reconciliationCase,
+      LedgerIntegrityAnomalyRecord anomaly
+  ) {
+    if (reconciliationCase.getPositionId() != null || anomaly.getPositionId() != null) {
+      return Objects.equals(reconciliationCase.getPositionId(), anomaly.getPositionId());
+    }
+    return Objects.equals(reconciliationCase.getAccountId(), anomaly.getAccountId())
+        && Objects.equals(reconciliationCase.getSymbol(), anomaly.getSymbol());
+  }
+
+  private boolean matchesOrphanExecution(
+      LedgerReconciliationCase reconciliationCase,
+      LedgerIntegrityAnomalyRecord anomaly
+  ) {
+    if (reconciliationCase.getExecutionId() != null || anomaly.getExecutionId() != null) {
+      return Objects.equals(reconciliationCase.getExecutionId(), anomaly.getExecutionId());
+    }
+    if (reconciliationCase.getOrderId() != null && reconciliationCase.getClOrdId() != null) {
+      return Objects.equals(reconciliationCase.getOrderId(), anomaly.getOrderId())
+          && Objects.equals(reconciliationCase.getClOrdId(), anomaly.getClOrdId());
+    }
+    return false;
+  }
+
+  private boolean matchesMissingLedgerReference(
+      LedgerReconciliationCase reconciliationCase,
+      LedgerIntegrityAnomalyRecord anomaly
+  ) {
+    if (reconciliationCase.getLedgerEntryId() != null || anomaly.getLedgerEntryId() != null) {
+      return Objects.equals(reconciliationCase.getLedgerEntryId(), anomaly.getLedgerEntryId());
+    }
+    if (reconciliationCase.getJournalEntryId() != null && reconciliationCase.getClOrdId() != null) {
+      return Objects.equals(reconciliationCase.getJournalEntryId(), anomaly.getJournalEntryId())
+          && Objects.equals(reconciliationCase.getClOrdId(), anomaly.getClOrdId());
+    }
+    return false;
+  }
+
+  private boolean matchesExactSnapshot(
+      LedgerReconciliationCase reconciliationCase,
+      LedgerIntegrityAnomalyRecord anomaly
+  ) {
+    return Objects.equals(reconciliationCase.getAccountId(), anomaly.getAccountId())
+        && Objects.equals(reconciliationCase.getSymbol(), anomaly.getSymbol())
+        && Objects.equals(reconciliationCase.getPositionId(), anomaly.getPositionId())
+        && Objects.equals(reconciliationCase.getExecutionId(), anomaly.getExecutionId())
+        && Objects.equals(reconciliationCase.getOrderId(), anomaly.getOrderId())
+        && Objects.equals(reconciliationCase.getClOrdId(), anomaly.getClOrdId())
+        && Objects.equals(reconciliationCase.getJournalEntryId(), anomaly.getJournalEntryId())
+        && Objects.equals(reconciliationCase.getLedgerEntryId(), anomaly.getLedgerEntryId());
   }
 
   private void validateReplayType(
