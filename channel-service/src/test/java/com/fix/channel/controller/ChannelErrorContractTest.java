@@ -763,32 +763,32 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.path").value("/api/v1/admin/accounts/1/status"));
   }
 
-        @Test
-        @WithMockUser(username = "qa-user")
-        void shouldRequireAdminRoleForAuditLogsBoundary() throws Exception {
-          mockMvc.perform(get("/api/v1/admin/audit-logs")
-          .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-audit-access-denied")
-          .param("page", "0")
-          .param("size", "20"))
-          .andExpect(status().isForbidden())
-            .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
-          .andExpect(jsonPath("$.code").value("AUTH-006"))
-          .andExpect(jsonPath("$.message").value("Access denied."))
-          .andExpect(jsonPath("$.path").value("/api/v1/admin/audit-logs"));
-        }
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldRequireAdminRoleForAuditLogsBoundary() throws Exception {
+    mockMvc.perform(get("/api/v1/admin/audit-logs")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-audit-access-denied")
+            .param("page", "0")
+            .param("size", "20"))
+        .andExpect(status().isForbidden())
+        .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
+        .andExpect(jsonPath("$.code").value("AUTH-006"))
+        .andExpect(jsonPath("$.message").value("Access denied."))
+        .andExpect(jsonPath("$.path").value("/api/v1/admin/audit-logs"));
+  }
 
-        @Test
-        @WithMockUser(username = "qa-user")
-        void shouldRequireAdminRoleForForceLogoutBoundary() throws Exception {
-          mockMvc.perform(delete("/api/v1/admin/members/{memberUuid}/sessions", "M-NON-ADMIN-TARGET")
-          .with(csrf())
-          .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-force-logout-access-denied"))
-          .andExpect(status().isForbidden())
-            .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
-          .andExpect(jsonPath("$.code").value("AUTH-006"))
-          .andExpect(jsonPath("$.message").value("Access denied."))
-          .andExpect(jsonPath("$.path").value("/api/v1/admin/members/M-NON-ADMIN-TARGET/sessions"));
-        }
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldRequireAdminRoleForForceLogoutBoundary() throws Exception {
+    mockMvc.perform(delete("/api/v1/admin/members/{memberUuid}/sessions", "M-NON-ADMIN-TARGET")
+            .with(csrf())
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-force-logout-access-denied"))
+        .andExpect(status().isForbidden())
+        .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
+        .andExpect(jsonPath("$.code").value("AUTH-006"))
+        .andExpect(jsonPath("$.message").value("Access denied."))
+        .andExpect(jsonPath("$.path").value("/api/v1/admin/members/M-NON-ADMIN-TARGET/sessions"));
+  }
 
   @Test
   @WithMockUser(username = "qa-user")
