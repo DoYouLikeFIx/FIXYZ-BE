@@ -64,7 +64,7 @@ class OrderSessionExpirySchedulerTest {
     private final List<Integer> requestedBatchSizes = new ArrayList<>();
 
     RecordingOrderSessionService() {
-      super(null, null, null, null, null, null, null, null, null, null, null, null, Clock.systemUTC());
+      super(null, null, null, null, null, null, null, null, null, null, null, null, null, Clock.systemUTC());
     }
 
     @Override

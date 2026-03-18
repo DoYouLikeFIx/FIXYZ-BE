@@ -1,6 +1,7 @@
 package com.fix.channel.repository;
 
 import com.fix.channel.entity.SecurityEvent;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,4 +10,6 @@ public interface SecurityEventRepository extends JpaRepository<SecurityEvent, Lo
   List<SecurityEvent> findByMemberId(Long memberId, Pageable pageable);
 
   List<SecurityEvent> findByMemberIdAndIdLessThan(Long memberId, Long cursorId, Pageable pageable);
+
+  long deleteByOccurredAtBefore(Instant cutoff);
 }

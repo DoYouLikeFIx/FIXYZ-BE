@@ -4,9 +4,8 @@ import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
 import com.fix.channel.entity.SecurityEvent;
-import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
-import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.MemberTotpRebindCommand;
 import com.fix.channel.vo.MfaRecoveryRebindCommand;
 import com.fix.channel.vo.MfaRecoveryRebindConfirmCommand;
@@ -15,7 +14,6 @@ import com.fix.channel.vo.TotpRebindBootstrapResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
-import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.Map;
@@ -36,8 +34,8 @@ public class MfaRecoveryService {
   private static final String SECURITY_EVENT_REBIND_FAILED = "MFA_REBIND_FAILED";
 
   private final MemberRepository memberRepository;
-  private final AuditLogRepository auditLogRepository;
-  private final SecurityEventRepository securityEventRepository;
+  private final AuditLogService auditLogService;
+  private final SecurityEventService securityEventService;
   private final PasswordEncoder passwordEncoder;
   private final TotpEnrollRateLimitService totpEnrollRateLimitService;
   private final OtpVerifyRateLimitService otpVerifyRateLimitService;
@@ -48,8 +46,8 @@ public class MfaRecoveryService {
 
   public MfaRecoveryService(
       MemberRepository memberRepository,
-      AuditLogRepository auditLogRepository,
-      SecurityEventRepository securityEventRepository,
+      AuditLogService auditLogService,
+      SecurityEventService securityEventService,
       PasswordEncoder passwordEncoder,
       TotpEnrollRateLimitService totpEnrollRateLimitService,
       OtpVerifyRateLimitService otpVerifyRateLimitService,
@@ -59,8 +57,8 @@ public class MfaRecoveryService {
       ChannelSessionInvalidationService channelSessionInvalidationService
   ) {
     this.memberRepository = memberRepository;
-    this.auditLogRepository = auditLogRepository;
-    this.securityEventRepository = securityEventRepository;
+    this.auditLogService = auditLogService;
+    this.securityEventService = securityEventService;
     this.passwordEncoder = passwordEncoder;
     this.totpEnrollRateLimitService = totpEnrollRateLimitService;
     this.otpVerifyRateLimitService = otpVerifyRateLimitService;
@@ -151,7 +149,7 @@ public class MfaRecoveryService {
     String userAgent = resolveUserAgent(request);
     String correlationId = resolveCorrelationId(request);
 
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         member.getId(),
         AuditAction.AUTH_MFA_RECOVERY_PROOF_ISSUED,
         "MFA_RECOVERY",
@@ -161,13 +159,13 @@ public class MfaRecoveryService {
         userAgent,
         correlationId
     ));
-    securityEventRepository.save(SecurityEvent.of(
+    securityEventService.record(SecurityEvent.of(
         member.getId(),
         SECURITY_EVENT_PROOF_ISSUED,
         clientIp,
         userAgent,
         "HIGH"
-    ));
+    ).withCorrelationId(correlationId).withDetail("reason=password_reset_continuation"));
     return recoveryProof;
   }
 
@@ -290,7 +288,7 @@ public class MfaRecoveryService {
       String correlationId
   ) {
     persistNonCritical(() -> {
-      auditLogRepository.save(AuditLog.of(
+      auditLogService.record(AuditLog.of(
           memberId,
           AuditAction.AUTH_TOTP_REBIND_FAILED,
           "TOTP",
@@ -300,13 +298,13 @@ public class MfaRecoveryService {
           userAgent,
           correlationId
       ));
-      securityEventRepository.save(SecurityEvent.of(
+      securityEventService.record(SecurityEvent.of(
           memberId,
           SECURITY_EVENT_REBIND_FAILED,
           clientIp,
           userAgent,
           "MEDIUM"
-      ));
+      ).withCorrelationId(correlationId).withDetail("reason=" + reason));
     }, "recording MFA rebind failure");
   }
 
@@ -318,7 +316,7 @@ public class MfaRecoveryService {
       String correlationId
   ) {
     persistNonCritical(() -> {
-      auditLogRepository.save(AuditLog.of(
+      auditLogService.record(AuditLog.of(
           member.getId(),
           AuditAction.AUTH_TOTP_SECRET_TERMINALIZED,
           "TOTP",
@@ -328,7 +326,7 @@ public class MfaRecoveryService {
           userAgent,
           correlationId
       ));
-      auditLogRepository.save(AuditLog.of(
+      auditLogService.record(AuditLog.of(
           member.getId(),
           AuditAction.AUTH_TOTP_REBIND_INITIATED,
           "TOTP",
@@ -338,13 +336,13 @@ public class MfaRecoveryService {
           userAgent,
           correlationId
       ));
-      securityEventRepository.save(SecurityEvent.of(
+      securityEventService.record(SecurityEvent.of(
           member.getId(),
           SECURITY_EVENT_REBIND_INITIATED,
           clientIp,
           userAgent,
           "HIGH"
-      ));
+      ).withCorrelationId(correlationId).withDetail("source=" + source));
     }, "recording MFA rebind bootstrap events");
   }
 
@@ -355,7 +353,7 @@ public class MfaRecoveryService {
       String correlationId
   ) {
     persistNonCritical(() -> {
-      auditLogRepository.save(AuditLog.of(
+      auditLogService.record(AuditLog.of(
           member.getId(),
           AuditAction.AUTH_TOTP_REBIND_CONFIRMED,
           "TOTP",
@@ -365,13 +363,13 @@ public class MfaRecoveryService {
           userAgent,
           correlationId
       ));
-      securityEventRepository.save(SecurityEvent.of(
+      securityEventService.record(SecurityEvent.of(
           member.getId(),
           SECURITY_EVENT_REBIND_COMPLETED,
           clientIp,
           userAgent,
           "HIGH"
-      ));
+      ).withCorrelationId(correlationId).withDetail("source=mfa-recovery-confirm"));
     }, "recording MFA rebind completion events");
   }
 
@@ -414,7 +412,7 @@ public class MfaRecoveryService {
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {
-    return CorrelationIdSupport.ensureCorrelationId(request);
+    return ChannelCorrelationIdSupport.ensureCorrelationId(request);
   }
 
   private String memberLockKey(Long memberId) {

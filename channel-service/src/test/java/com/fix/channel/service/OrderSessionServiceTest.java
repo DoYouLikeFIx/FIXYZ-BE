@@ -399,7 +399,9 @@ class OrderSessionServiceTest {
         .hasMessage("order session cache unavailable");
 
     assertThat(orderSessionRepository.findByClOrdId("123e4567-e89b-42d3-a456-426614174263")).isEmpty();
-    assertThat(auditLogRepository.count()).isZero();
+    assertThat(auditLogRepository.findAll())
+        .extracting(log -> log.getAction())
+        .containsExactlyInAnyOrder("ORDER_SESSION_CREATE", "ORDER_SESSION_FAILED");
   }
 
   @Test
@@ -645,13 +647,13 @@ class OrderSessionServiceTest {
     @Primary
     FaultInjectingOrderSessionPersistenceService testOrderSessionPersistenceService(
         OrderSessionRepository orderSessionRepository,
-        AuditLogRepository auditLogRepository,
+        AuditLogService auditLogService,
         PlatformTransactionManager transactionManager,
         InMemoryOrderSessionTtlStore orderSessionTtlStore
     ) {
       return new FaultInjectingOrderSessionPersistenceService(
           orderSessionRepository,
-          auditLogRepository,
+          auditLogService,
           transactionManager,
           orderSessionTtlStore
       );
@@ -745,11 +747,11 @@ class OrderSessionServiceTest {
 
     FaultInjectingOrderSessionPersistenceService(
         OrderSessionRepository orderSessionRepository,
-        AuditLogRepository auditLogRepository,
+        AuditLogService auditLogService,
         PlatformTransactionManager transactionManager,
         InMemoryOrderSessionTtlStore orderSessionTtlStore
     ) {
-      super(orderSessionRepository, auditLogRepository);
+      super(orderSessionRepository, auditLogService);
       this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
       this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
       this.orderSessionTtlStore = orderSessionTtlStore;

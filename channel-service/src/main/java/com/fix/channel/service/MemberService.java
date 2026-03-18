@@ -3,14 +3,13 @@ package com.fix.channel.service;
 import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
-import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.MemberPasswordUpdateCommand;
 import com.fix.channel.vo.MemberProfileResult;
 import com.fix.channel.vo.MemberProfileUpdateCommand;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
-import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MemberService {
 
   private final MemberRepository memberRepository;
-  private final AuditLogRepository auditLogRepository;
+  private final AuditLogService auditLogService;
   private final PasswordEncoder passwordEncoder;
   private final ChannelSessionInvalidationService channelSessionInvalidationService;
 
@@ -42,7 +41,7 @@ public class MemberService {
     String updatedName = command.getName().trim();
     member.updateProfileName(updatedName);
 
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         member.getId(),
         AuditAction.MEMBER_PROFILE_UPDATE,
         "MEMBER",
@@ -66,7 +65,7 @@ public class MemberService {
 
     member.updatePasswordHash(passwordEncoder.encode(command.getNewPassword()));
 
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         member.getId(),
         AuditAction.MEMBER_PASSWORD_UPDATE,
         "MEMBER",
@@ -128,6 +127,6 @@ public class MemberService {
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {
-    return CorrelationIdSupport.ensureCorrelationId(request);
+    return ChannelCorrelationIdSupport.ensureCorrelationId(request);
   }
 }

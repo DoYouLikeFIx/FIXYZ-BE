@@ -6,9 +6,8 @@ import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
 import com.fix.channel.entity.SecurityEvent;
-import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
-import com.fix.channel.repository.SecurityEventRepository;
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.AuthLoginCommand;
 import com.fix.channel.vo.AuthLoginResult;
 import com.fix.channel.vo.AuthRegisterCommand;
@@ -22,7 +21,6 @@ import com.fix.channel.vo.TotpEnrollResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
-import com.fix.common.web.CorrelationIdSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.sql.SQLException;
@@ -60,12 +58,13 @@ public class AuthService {
   private static final String AUTH_LAST_MFA_VERIFIED_AT = "AUTH_LAST_MFA_VERIFIED_AT";
   private static final String AUTH_LOGIN_CLIENT_IP = "AUTH_LOGIN_CLIENT_IP";
   private static final String AUTH_LOGIN_USER_AGENT = "AUTH_LOGIN_USER_AGENT";
+  private static final String OTP_VERIFY_FAILED_EVENT_TYPE = "OTP_VERIFY_FAILED";
   private static final String NEXT_ACTION_VERIFY_TOTP = "VERIFY_TOTP";
   private static final String NEXT_ACTION_ENROLL_TOTP = "ENROLL_TOTP";
 
   private final MemberRepository memberRepository;
-  private final AuditLogRepository auditLogRepository;
-  private final SecurityEventRepository securityEventRepository;
+  private final AuditLogService auditLogService;
+  private final SecurityEventService securityEventService;
   private final PasswordEncoder passwordEncoder;
   private final LoginIpRateLimitService loginIpRateLimitService;
   private final LoginTokenService loginTokenService;
@@ -126,7 +125,7 @@ public class AuthService {
       totpService.provisionActiveSecret(saved);
     }
 
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         saved.getId(),
         AuditAction.AUTH_REGISTER,
         "MEMBER",
@@ -147,15 +146,19 @@ public class AuthService {
     String email = normalizeEmail(command.getEmail());
     String clientIp = resolveClientIp(request);
     String userAgent = resolveUserAgent(request);
+    String correlationId = resolveCorrelationId(request);
 
     Member member = memberRepository.findByEmailForUpdate(email).orElse(null);
     if (member != null && member.isLocked()) {
-      auditLogRepository.save(AuditLog.of(
+      auditLogService.record(AuditLog.of(
           member.getId(),
           AuditAction.AUTH_LOGIN_FAILURE,
           "MEMBER",
           String.valueOf(member.getId()),
-          "email=" + email + ", reason=account_locked"
+          "email=" + email + ", reason=account_locked",
+          clientIp,
+          userAgent,
+          correlationId
       ));
       throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED, "account locked");
     }
@@ -166,12 +169,15 @@ public class AuthService {
 
     if (member == null) {
       loginIpRateLimitService.recordFailure(clientIp);
-      auditLogRepository.save(AuditLog.of(
+      auditLogService.record(AuditLog.of(
           null,
           AuditAction.AUTH_LOGIN_FAILURE,
           "MEMBER",
           null,
-          "email=" + email
+          "email=" + email,
+          clientIp,
+          userAgent,
+          correlationId
       ));
       throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "invalid credentials");
     }
@@ -183,29 +189,35 @@ public class AuthService {
       int failedAttempts = member.increaseFailedLoginAttempts();
       if (failedAttempts >= lockoutThreshold()) {
         member.lock();
-        securityEventRepository.save(SecurityEvent.of(
+        securityEventService.record(SecurityEvent.of(
             member.getId(),
             ACCOUNT_LOCKED_EVENT_TYPE,
             clientIp,
             userAgent,
             ACCOUNT_LOCKED_SEVERITY
-        ));
-        auditLogRepository.save(AuditLog.of(
+        ).withCorrelationId(correlationId).withDetail("failedAttempts=" + failedAttempts + ", reason=account_locked"));
+        auditLogService.record(AuditLog.of(
             member.getId(),
             AuditAction.AUTH_LOGIN_FAILURE,
             "MEMBER",
             String.valueOf(member.getId()),
-            "email=" + email + ", failedAttempts=" + failedAttempts + ", reason=account_locked"
+            "email=" + email + ", failedAttempts=" + failedAttempts + ", reason=account_locked",
+            clientIp,
+            userAgent,
+            correlationId
         ));
         throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED, "account locked");
       }
 
-      auditLogRepository.save(AuditLog.of(
+      auditLogService.record(AuditLog.of(
           member.getId(),
           AuditAction.AUTH_LOGIN_FAILURE,
           "MEMBER",
           String.valueOf(member.getId()),
-          "email=" + email
+          "email=" + email,
+          clientIp,
+          userAgent,
+          correlationId
       ));
       throw new BusinessException(ErrorCode.AUTH_UNAUTHORIZED, "invalid credentials");
     }
@@ -247,7 +259,7 @@ public class AuthService {
         loginTokenState.expiresAt(),
         command.getLoginToken()
     );
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         member.getId(),
         AuditAction.AUTH_TOTP_ENROLLMENT_BOOTSTRAP,
         "TOTP",
@@ -290,7 +302,7 @@ public class AuthService {
     Long memberId = memberIdNumber.longValue();
     Member member = memberRepository.findById(memberId)
         .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
-    Member resolvedMember = ensureLinkedAccount(member, CorrelationIdSupport.ensureCorrelationId(request));
+    Member resolvedMember = ensureLinkedAccount(member, ChannelCorrelationIdSupport.ensureCorrelationId(request));
     String resolvedAccountId = resolveSessionAccountId(session, resolvedMember, request);
     if (resolvedAccountId == null && resolvedMember.getAccountId() != null) {
       resolvedAccountId = String.valueOf(resolvedMember.getAccountId());
@@ -319,7 +331,7 @@ public class AuthService {
       throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
 
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         memberId,
         AuditAction.LOGOUT,
         "SESSION",
@@ -446,7 +458,7 @@ public class AuthService {
     TotpService.TotpVerification verification = totpService.verifyCurrentCode(member, command.getOtpCode());
     if (!verification.matched()) {
       otpVerifyRateLimitService.recordFailure(command.getLoginToken());
-      throw invalidOtp(member.getId(), clientIp, userAgent);
+      throw invalidOtp(member.getId(), clientIp, userAgent, correlationId);
     }
 
     totpReplayGuardService.claim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
@@ -481,14 +493,14 @@ public class AuthService {
     TotpService.TotpVerification verification = totpService.verifyPendingCode(member, command.getLoginToken(), command.getOtpCode());
     if (!verification.matched()) {
       otpVerifyRateLimitService.recordFailure(command.getLoginToken());
-      throw invalidOtp(member.getId(), clientIp, userAgent);
+      throw invalidOtp(member.getId(), clientIp, userAgent, correlationId);
     }
 
     totpReplayGuardService.claim(member.getId(), verification.windowIndex(), verification.normalizedOtp());
     totpService.promotePendingSecret(member, command.getLoginToken());
     member.enableTotpEnrollment();
     otpVerifyRateLimitService.clear(command.getLoginToken());
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         member.getId(),
         AuditAction.AUTH_TOTP_ENROLLMENT_CONFIRMED,
         "TOTP",
@@ -512,7 +524,7 @@ public class AuthService {
     Instant mfaVerifiedAt = Instant.now();
     HttpSession session = establishAuthenticatedSession(member, request, correlationId, mfaVerifiedAt, clientIp, userAgent);
 
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         member.getId(),
         AuditAction.AUTH_LOGIN_SUCCESS,
         "SESSION",
@@ -578,14 +590,14 @@ public class AuthService {
     return session;
   }
 
-  private BusinessException invalidOtp(Long memberId, String clientIp, String userAgent) {
-    securityEventRepository.save(SecurityEvent.of(
+  private BusinessException invalidOtp(Long memberId, String clientIp, String userAgent, String correlationId) {
+    securityEventService.record(SecurityEvent.of(
         memberId,
-        "OTP_VERIFY_FAILED",
+        OTP_VERIFY_FAILED_EVENT_TYPE,
         clientIp,
         userAgent,
         "MEDIUM"
-    ));
+    ).withCorrelationId(correlationId).withDetail("reason=otp_mismatch"));
     return new BusinessException(ErrorCode.AUTH_OTP_INVALID, "otp code mismatch");
   }
 
@@ -698,7 +710,7 @@ public class AuthService {
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {
-    return CorrelationIdSupport.ensureCorrelationId(request);
+    return ChannelCorrelationIdSupport.ensureCorrelationId(request);
   }
 
   private int lockoutThreshold() {

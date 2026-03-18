@@ -5,9 +5,9 @@ import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
 import com.fix.channel.entity.PasswordResetToken;
-import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.PasswordResetTokenRepository;
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.PasswordForgotChallengeCommand;
 import com.fix.channel.vo.PasswordForgotChallengeResult;
 import com.fix.channel.vo.PasswordForgotCommand;
@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
@@ -50,7 +49,7 @@ public class PasswordRecoveryService {
   private final TaskExecutor taskExecutor;
   private final MemberRepository memberRepository;
   private final PasswordResetTokenRepository passwordResetTokenRepository;
-  private final AuditLogRepository auditLogRepository;
+  private final AuditLogService auditLogService;
   private final PasswordEncoder passwordEncoder;
   private final ChannelSessionInvalidationService channelSessionInvalidationService;
   private final MfaRecoveryService mfaRecoveryService;
@@ -65,7 +64,7 @@ public class PasswordRecoveryService {
       @Qualifier("passwordRecoveryTaskExecutor") TaskExecutor taskExecutor,
       MemberRepository memberRepository,
       PasswordResetTokenRepository passwordResetTokenRepository,
-      AuditLogRepository auditLogRepository,
+      AuditLogService auditLogService,
       PasswordEncoder passwordEncoder,
       ChannelSessionInvalidationService channelSessionInvalidationService,
       MfaRecoveryService mfaRecoveryService
@@ -79,7 +78,7 @@ public class PasswordRecoveryService {
     this.taskExecutor = taskExecutor;
     this.memberRepository = memberRepository;
     this.passwordResetTokenRepository = passwordResetTokenRepository;
-    this.auditLogRepository = auditLogRepository;
+    this.auditLogService = auditLogService;
     this.passwordEncoder = passwordEncoder;
     this.channelSessionInvalidationService = channelSessionInvalidationService;
     this.mfaRecoveryService = mfaRecoveryService;
@@ -112,7 +111,7 @@ public class PasswordRecoveryService {
 
       if (member != null && challengeSatisfied && cooldownAvailable) {
         issueResetToken(member, clientIp, userAgent, correlationId);
-        auditLogRepository.save(AuditLog.of(
+        auditLogService.record(AuditLog.of(
             member.getId(),
             AuditAction.PASSWORD_RECOVERY_FORGOT,
             "MEMBER",
@@ -123,7 +122,7 @@ public class PasswordRecoveryService {
             correlationId
         ));
       } else {
-        auditLogRepository.save(AuditLog.of(
+        auditLogService.record(AuditLog.of(
             member == null ? null : member.getId(),
             AuditAction.PASSWORD_RECOVERY_FORGOT,
             "MEMBER",
@@ -153,7 +152,7 @@ public class PasswordRecoveryService {
     rateLimitService.registerChallengeAttempt(clientIp, normalizedEmail);
     PasswordRecoveryChallengeService.ChallengePayload payload = challengeService.issue(normalizedEmail);
 
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         null,
         AuditAction.PASSWORD_RECOVERY_CHALLENGE_ISSUED,
         "PASSWORD_RECOVERY",
@@ -223,7 +222,7 @@ public class PasswordRecoveryService {
       member.activate();
       passwordResetToken.consume(now);
 
-      auditLogRepository.save(AuditLog.of(
+      auditLogService.record(AuditLog.of(
           member.getId(),
           AuditAction.PASSWORD_RECOVERY_RESET,
           "MEMBER",
@@ -271,7 +270,7 @@ public class PasswordRecoveryService {
 
     registerAfterCommit(() -> taskExecutor.execute(() -> mailDispatcher.dispatch(member.getEmail(), rawToken, expiresAt)));
 
-    auditLogRepository.save(AuditLog.of(
+    auditLogService.record(AuditLog.of(
         member.getId(),
         AuditAction.PASSWORD_RECOVERY_FORGOT,
         "PASSWORD_RECOVERY",
@@ -342,10 +341,6 @@ public class PasswordRecoveryService {
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {
-    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-    if (correlationId == null || correlationId.isBlank()) {
-      return UUID.randomUUID().toString();
-    }
-    return correlationId;
+    return ChannelCorrelationIdSupport.ensureCorrelationId(request);
   }
 }

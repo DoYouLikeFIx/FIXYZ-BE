@@ -2,8 +2,8 @@ package com.fix.channel.client;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.common.web.CommonHeaders;
-import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.beans.factory.annotation.Value;
@@ -92,9 +92,9 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
 
   private String resolveCorrelationId(String correlationId) {
     if (correlationId == null || correlationId.isBlank()) {
-      return CorrelationIdSupport.currentOrGenerate();
+      return ChannelCorrelationIdSupport.currentOrGenerate();
     }
-    return correlationId;
+    return ChannelCorrelationIdSupport.normalize(correlationId);
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)

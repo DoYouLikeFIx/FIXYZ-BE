@@ -570,9 +570,8 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
 
   private void waitForNextTotpWindow() throws InterruptedException {
     long offset = Instant.now().getEpochSecond() % 30L;
-    if (offset > 0L) {
-      Thread.sleep((30L - offset) * 1000L);
-    }
+    long sleepSeconds = offset == 0L ? 1L : (30L - offset) + 1L;
+    Thread.sleep(sleepSeconds * 1000L);
   }
 
   private String extractSessionId(MvcResult result) {

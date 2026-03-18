@@ -1,18 +1,5 @@
 package com.fix.channel.controller;
 
-import java.util.UUID;
-
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseCookie;
-import org.springframework.security.web.csrf.CsrfToken;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
-
 import com.fix.channel.dto.request.AuthLoginRequest;
 import com.fix.channel.dto.request.AuthRegisterRequest;
 import com.fix.channel.dto.request.CsrfBootstrapRequest;
@@ -36,13 +23,23 @@ import com.fix.channel.service.AuthService;
 import com.fix.channel.service.ChannelScaffoldService;
 import com.fix.channel.service.MfaRecoveryService;
 import com.fix.channel.service.PasswordRecoveryService;
+import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.PasswordResetContinuationResult;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.web.CommonHeaders;
-
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -183,10 +180,6 @@ public class AuthController {
   }
 
   private String resolveCorrelationId(HttpServletRequest request) {
-    String correlationId = request.getHeader(CommonHeaders.X_CORRELATION_ID);
-    if (correlationId == null || correlationId.isBlank()) {
-      return UUID.randomUUID().toString();
-    }
-    return correlationId;
+    return ChannelCorrelationIdSupport.ensureCorrelationId(request);
   }
 }

@@ -2,12 +2,14 @@ package com.fix.channel.migration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fix.common.web.CorrelationIdSupport;
 import db.migration.V8__backfill_order_session_uuid_contract;
 import db.migration.V10__add_order_session_expires_at_contract;
 import db.migration.V11__add_order_session_prepare_contract_columns;
 import db.migration.V13__add_order_session_authorization_decision_columns;
 import db.migration.V14__add_order_session_execution_columns;
 import db.migration.V15__add_order_session_external_sync_status_column;
+import db.migration.V17__align_audit_security_event_contract;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
@@ -93,6 +95,61 @@ class ChannelFlywayMigrationTest {
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MEMBERS'",
         Integer.class
     );
+    Integer auditUuidColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'AUDIT_UUID'",
+        Integer.class
+    );
+    Integer auditOrderSessionIdColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'ORDER_SESSION_ID'",
+        Integer.class
+    );
+    Integer auditCorrelationUuidColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'CORRELATION_UUID'",
+        Integer.class
+    );
+    Integer auditTargetIdLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'TARGET_ID'",
+        Integer.class
+    );
+    Integer auditIpAddressLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'IP_ADDRESS'",
+        Integer.class
+    );
+    Integer auditUserAgentLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'USER_AGENT'",
+        Integer.class
+    );
+    Integer securityEventUuidColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'SECURITY_EVENT_UUID'",
+        Integer.class
+    );
+    Integer securityStatusColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'STATUS'",
+        Integer.class
+    );
+    Integer securityIpAddressLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'IP_ADDRESS'",
+        Integer.class
+    );
+    Integer securityAdminMemberIdColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'ADMIN_MEMBER_ID'",
+        Integer.class
+    );
+    Integer securityOccurredAtColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'OCCURRED_AT'",
+        Integer.class
+    );
 
     assertThat(orderSessionTableCount).isNotNull();
     assertThat(orderSessionTableCount).isEqualTo(1);
@@ -118,6 +175,17 @@ class ChannelFlywayMigrationTest {
     assertThat(orderSessionExternalSyncStatusColumnCount).isEqualTo(1);
     assertThat(membersTableCount).isNotNull();
     assertThat(membersTableCount).isEqualTo(1);
+    assertThat(auditUuidColumnCount).isEqualTo(1);
+    assertThat(auditOrderSessionIdColumnCount).isEqualTo(1);
+    assertThat(auditCorrelationUuidColumnCount).isEqualTo(1);
+    assertThat(auditTargetIdLength).isEqualTo(100);
+    assertThat(auditIpAddressLength).isEqualTo(45);
+    assertThat(auditUserAgentLength).isEqualTo(1000);
+    assertThat(securityEventUuidColumnCount).isEqualTo(1);
+    assertThat(securityStatusColumnCount).isEqualTo(1);
+    assertThat(securityIpAddressLength).isEqualTo(45);
+    assertThat(securityAdminMemberIdColumnCount).isEqualTo(1);
+    assertThat(securityOccurredAtColumnCount).isEqualTo(1);
   }
 
   @Test
@@ -478,6 +546,166 @@ class ChannelFlywayMigrationTest {
     );
 
     assertThat(externalSyncStatusColumnCount).isEqualTo(1);
+  }
+
+  @Test
+  void shouldAlignAuditAndSecurityContractsAndRemainIdempotent() throws Exception {
+    String jdbcUrl = "jdbc:h2:mem:channel_migration_audit_security_contract;MODE=MySQL;DB_CLOSE_DELAY=-1";
+    String legacyCorrelationId = "trace-channel-auth-very-long-correlation-id-000001";
+
+    try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+         Statement statement = connection.createStatement()) {
+      statement.execute("""
+          CREATE TABLE order_sessions (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_session_id CHAR(36) NOT NULL
+          )
+          """);
+      statement.execute("""
+          CREATE TABLE audit_logs (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            member_id BIGINT,
+            action VARCHAR(64) NOT NULL,
+            target_type VARCHAR(64) NOT NULL,
+            target_id VARCHAR(64),
+            detail VARCHAR(1000),
+            ip_address VARCHAR(64),
+            user_agent VARCHAR(255),
+            correlation_id VARCHAR(128),
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            version BIGINT
+          )
+          """);
+      statement.execute("""
+          CREATE TABLE security_events (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            member_id BIGINT,
+            event_type VARCHAR(64) NOT NULL,
+            ip_address VARCHAR(64),
+            user_agent VARCHAR(255),
+            severity VARCHAR(32) NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            version BIGINT
+          )
+          """);
+      statement.execute("""
+          INSERT INTO order_sessions(id, order_session_id)
+          VALUES (777, '123e4567-e89b-42d3-a456-426614174260')
+          """);
+      statement.execute("""
+          INSERT INTO audit_logs(
+            member_id, action, target_type, target_id, detail, ip_address, user_agent, correlation_id, created_at, updated_at, version
+          )
+          VALUES (
+            101,
+            'ORDER_SESSION_CREATE',
+            'ORDER_SESSION',
+            '123e4567-e89b-42d3-a456-426614174260',
+            'legacy audit row',
+            '127.0.0.1',
+            'JUnit',
+            '%s',
+            TIMESTAMP '2026-03-12 00:00:00',
+            TIMESTAMP '2026-03-12 00:00:00',
+            0
+          )
+          """.formatted(legacyCorrelationId));
+      statement.execute("""
+          INSERT INTO security_events(
+            member_id, event_type, ip_address, user_agent, severity, created_at, updated_at, version
+          )
+          VALUES (
+            101,
+            'ACCOUNT_LOCKED',
+            '127.0.0.1',
+            'JUnit',
+            'HIGH',
+            TIMESTAMP '2026-03-12 00:00:00',
+            TIMESTAMP '2026-03-12 00:00:00',
+            0
+          )
+          """);
+
+      Context context = new TestFlywayContext(connection);
+      V17__align_audit_security_event_contract migration = new V17__align_audit_security_event_contract();
+
+      migration.migrate(context);
+      migration.migrate(context);
+    }
+
+    JdbcTemplate contractJdbcTemplate = new JdbcTemplate(
+        new org.springframework.jdbc.datasource.DriverManagerDataSource(jdbcUrl, "sa", "")
+    );
+
+    String auditUuid = contractJdbcTemplate.queryForObject(
+        "SELECT audit_uuid FROM audit_logs WHERE action = 'ORDER_SESSION_CREATE'",
+        String.class
+    );
+    Long auditOrderSessionId = contractJdbcTemplate.queryForObject(
+        "SELECT order_session_id FROM audit_logs WHERE action = 'ORDER_SESSION_CREATE'",
+        Long.class
+    );
+    String correlationUuid = contractJdbcTemplate.queryForObject(
+        "SELECT correlation_uuid FROM audit_logs WHERE action = 'ORDER_SESSION_CREATE'",
+        String.class
+    );
+    String securityEventUuid = contractJdbcTemplate.queryForObject(
+        "SELECT security_event_uuid FROM security_events WHERE event_type = 'ACCOUNT_LOCKED'",
+        String.class
+    );
+    String securityStatus = contractJdbcTemplate.queryForObject(
+        "SELECT status FROM security_events WHERE event_type = 'ACCOUNT_LOCKED'",
+        String.class
+    );
+    LocalDateTime occurredAt = contractJdbcTemplate.queryForObject(
+        "SELECT occurred_at FROM security_events WHERE event_type = 'ACCOUNT_LOCKED'",
+        LocalDateTime.class
+    );
+    Integer auditUuidIndexCount = contractJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND INDEX_NAME = 'UK_AUDIT_LOGS_AUDIT_UUID'",
+        Integer.class
+    );
+    Integer securityUuidIndexCount = contractJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND INDEX_NAME = 'UK_SECURITY_EVENTS_SECURITY_EVENT_UUID'",
+        Integer.class
+    );
+    String auditUuidNullable = contractJdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'AUDIT_LOGS' AND COLUMN_NAME = 'AUDIT_UUID'",
+        String.class
+    );
+    String securityEventUuidNullable = contractJdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'SECURITY_EVENT_UUID'",
+        String.class
+    );
+    String securityStatusNullable = contractJdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'STATUS'",
+        String.class
+    );
+    String securityOccurredAtNullable = contractJdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'SECURITY_EVENTS' AND COLUMN_NAME = 'OCCURRED_AT'",
+        String.class
+    );
+
+    assertThat(auditUuid).isNotBlank();
+    assertThat(auditOrderSessionId).isEqualTo(777L);
+    assertThat(correlationUuid).isEqualTo(CorrelationIdSupport.normalize(legacyCorrelationId, 36));
+    assertThat(securityEventUuid).isNotBlank();
+    assertThat(securityStatus).isEqualTo("OPEN");
+    assertThat(occurredAt).isEqualTo(LocalDateTime.parse("2026-03-12T00:00:00"));
+    assertThat(auditUuidIndexCount).isEqualTo(1);
+    assertThat(securityUuidIndexCount).isEqualTo(1);
+    assertThat(auditUuidNullable).isEqualTo("NO");
+    assertThat(securityEventUuidNullable).isEqualTo("NO");
+    assertThat(securityStatusNullable).isEqualTo("NO");
+    assertThat(securityOccurredAtNullable).isEqualTo("NO");
   }
 
   private record TestFlywayContext(Connection connection) implements Context {

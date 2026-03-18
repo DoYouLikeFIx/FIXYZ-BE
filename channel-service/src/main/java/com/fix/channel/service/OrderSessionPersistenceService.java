@@ -4,7 +4,6 @@ import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
-import com.fix.channel.repository.AuditLogRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import java.math.BigDecimal;
@@ -26,7 +25,7 @@ public class OrderSessionPersistenceService {
       List.of(OrderSessionStatus.PENDING_NEW, OrderSessionStatus.AUTHED);
 
   private final OrderSessionRepository orderSessionRepository;
-  private final AuditLogRepository auditLogRepository;
+  private final AuditLogService auditLogService;
 
   @PersistenceContext
   private EntityManager entityManager;
@@ -54,13 +53,7 @@ public class OrderSessionPersistenceService {
     ));
     entityManager.refresh(savedSession);
 
-    auditLogRepository.save(AuditLog.of(
-        command.getMemberId(),
-        AuditAction.ORDER_SESSION_CREATE,
-        ORDER_SESSION_TARGET_TYPE,
-        savedSession.getOrderSessionId(),
-        "clOrdId=" + savedSession.getClOrdId()
-    ));
+    recordOrderSessionAudit(savedSession, AuditAction.ORDER_SESSION_CREATE, "clOrdId=" + savedSession.getClOrdId());
     return savedSession;
   }
 
@@ -71,7 +64,7 @@ public class OrderSessionPersistenceService {
         .ifPresent(session -> {
           session.expire();
           orderSessionRepository.flush();
-          auditLogRepository.save(expiredAuditLog(session));
+          auditLogService.record(expiredAuditLog(session));
         });
   }
 
@@ -84,31 +77,33 @@ public class OrderSessionPersistenceService {
     );
     sessions.forEach(OrderSession::expire);
     orderSessionRepository.flush();
-    sessions.forEach(session -> auditLogRepository.save(expiredAuditLog(session)));
+    sessions.forEach(session -> auditLogService.record(expiredAuditLog(session)));
     return sessions.stream().map(OrderSession::getOrderSessionId).toList();
   }
 
   @Transactional
   void deleteCreatedSession(String orderSessionId) {
-    auditLogRepository.deleteByActionAndTargetTypeAndTargetId(
-        AuditAction.ORDER_SESSION_CREATE.value(),
-        ORDER_SESSION_TARGET_TYPE,
-        orderSessionId
-    );
-    orderSessionRepository.deleteByOrderSessionId(orderSessionId);
+    orderSessionRepository.findByOrderSessionId(orderSessionId).ifPresent(session -> {
+      auditLogService.record(AuditLog.ofOrderSession(
+          session.getMemberId(),
+          session.getId(),
+          AuditAction.ORDER_SESSION_FAILED,
+          ORDER_SESSION_TARGET_TYPE,
+          session.getOrderSessionId(),
+          "reason=activation_rollback, clOrdId=" + session.getClOrdId(),
+          null,
+          null,
+          null
+      ));
+      orderSessionRepository.delete(session);
+    });
   }
 
   @Transactional
   OrderSession markAuthorized(OrderSession session) {
     session.authorize();
     orderSessionRepository.flush();
-    auditLogRepository.save(AuditLog.of(
-        session.getMemberId(),
-        AuditAction.ORDER_SESSION_OTP_VERIFIED,
-        ORDER_SESSION_TARGET_TYPE,
-        session.getOrderSessionId(),
-        "clOrdId=" + session.getClOrdId()
-    ));
+    recordOrderSessionAudit(session, AuditAction.ORDER_SESSION_OTP_VERIFIED, "clOrdId=" + session.getClOrdId());
     return session;
   }
 
@@ -116,13 +111,11 @@ public class OrderSessionPersistenceService {
   OrderSession extendSession(OrderSession session, Instant expiresAt) {
     session.extendExpiry(expiresAt);
     orderSessionRepository.flush();
-    auditLogRepository.save(AuditLog.of(
-        session.getMemberId(),
+    recordOrderSessionAudit(
+        session,
         AuditAction.ORDER_SESSION_EXTENDED,
-        ORDER_SESSION_TARGET_TYPE,
-        session.getOrderSessionId(),
         "clOrdId=" + session.getClOrdId() + ", expiresAt=" + expiresAt
-    ));
+    );
     return session;
   }
 
@@ -160,13 +153,11 @@ public class OrderSessionPersistenceService {
         executedAt
     );
     orderSessionRepository.flush();
-    auditLogRepository.save(AuditLog.of(
-        session.getMemberId(),
+    recordOrderSessionAudit(
+        session,
         AuditAction.ORDER_SESSION_EXECUTED,
-        ORDER_SESSION_TARGET_TYPE,
-        session.getOrderSessionId(),
         "clOrdId=" + session.getClOrdId() + ", result=" + executionResult
-    ));
+    );
     return session;
   }
 
@@ -174,13 +165,11 @@ public class OrderSessionPersistenceService {
   OrderSession markEscalated(OrderSession session, String failureReason) {
     session.escalate(failureReason);
     orderSessionRepository.flush();
-    auditLogRepository.save(AuditLog.of(
-        session.getMemberId(),
+    recordOrderSessionAudit(
+        session,
         AuditAction.ORDER_SESSION_ESCALATED,
-        ORDER_SESSION_TARGET_TYPE,
-        session.getOrderSessionId(),
         "clOrdId=" + session.getClOrdId() + ", reason=" + failureReason
-    ));
+    );
     return session;
   }
 
@@ -207,15 +196,13 @@ public class OrderSessionPersistenceService {
         executedAt
     );
     orderSessionRepository.flush();
-    auditLogRepository.save(AuditLog.of(
-        session.getMemberId(),
+    recordOrderSessionAudit(
+        session,
         AuditAction.ORDER_SESSION_ESCALATED,
-        ORDER_SESSION_TARGET_TYPE,
-        session.getOrderSessionId(),
         "clOrdId=" + session.getClOrdId()
             + ", reason=" + failureReason
             + ", externalSyncStatus=" + externalSyncStatus
-    ));
+    );
     return session;
   }
 
@@ -223,23 +210,39 @@ public class OrderSessionPersistenceService {
   OrderSession markFailed(OrderSession session, String failureReason) {
     session.fail(failureReason);
     orderSessionRepository.flush();
-    auditLogRepository.save(AuditLog.of(
-        session.getMemberId(),
+    recordOrderSessionAudit(
+        session,
         AuditAction.ORDER_SESSION_FAILED,
-        ORDER_SESSION_TARGET_TYPE,
-        session.getOrderSessionId(),
         "clOrdId=" + session.getClOrdId() + ", reason=" + failureReason
-    ));
+    );
     return session;
   }
 
   private AuditLog expiredAuditLog(OrderSession session) {
-    return AuditLog.of(
+    return AuditLog.ofOrderSession(
         session.getMemberId(),
+        session.getId(),
         AuditAction.ORDER_SESSION_EXPIRED,
         ORDER_SESSION_TARGET_TYPE,
         session.getOrderSessionId(),
-        "clOrdId=" + session.getClOrdId() + ", expiresAt=" + session.getExpiresAt()
+        "clOrdId=" + session.getClOrdId() + ", expiresAt=" + session.getExpiresAt(),
+        null,
+        null,
+        null
     );
+  }
+
+  private void recordOrderSessionAudit(OrderSession session, AuditAction action, String detail) {
+    auditLogService.record(AuditLog.ofOrderSession(
+        session.getMemberId(),
+        session.getId(),
+        action,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        detail,
+        null,
+        null,
+        null
+    ));
   }
 }
