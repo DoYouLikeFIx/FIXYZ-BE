@@ -11,17 +11,26 @@ import com.fix.corebank.dto.request.InternalAccountSummaryRequest;
 import com.fix.corebank.dto.request.InternalAccountOrderHistoryRequest;
 import com.fix.corebank.dto.request.InternalOrderCreateRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
+import com.fix.corebank.dto.request.InternalLedgerReconciliationCaseCreateRequest;
+import com.fix.corebank.dto.request.InternalLedgerReconciliationCaseTransitionRequest;
+import com.fix.corebank.dto.request.InternalLedgerReconciliationRepairRequest;
+import com.fix.corebank.dto.request.InternalLedgerReconciliationRerunRequest;
 import com.fix.corebank.dto.request.InternalPortfolioRequest;
 import com.fix.corebank.dto.request.InternalPortfolioProvisioningRequest;
 import com.fix.corebank.dto.response.InternalAccountOrderHistoryResponse;
 import com.fix.corebank.dto.response.InternalAccountPositionResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusTransitionResponse;
+import com.fix.corebank.dto.response.InternalLedgerReconciliationCaseResponse;
+import com.fix.corebank.dto.response.InternalLedgerReconciliationRepairResponse;
+import com.fix.corebank.dto.response.InternalLedgerReconciliationRerunResponse;
 import com.fix.corebank.dto.response.InternalOrderResponse;
 import com.fix.corebank.dto.response.InternalPortfolioResponse;
 import com.fix.corebank.dto.response.InternalPortfolioProvisioningResponse;
 import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderService;
+import com.fix.corebank.service.LedgerReconciliationService;
+import com.fix.corebank.service.LedgerRepairService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import org.springdoc.core.annotations.ParameterObject;
@@ -47,13 +56,19 @@ public class InternalCorebankController {
 
   private final CorebankOrderService corebankOrderService;
   private final AccountProvisioningService accountProvisioningService;
+  private final LedgerReconciliationService ledgerReconciliationService;
+  private final LedgerRepairService ledgerRepairService;
 
   public InternalCorebankController(
       CorebankOrderService corebankOrderService,
-      AccountProvisioningService accountProvisioningService
+      AccountProvisioningService accountProvisioningService,
+      LedgerReconciliationService ledgerReconciliationService,
+      LedgerRepairService ledgerRepairService
   ) {
     this.corebankOrderService = corebankOrderService;
     this.accountProvisioningService = accountProvisioningService;
+    this.ledgerReconciliationService = ledgerReconciliationService;
+    this.ledgerRepairService = ledgerRepairService;
   }
 
   @GetMapping("/portfolio")
@@ -156,5 +171,49 @@ public class InternalCorebankController {
       @ParameterObject @Valid @ModelAttribute InternalOrderRequeryRequest request
   ) {
     return ApiResponse.success(InternalOrderResponse.from(corebankOrderService.requeryOrder(request.toVo(clOrdId))));
+  }
+
+  @PostMapping(value = "/ledger-integrity/anomalies/{anomalyId}/cases", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ApiResponse<InternalLedgerReconciliationCaseResponse> createLedgerReconciliationCase(
+      @PathVariable Long anomalyId,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Valid @RequestBody InternalLedgerReconciliationCaseCreateRequest request
+  ) {
+    return ApiResponse.success(InternalLedgerReconciliationCaseResponse.from(
+        ledgerReconciliationService.createCase(request.toVo(anomalyId, correlationId))
+    ));
+  }
+
+  @PatchMapping(value = "/ledger-integrity/cases/{caseId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ApiResponse<InternalLedgerReconciliationCaseResponse> transitionLedgerReconciliationCase(
+      @PathVariable Long caseId,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Valid @RequestBody InternalLedgerReconciliationCaseTransitionRequest request
+  ) {
+    return ApiResponse.success(InternalLedgerReconciliationCaseResponse.from(
+        ledgerReconciliationService.transitionCase(request.toVo(caseId, correlationId))
+    ));
+  }
+
+  @PostMapping(value = "/ledger-integrity/cases/{caseId}/repairs", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ApiResponse<InternalLedgerReconciliationRepairResponse> applyLedgerRepair(
+      @PathVariable Long caseId,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Valid @RequestBody InternalLedgerReconciliationRepairRequest request
+  ) {
+    return ApiResponse.success(InternalLedgerReconciliationRepairResponse.from(
+        ledgerRepairService.applyRepair(request.toVo(caseId, correlationId))
+    ));
+  }
+
+  @PostMapping(value = "/ledger-integrity/cases/{caseId}/rerun", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ApiResponse<InternalLedgerReconciliationRerunResponse> rerunLedgerReconciliationCase(
+      @PathVariable Long caseId,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Valid @RequestBody InternalLedgerReconciliationRerunRequest request
+  ) {
+    return ApiResponse.success(InternalLedgerReconciliationRerunResponse.from(
+        ledgerRepairService.rerunCase(request.toVo(caseId, correlationId))
+    ));
   }
 }

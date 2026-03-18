@@ -156,6 +156,7 @@ public class LedgerReconciliationCase extends BaseTimeEntity {
           || targetStatus == LedgerReconciliationCaseStatus.REPAIR_PENDING
           || targetStatus == LedgerReconciliationCaseStatus.RESOLVED;
       case REPAIR_PENDING -> targetStatus == LedgerReconciliationCaseStatus.ACKNOWLEDGED
+          || targetStatus == LedgerReconciliationCaseStatus.WAIVED
           || targetStatus == LedgerReconciliationCaseStatus.RESOLVED
           || targetStatus == LedgerReconciliationCaseStatus.REOPENED;
       case WAIVED -> targetStatus == LedgerReconciliationCaseStatus.REOPENED;
