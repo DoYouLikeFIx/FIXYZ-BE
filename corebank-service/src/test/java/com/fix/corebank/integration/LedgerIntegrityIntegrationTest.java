@@ -29,7 +29,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = {
     "spring.jpa.hibernate.ddl-auto=none",
-    "internal.secret=test-secret"
+    "internal.secret=test-secret",
+    "corebank.ledger-integrity.enabled=false"
 })
 class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBase {
 
@@ -53,6 +54,8 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
   @BeforeEach
   void setUp() {
     reset(fepClient);
+    jdbcTemplate.update("DELETE FROM ledger_integrity_anomalies");
+    jdbcTemplate.update("DELETE FROM ledger_integrity_runs");
     jdbcTemplate.update("DELETE FROM ledger_entry_refs");
     jdbcTemplate.update("DELETE FROM ledger_entries");
     jdbcTemplate.update("DELETE FROM journal_entries");
