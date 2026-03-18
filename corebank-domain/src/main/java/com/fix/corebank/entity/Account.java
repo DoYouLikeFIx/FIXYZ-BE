@@ -3,6 +3,7 @@ package com.fix.corebank.entity;
 import com.fix.common.entity.BaseTimeEntity;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -115,7 +116,11 @@ public class Account extends BaseTimeEntity {
   public void debitCash(BigDecimal amount) {
     BigDecimal normalizedAmount = normalizePositiveAmount(amount, "cash debit amount is required");
     if (cashBalance.compareTo(normalizedAmount) < 0) {
-      throw new BusinessException(ErrorCode.ORD_INSUFFICIENT_CASH, "insufficient cash balance");
+      throw new BusinessException(
+          ErrorCode.ORD_INSUFFICIENT_CASH,
+          "insufficient cash balance",
+          new ErrorMetadata("error.order.insufficient_cash", "INSUFFICIENT_CASH")
+      );
     }
     this.cashBalance = cashBalance.subtract(normalizedAmount).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
   }

@@ -289,8 +289,13 @@ class OrderSessionServiceTest {
         BigDecimal.valueOf(72000)
     )))
         .isInstanceOf(BusinessException.class)
-        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-            .isEqualTo(ErrorCode.ORD_INSUFFICIENT_CASH));
+        .satisfies(ex -> {
+          BusinessException actual = (BusinessException) ex;
+          assertThat(actual.getErrorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_CASH);
+          assertThat(actual.getMetadata()).isNotNull();
+          assertThat(actual.getMetadata().userMessageKey()).isEqualTo("error.order.insufficient_cash");
+          assertThat(actual.getMetadata().operatorCode()).isEqualTo("INSUFFICIENT_CASH");
+        });
   }
 
   @Test
@@ -308,8 +313,13 @@ class OrderSessionServiceTest {
         BigDecimal.valueOf(72000)
     )))
         .isInstanceOf(BusinessException.class)
-        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
-            .isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION));
+        .satisfies(ex -> {
+          BusinessException actual = (BusinessException) ex;
+          assertThat(actual.getErrorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION);
+          assertThat(actual.getMetadata()).isNotNull();
+          assertThat(actual.getMetadata().userMessageKey()).isEqualTo("error.order.insufficient_position");
+          assertThat(actual.getMetadata().operatorCode()).isEqualTo("INSUFFICIENT_POSITION");
+        });
   }
 
   @Test

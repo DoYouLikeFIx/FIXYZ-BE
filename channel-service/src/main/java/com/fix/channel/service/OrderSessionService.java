@@ -492,7 +492,11 @@ public class OrderSessionService {
             AccountSummaryQueryCommand.of(command.getAccountId(), command.getMemberId())
         ).getBalance();
     if (availableBalance.compareTo(requiredNotional) < 0) {
-      throw new BusinessException(ErrorCode.ORD_INSUFFICIENT_CASH, "available cash is insufficient");
+      throw new BusinessException(
+          ErrorCode.ORD_INSUFFICIENT_CASH,
+          "available cash is insufficient",
+          new ErrorMetadata("error.order.insufficient_cash", "INSUFFICIENT_CASH")
+      );
     }
   }
 
@@ -501,7 +505,11 @@ public class OrderSessionService {
             AccountPositionQueryCommand.of(command.getAccountId(), command.getMemberId(), command.getSymbol())
         ).getAvailableQuantity();
     if (availableQuantity.compareTo(command.getQty()) < 0) {
-      throw new BusinessException(ErrorCode.ORD_INSUFFICIENT_POSITION, "insufficient position quantity");
+      throw new BusinessException(
+          ErrorCode.ORD_INSUFFICIENT_POSITION,
+          "insufficient position quantity",
+          new ErrorMetadata("error.order.insufficient_position", "INSUFFICIENT_POSITION")
+      );
     }
   }
 
