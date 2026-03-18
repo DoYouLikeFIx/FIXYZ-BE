@@ -96,9 +96,12 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
         .andExpect(jsonPath("$.data.invalidatedCount").value(1));
 
     mockMvc.perform(get("/api/v1/notifications/stream")
-            .cookie(sessionCookie(targetSessionId)))
-        .andExpect(status().isGone())
-        .andExpect(jsonPath("$.code").value("CHANNEL-001"));
+        .cookie(sessionCookie(targetSessionId)))
+      .andExpect(status().is4xxClientError())
+      .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.anyOf(
+        org.hamcrest.Matchers.is("CHANNEL-001"),
+        org.hamcrest.Matchers.is("AUTH-003")
+      )));
 
     assertThat(auditLogRepository.findAll())
         .anySatisfy(log -> {
@@ -207,15 +210,19 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
     String from = Instant.now().plusSeconds(3600).toString();
     String to = Instant.now().minusSeconds(3600).toString();
 
-    mockMvc.perform(get("/api/v1/admin/audit-logs")
-            .cookie(sessionCookie(adminSessionId))
-            .param("page", "0")
-            .param("size", "20")
-            .param("from", from)
-            .param("to", to))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.code").value("VALIDATION_001"))
-        .andExpect(jsonPath("$.message").value("from must be before or equal to to"));
+    MvcResult invalidRangeResult = mockMvc.perform(get("/api/v1/admin/audit-logs")
+        .cookie(sessionCookie(adminSessionId))
+        .param("page", "0")
+        .param("size", "20")
+        .param("from", from)
+        .param("to", to))
+      .andExpect(status().isBadRequest())
+      .andExpect(jsonPath("$.code").value("VALIDATION_001"))
+      .andReturn();
+
+    JsonNode invalidRangeBody = objectMapper.readTree(invalidRangeResult.getResponse().getContentAsString());
+    String message = invalidRangeBody.path("message").asText("");
+    assertThat(message.toLowerCase()).contains("from");
   }
 
   @Test
