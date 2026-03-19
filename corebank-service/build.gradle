@@ -62,6 +62,19 @@ tasks.withType(Test).configureEach {
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
 }
 
+tasks.register('correlationPropagationTests', Test) {
+  description = 'Runs the corebank correlation-id propagation regression suite.'
+  group = 'verification'
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  filter {
+    includeTestsMatching('com.fix.corebank.filter.CorrelationIdFilterTest')
+    includeTestsMatching('com.fix.corebank.security.InternalSecretFilterTest')
+    includeTestsMatching('com.fix.corebank.client.FepClientPropagationTest')
+    includeTestsMatching('com.fix.corebank.integration.CorebankCorrelationPropagationIntegrationTest')
+  }
+}
+
 dependencies {
   implementation project(':core-common')
   implementation project(':corebank-domain')
