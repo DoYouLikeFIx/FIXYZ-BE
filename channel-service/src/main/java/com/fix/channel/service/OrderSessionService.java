@@ -17,6 +17,7 @@ import com.fix.channel.vo.OrderSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
+import com.fix.common.logging.LogPiiMasking;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -612,8 +613,11 @@ public class OrderSessionService {
     try {
       orderSessionPersistenceService.deleteCreatedSession(orderSessionId);
     } catch (RuntimeException cleanupFailure) {
-      log.error("Failed to delete partially-created order session during activation rollback: orderSessionId={}",
-          orderSessionId, cleanupFailure);
+      log.error(
+          "Failed to delete partially-created order session during activation rollback: orderSessionId={}, failure={}",
+          LogPiiMasking.sanitizeText(orderSessionId),
+          LogPiiMasking.sanitizeExceptionSummary(cleanupFailure)
+      );
       original.addSuppressed(cleanupFailure);
     }
     safelyRefundCreateRateLimit(memberId, orderSessionId, "activation rollback", original);
@@ -623,7 +627,12 @@ public class OrderSessionService {
     try {
       orderSessionTtlStore.clear(orderSessionId);
     } catch (RuntimeException cleanupFailure) {
-      log.warn("Failed to clear order session TTL during {}: orderSessionId={}", context, orderSessionId, cleanupFailure);
+      log.warn(
+          "Failed to clear order session TTL during {}: orderSessionId={}, failure={}",
+          LogPiiMasking.sanitizeText(context),
+          LogPiiMasking.sanitizeText(orderSessionId),
+          LogPiiMasking.sanitizeExceptionSummary(cleanupFailure)
+      );
       if (primaryFailure != null) {
         primaryFailure.addSuppressed(cleanupFailure);
       }
@@ -639,8 +648,13 @@ public class OrderSessionService {
     try {
       orderSessionRateLimitService.refundCreateRateLimit(memberId);
     } catch (RuntimeException refundFailure) {
-      log.warn("Failed to refund order session rate limit during {}: orderSessionId={}, memberId={}",
-          context, orderSessionId, memberId, refundFailure);
+      log.warn(
+          "Failed to refund order session rate limit during {}: orderSessionId={}, memberId={}, failure={}",
+          LogPiiMasking.sanitizeText(context),
+          LogPiiMasking.sanitizeText(orderSessionId),
+          memberId,
+          LogPiiMasking.sanitizeExceptionSummary(refundFailure)
+      );
       if (primaryFailure != null) {
         primaryFailure.addSuppressed(refundFailure);
       }

@@ -14,6 +14,7 @@ import com.fix.channel.vo.TotpRebindBootstrapResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
+import com.fix.common.logging.LogPiiMasking;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.Map;
@@ -246,7 +247,11 @@ public class MfaRecoveryService {
             "mfa-rebind-completed"
         );
       } catch (RuntimeException ex) {
-        log.warn("Failed to invalidate sessions during mfa rebind confirmation memberId={}", memberId, ex);
+        log.warn(
+            "Failed to invalidate sessions during mfa rebind confirmation memberId={} failure={}",
+            memberId,
+            LogPiiMasking.sanitizeExceptionSummary(ex)
+        );
         throw new BusinessException(
             ErrorCode.INTERNAL_ERROR,
             ErrorCode.INTERNAL_ERROR.defaultMessage(),
@@ -391,7 +396,11 @@ public class MfaRecoveryService {
     try {
       runnable.run();
     } catch (RuntimeException ex) {
-      log.warn("Non-critical MFA recovery side effect failed: {}", description, ex);
+      log.warn(
+          "Non-critical MFA recovery side effect failed: {} failure={}",
+          LogPiiMasking.sanitizeText(description),
+          LogPiiMasking.sanitizeExceptionSummary(ex)
+      );
     }
   }
 
