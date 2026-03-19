@@ -8,6 +8,9 @@ fep:
   marketdata:
     provider: ${FEP_MARKETDATA_PROVIDER:NONE}
     source-mode: ${FEP_MARKETDATA_SOURCE_MODE:REPLAY}
+    delayed:
+      delay-ms: ${FEP_MARKETDATA_DELAYED_DELAY_MS:900000}
+      drain-interval-ms: ${FEP_MARKETDATA_DELAYED_DRAIN_INTERVAL_MS:1000}
     kis:
       env: ${FEP_MARKETDATA_KIS_ENV:paper}
       app-key: ${FEP_MARKETDATA_KIS_APP_KEY:}

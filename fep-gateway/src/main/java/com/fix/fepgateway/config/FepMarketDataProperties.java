@@ -10,6 +10,7 @@ public class FepMarketDataProperties {
   private String provider = "NONE";
   private String sourceMode = "REPLAY";
   private final Kis kis = new Kis();
+  private final Delayed delayed = new Delayed();
 
   public String getProvider() {
     return provider;
@@ -31,12 +32,46 @@ public class FepMarketDataProperties {
     return kis;
   }
 
+  public Delayed getDelayed() {
+    return delayed;
+  }
+
   public boolean isKisLiveModeEnabled() {
     return equalsIgnoreCase(provider, "KIS") && equalsIgnoreCase(sourceMode, "LIVE");
   }
 
+  public boolean isKisDelayedModeEnabled() {
+    return equalsIgnoreCase(provider, "KIS") && equalsIgnoreCase(sourceMode, "DELAYED");
+  }
+
+  public boolean isKisStreamingModeEnabled() {
+    return equalsIgnoreCase(provider, "KIS")
+        && (equalsIgnoreCase(sourceMode, "LIVE") || equalsIgnoreCase(sourceMode, "DELAYED"));
+  }
+
   private static boolean equalsIgnoreCase(String left, String right) {
     return left != null && left.equalsIgnoreCase(right);
+  }
+
+  public static class Delayed {
+    private long delayMs = 900_000L;
+    private long drainIntervalMs = 1_000L;
+
+    public long getDelayMs() {
+      return delayMs;
+    }
+
+    public void setDelayMs(long delayMs) {
+      this.delayMs = delayMs;
+    }
+
+    public long getDrainIntervalMs() {
+      return drainIntervalMs;
+    }
+
+    public void setDrainIntervalMs(long drainIntervalMs) {
+      this.drainIntervalMs = drainIntervalMs;
+    }
   }
 
   public static class Kis {

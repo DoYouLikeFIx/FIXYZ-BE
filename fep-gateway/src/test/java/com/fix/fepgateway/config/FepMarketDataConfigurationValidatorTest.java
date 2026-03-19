@@ -75,6 +75,48 @@ class FepMarketDataConfigurationValidatorTest {
         .run(context -> assertThat(context).hasNotFailed());
   }
 
+  @Test
+  void shouldAllowDelayedModeWhenDelayConfigurationIsPositive() {
+    contextRunner
+        .withPropertyValues(
+            "fep.marketdata.provider=KIS",
+            "fep.marketdata.source-mode=DELAYED",
+            "fep.marketdata.delayed.delay-ms=900000",
+            "fep.marketdata.delayed.drain-interval-ms=1000",
+            "fep.marketdata.kis.env=paper",
+            "fep.marketdata.kis.app-key=test-app-key",
+            "fep.marketdata.kis.app-secret=test-app-secret",
+            "fep.marketdata.kis.ws.tr-id=H0STCNT0",
+            "fep.marketdata.kis.ws.custtype=P",
+            "fep.marketdata.kis.ws.symbols[0]=005930"
+        )
+        .run(context -> assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  void shouldFailWhenDelayedModeHasNonPositiveDelay() {
+    contextRunner
+        .withPropertyValues(
+            "fep.marketdata.provider=KIS",
+            "fep.marketdata.source-mode=DELAYED",
+            "fep.marketdata.delayed.delay-ms=0",
+            "fep.marketdata.delayed.drain-interval-ms=1000",
+            "fep.marketdata.kis.env=paper",
+            "fep.marketdata.kis.app-key=test-app-key",
+            "fep.marketdata.kis.app-secret=test-app-secret",
+            "fep.marketdata.kis.ws.tr-id=H0STCNT0",
+            "fep.marketdata.kis.ws.custtype=P",
+            "fep.marketdata.kis.ws.symbols[0]=005930"
+        )
+        .run(context -> {
+          assertThat(context).hasFailed();
+          Throwable rootCause = rootCauseOf(context.getStartupFailure());
+          assertThat(rootCause)
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("delay-ms");
+        });
+  }
+
   @Configuration
   @EnableConfigurationProperties(FepMarketDataProperties.class)
   static class TestConfig {
