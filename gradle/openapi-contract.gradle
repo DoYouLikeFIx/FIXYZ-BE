@@ -50,6 +50,10 @@ tasks.register('deleteGeneratedOpenApi', Delete) {
 }
 
 tasks.register('normalizeGeneratedOpenApi') {
+  onlyIf {
+    generatedOpenApiFile.get().asFile.exists()
+  }
+
   doLast {
     File generated = generatedOpenApiFile.get().asFile
     if (!generated.exists()) {
@@ -101,6 +105,17 @@ Closure<Void> waitForOpenApiReady = {
       lastError = new GradleException("Ready endpoint is not UP yet: ${body}")
     } catch (Throwable throwable) {
       lastError = throwable
+    }
+
+    try {
+      httpGet(openapiDocsUrl)
+      return
+    } catch (Throwable throwable) {
+      if (lastError == null) {
+        lastError = throwable
+      } else if (lastError != throwable) {
+        lastError.addSuppressed(throwable)
+      }
     }
     sleep(1_000L)
   }
