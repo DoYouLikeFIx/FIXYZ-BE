@@ -150,5 +150,9 @@ order:
       batch-size: ${ORDER_SESSION_RECOVERY_BATCH_SIZE:100}
       executing-timeout: ${ORDER_SESSION_RECOVERY_EXECUTING_TIMEOUT:30s}
       max-retry-count: ${ORDER_SESSION_RECOVERY_MAX_RETRY_COUNT:5}
+      backoff:
+        initial: ${ORDER_SESSION_RECOVERY_BACKOFF_INITIAL:60s}
+        max: ${ORDER_SESSION_RECOVERY_BACKOFF_MAX:15m}
       manual-queue:
         publish-batch-size: ${ORDER_SESSION_RECOVERY_MANUAL_QUEUE_PUBLISH_BATCH_SIZE:100}
+        claim-timeout: ${ORDER_SESSION_RECOVERY_MANUAL_QUEUE_CLAIM_TIMEOUT:5m}
