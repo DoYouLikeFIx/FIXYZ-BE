@@ -4,99 +4,10 @@ plugins {
   id 'org.springdoc.openapi-gradle-plugin'
 }
 
-import java.net.ServerSocket
+ext.openapiDefaultPort = 28080
+ext.openapiBootRunDependencies = [':core-common:jar', ':channel-domain:jar']
 
-def defaultSpringdocPort = 18080
-
-def isTcpPortAvailable = { int port ->
-  try {
-    new ServerSocket(port).withCloseable { true }
-  } catch (IOException ignored) {
-    false
-  }
-}
-
-def findAvailableTcpPort = {
-  new ServerSocket(0).withCloseable { socket ->
-    socket.localPort
-  }
-}
-
-def requestedSpringdocPort = providers.gradleProperty('openapiPort')
-    .orElse(providers.environmentVariable('OPENAPI_SERVER_PORT'))
-    .orNull
-
-def springdocPort = requestedSpringdocPort != null
-    ? requestedSpringdocPort.toInteger()
-    : (isTcpPortAvailable(defaultSpringdocPort) ? defaultSpringdocPort : findAvailableTcpPort())
-
-if (requestedSpringdocPort == null && springdocPort != defaultSpringdocPort) {
-  logger.lifecycle("OpenAPI port ${defaultSpringdocPort} is busy; using ${springdocPort} for forked docs generation.")
-}
-
-Closure<String> normalizeOpenApiText = { String text ->
-  text.replace("\r\n", "\n")
-      .replaceAll(/"url"\s*:\s*"http:\/\/localhost:\d+"/, "\"url\": \"http://localhost:${defaultSpringdocPort}\"")
-      .replaceFirst(/\n\z/, '')
-}
-
-openApi {
-  apiDocsUrl = "http://localhost:${springdocPort}/v3/api-docs"
-  outputDir = file("$buildDir/openapi")
-  outputFileName = "${project.name}.json"
-  waitTimeInSeconds = 60
-  customBootRun {
-    args = ["--spring.profiles.active=openapi", "--server.port=${springdocPort}"]
-  }
-}
-
-tasks.register('normalizeGeneratedOpenApi') {
-  doLast {
-    File generated = file("$buildDir/openapi/${project.name}.json")
-    if (!generated.exists()) {
-      throw new GradleException("Generated OpenAPI file is missing: ${generated}")
-    }
-
-    generated.setText(normalizeOpenApiText(generated.getText('UTF-8')) + "\n", 'UTF-8')
-  }
-}
-
-tasks.named('generateOpenApiDocs') {
-  finalizedBy tasks.named('normalizeGeneratedOpenApi')
-}
-
-tasks.named('forkedSpringBootRun') {
-  dependsOn(':core-common:jar', ':channel-domain:jar')
-}
-
-tasks.register('verifyCommittedOpenApi') {
-  dependsOn tasks.named('generateOpenApiDocs')
-
-  doLast {
-    File generated = file("$buildDir/openapi/${project.name}.json")
-    File committed = rootProject.file("contracts/openapi/${project.name}.json")
-
-    if (!generated.exists()) {
-      throw new GradleException("Generated OpenAPI file is missing: ${generated}")
-    }
-    if (!committed.exists()) {
-      throw new GradleException("Committed OpenAPI file is missing: ${committed}")
-    }
-
-    String generatedText = normalizeOpenApiText(generated.getText('UTF-8'))
-    String committedText = normalizeOpenApiText(committed.getText('UTF-8'))
-    def jsonSlurper = new groovy.json.JsonSlurper()
-    if (jsonSlurper.parseText(generatedText) != jsonSlurper.parseText(committedText)) {
-      throw new GradleException(
-          "Committed OpenAPI snapshot is out of date. Regenerate :channel-service:generateOpenApiDocs and sync contracts/openapi/${project.name}.json."
-      )
-    }
-  }
-}
-
-tasks.named('check') {
-  dependsOn tasks.named('verifyCommittedOpenApi')
-}
+apply from: rootProject.file('gradle/openapi-contract.gradle')
 
 tasks.register('criticalContractSuites', Test) {
   description = 'Runs channel critical contract suites used by CI and local verification.'
