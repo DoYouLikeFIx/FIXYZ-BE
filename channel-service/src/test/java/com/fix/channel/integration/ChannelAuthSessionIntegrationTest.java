@@ -1,6 +1,5 @@
 package com.fix.channel.integration;
 
-import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +45,9 @@ import jakarta.servlet.http.Cookie;
 @SpringBootTest
 @AutoConfigureMockMvc
 class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
+
+  private static final long TOTP_CODE_ROTATION_TIMEOUT_MS = 31_000L;
+  private static final long TOTP_CODE_ROTATION_POLL_MS = 100L;
 
   @Autowired
   private MockMvc mockMvc;
@@ -120,24 +122,8 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
         .path("loginToken")
         .asText();
 
-    MvcResult verifyResult = mockMvc.perform(post("/api/v1/auth/otp/verify")
-            .cookie(preAuthSession.sessionCookie())
-            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(objectMapper.writeValueAsString(Map.of(
-                "loginToken", loginToken,
-                "otpCode", totpService.currentCode(saved)
-            ))))
-        .andExpect(status().isOk())
-        .andExpect(header().string("Set-Cookie", containsString("SESSION")))
-        .andExpect(header().string("Set-Cookie", containsString("HttpOnly")))
-        .andExpect(header().string("Set-Cookie", containsString("SameSite=strict")))
-        .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.not(containsString("SameSite=None"))))
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.memberUuid").value(saved.getMemberNo()))
-        .andReturn();
-
-    String loginSessionId = extractSessionId(verifyResult);
+    TotpLoginVerification verification = verifyTotpAndGetSession(saved, preAuthSession, loginToken);
+    String loginSessionId = verification.sessionId();
 
     Session persisted = sessionRepository.findById(loginSessionId);
     assertThat(persisted).isNotNull();
@@ -519,18 +505,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     assertThat(loginToken).isNotBlank();
 
     if ("VERIFY_TOTP".equals(nextAction)) {
-      waitForNextTotpWindow();
-      MvcResult verifyResult = mockMvc.perform(post("/api/v1/auth/otp/verify")
-              .cookie(preAuthSession.sessionCookie())
-              .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
-              .contentType(MediaType.APPLICATION_JSON)
-              .content(json(Map.of(
-                  "loginToken", loginToken,
-                  "otpCode", totpService.currentCode(saved)
-              ))))
-          .andExpect(status().isOk())
-          .andReturn();
-      return extractSessionId(verifyResult);
+      return verifyTotpAndGetSession(saved, preAuthSession, loginToken).sessionId();
     }
 
     MvcResult enrollResult = mockMvc.perform(post("/api/v1/members/me/totp/enroll")
@@ -569,10 +544,79 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     return objectMapper.writeValueAsString(payload);
   }
 
-  private void waitForNextTotpWindow() throws InterruptedException {
-    long offset = Instant.now().getEpochSecond() % 30L;
-    long sleepSeconds = offset == 0L ? 1L : (30L - offset) + 1L;
-    Thread.sleep(sleepSeconds * 1000L);
+  private TotpLoginVerification verifyTotpAndGetSession(Member member, PreAuthSession preAuthSession, String loginToken)
+      throws Exception {
+    String initialOtp = totpService.currentCode(member);
+    MvcResult initialAttempt = performTotpVerify(preAuthSession, loginToken, initialOtp);
+    if (initialAttempt.getResponse().getStatus() == 200) {
+      return successfulTotpLogin(member, initialAttempt);
+    }
+
+    JsonNode initialError = objectMapper.readTree(initialAttempt.getResponse().getContentAsString());
+    String initialErrorCode = initialError.path("code").asText();
+    if (!"AUTH-010".equals(initialErrorCode) && !"AUTH-011".equals(initialErrorCode)) {
+      throw new AssertionError(
+          "Unexpected otp verify response: status=" + initialAttempt.getResponse().getStatus()
+              + ", code=" + initialErrorCode
+              + ", body=" + initialAttempt.getResponse().getContentAsString()
+      );
+    }
+
+    String rotatedOtp = waitForNextTotpCode(member, initialOtp);
+    MvcResult retryAttempt = performTotpVerify(preAuthSession, loginToken, rotatedOtp);
+    if (retryAttempt.getResponse().getStatus() == 200) {
+      return successfulTotpLogin(member, retryAttempt);
+    }
+
+    String retryResponseBody = retryAttempt.getResponse().getContentAsString();
+    JsonNode retryError = objectMapper.readTree(retryResponseBody);
+    String retryErrorCode = retryError.path("code").asText();
+
+    throw new AssertionError(
+        "TOTP verify failed after retrying with a rotated code. initialErrorCode="
+            + initialErrorCode + ", retryErrorCode=" + retryErrorCode
+            + ", retryResponseBody=" + retryResponseBody
+    );
+  }
+
+  private String waitForNextTotpCode(Member member, String previousOtp) throws InterruptedException {
+    long deadline = System.currentTimeMillis() + TOTP_CODE_ROTATION_TIMEOUT_MS;
+    while (System.currentTimeMillis() < deadline) {
+      Thread.sleep(TOTP_CODE_ROTATION_POLL_MS);
+      String candidate = totpService.currentCode(member);
+      if (!candidate.equals(previousOtp)) {
+        return candidate;
+      }
+    }
+    throw new AssertionError("Timed out waiting for TOTP code rotation");
+  }
+
+  private MvcResult performTotpVerify(PreAuthSession preAuthSession, String loginToken, String otpCode) throws Exception {
+    return mockMvc.perform(post("/api/v1/auth/otp/verify")
+            .cookie(preAuthSession.sessionCookie())
+            .header("X-CSRF-TOKEN", preAuthSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json(Map.of(
+                "loginToken", loginToken,
+                "otpCode", otpCode
+            ))))
+        .andReturn();
+  }
+
+  private TotpLoginVerification successfulTotpLogin(Member member, MvcResult verifyResult) throws Exception {
+    assertSuccessfulTotpVerify(verifyResult, member);
+    return new TotpLoginVerification(extractSessionId(verifyResult), verifyResult);
+  }
+
+  private void assertSuccessfulTotpVerify(MvcResult verifyResult, Member member) throws Exception {
+    assertThat(verifyResult.getResponse().getStatus()).isEqualTo(200);
+    assertThat(verifyResult.getResponse().getHeader("Set-Cookie")).contains("SESSION");
+    assertThat(verifyResult.getResponse().getHeader("Set-Cookie")).contains("HttpOnly");
+    assertThat(verifyResult.getResponse().getHeader("Set-Cookie")).contains("SameSite=strict");
+    assertThat(verifyResult.getResponse().getHeader("Set-Cookie")).doesNotContain("SameSite=None");
+    JsonNode responseBody = objectMapper.readTree(verifyResult.getResponse().getContentAsString());
+    assertThat(responseBody.path("success").asBoolean()).isTrue();
+    assertThat(responseBody.path("data").path("memberUuid").asText()).isEqualTo(member.getMemberNo());
   }
 
   private String extractSessionId(MvcResult result) {
@@ -617,5 +661,8 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
     private Cookie sessionCookie() {
       return new Cookie("SESSION", sessionId);
     }
+  }
+
+  private record TotpLoginVerification(String sessionId, MvcResult response) {
   }
 }
