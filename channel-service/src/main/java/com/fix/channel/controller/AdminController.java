@@ -3,6 +3,7 @@ package com.fix.channel.controller;
 import java.time.Instant;
 
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.session.FindByIndexNameSessionRepository;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,15 +20,18 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.fix.channel.dto.request.AdminAccountStatusTransitionRequest;
 import com.fix.channel.dto.request.AdminAuditLogQueryRequest;
+import com.fix.channel.dto.request.AdminOrderReplayRequest;
 import com.fix.channel.dto.request.AdminSecurityEventRequest;
 import com.fix.channel.dto.response.AdminAccountStatusTransitionResponse;
 import com.fix.channel.dto.response.AdminAuditLogQueryResponse;
+import com.fix.channel.dto.response.AdminOrderReplayResponse;
 import com.fix.channel.dto.response.AdminSecurityEventResponse;
 import com.fix.channel.dto.response.AdminSessionInvalidationResponse;
 import com.fix.channel.service.AdminAccountStatusService;
 import com.fix.channel.service.AdminApiRateLimitService;
 import com.fix.channel.service.AdminAuditLogQueryService;
 import com.fix.channel.service.AdminMemberSessionService;
+import com.fix.channel.service.AdminOrderReplayService;
 import com.fix.channel.service.ChannelScaffoldService;
 import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.AdminActorContext;
@@ -52,6 +57,7 @@ public class AdminController {
   private final AdminAccountStatusService adminAccountStatusService;
   private final AdminAuditLogQueryService adminAuditLogQueryService;
   private final AdminMemberSessionService adminMemberSessionService;
+  private final AdminOrderReplayService adminOrderReplayService;
   private final AdminApiRateLimitService adminApiRateLimitService;
 
   public AdminController(
@@ -59,12 +65,14 @@ public class AdminController {
       AdminAccountStatusService adminAccountStatusService,
       AdminAuditLogQueryService adminAuditLogQueryService,
       AdminMemberSessionService adminMemberSessionService,
+      AdminOrderReplayService adminOrderReplayService,
       AdminApiRateLimitService adminApiRateLimitService
   ) {
     this.channelScaffoldService = channelScaffoldService;
     this.adminAccountStatusService = adminAccountStatusService;
     this.adminAuditLogQueryService = adminAuditLogQueryService;
     this.adminMemberSessionService = adminMemberSessionService;
+    this.adminOrderReplayService = adminOrderReplayService;
     this.adminApiRateLimitService = adminApiRateLimitService;
   }
 
@@ -102,6 +110,38 @@ public class AdminController {
     AdminAuditLogQueryRequest request = new AdminAuditLogQueryRequest(page, size, from, to, memberId, eventType);
     return ApiResponse.success(AdminAuditLogQueryResponse.from(
         adminAuditLogQueryService.query(request.toVo())
+    ));
+  }
+
+  @PostMapping(value = "/orders/{clOrdId}/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Unauthorized",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Forbidden",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Not Found",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Conflict",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "422", description = "Validation failed",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "429", description = "Too Many Requests",
+          headers = @Header(name = "Retry-After", description = "Seconds until the rate-limit window resets",
+              schema = @Schema(type = "string")),
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "503", description = "Corebank unavailable",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class)))
+  })
+  public ApiResponse<AdminOrderReplayResponse> replayOrder(
+      @PathVariable String clOrdId,
+      @RequestBody AdminOrderReplayRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    AdminActorContext actor = resolveAdminActorContext(httpServletRequest);
+    adminApiRateLimitService.enforceOrderReplay(actor.getSessionId());
+    return ApiResponse.success(AdminOrderReplayResponse.from(
+        adminOrderReplayService.replay(clOrdId, request.toVo(), actor)
     ));
   }
 
@@ -163,6 +203,8 @@ public class AdminController {
     }
     String adminEmail = authentication.getName().trim();
 
+    String operatorId = adminMemberSessionService.resolveOperatorId(memberIdNumber.longValue());
+
     Object principalName = session.getAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME);
     if (!(principalName instanceof String principalEmail)
         || principalEmail.isBlank()
@@ -172,6 +214,7 @@ public class AdminController {
 
     return AdminActorContext.of(
         memberIdNumber.longValue(),
+        operatorId,
         adminEmail,
         session.getId(),
         resolveClientIp(request),
