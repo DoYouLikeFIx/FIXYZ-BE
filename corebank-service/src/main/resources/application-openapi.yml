@@ -1,5 +1,10 @@
 server:
-  port: 18081
+  port: 28081
+
+management:
+  server:
+    port: 29081
+    address: 127.0.0.1
 
 internal:
   secret: local-internal-secret
