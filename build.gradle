@@ -39,3 +39,14 @@ subprojects {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
   }
 }
+
+tasks.register('correlationIdPropagationChecks') {
+  group = 'verification'
+  description = 'Runs hop-by-hop backend correlation propagation regressions plus the explicit gateway to simulator diagnostic boundary check.'
+  dependsOn(
+      ':channel-service:correlationPropagationTests',
+      ':corebank-service:correlationPropagationTests',
+      ':fep-gateway:correlationPropagationTests',
+      ':fep-simulator:correlationPropagationTests'
+  )
+}
