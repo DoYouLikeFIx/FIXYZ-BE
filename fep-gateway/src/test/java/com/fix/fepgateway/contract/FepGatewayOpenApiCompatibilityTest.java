@@ -84,10 +84,26 @@ class FepGatewayOpenApiCompatibilityTest {
 
     assertThat(schemaRef(submitOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
     assertThat(schemaRef(submitOperation, "401")).isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(statusOperation, "401")).isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(schemaRef(submitOperation, "422")).isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(schemaRef(cancelOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderCancelResponse");
     assertThat(schemaRef(replayOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderReplayResponse");
     assertThat(schemaRef(internalStatusOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
+    assertThat(schemaRef(internalStatusOperation, "401")).isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(submitOperation.path("responses").path("401").path("description").asText())
+        .contains("AUTH_001", "X-Internal-Secret");
+    assertThat(submitOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(submitOperation.path("responses").path("401").path("headers").path("traceparent").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(statusOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(statusOperation.path("responses").path("401").path("headers").path("traceparent").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(internalStatusOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(internalStatusOperation.path("responses").path("401").path("headers").path("traceparent").path("schema")
+        .path("type").asText()).isEqualTo("string");
     assertThat(cancelOperation.path("responses").path("504").path("description").asText()).contains("9004");
     assertThat(replayOperation.path("responses").path("409").path("description").asText()).contains("9009");
     assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();
