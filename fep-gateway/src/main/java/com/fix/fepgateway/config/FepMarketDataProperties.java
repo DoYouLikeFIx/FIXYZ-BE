@@ -2,6 +2,7 @@ package com.fix.fepgateway.config;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.math.BigDecimal;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "fep.marketdata")
@@ -11,6 +12,7 @@ public class FepMarketDataProperties {
   private String sourceMode = "REPLAY";
   private final Kis kis = new Kis();
   private final Delayed delayed = new Delayed();
+  private final Replay replay = new Replay();
 
   public String getProvider() {
     return provider;
@@ -36,6 +38,10 @@ public class FepMarketDataProperties {
     return delayed;
   }
 
+  public Replay getReplay() {
+    return replay;
+  }
+
   public boolean isKisLiveModeEnabled() {
     return equalsIgnoreCase(provider, "KIS") && equalsIgnoreCase(sourceMode, "LIVE");
   }
@@ -47,6 +53,10 @@ public class FepMarketDataProperties {
   public boolean isKisStreamingModeEnabled() {
     return equalsIgnoreCase(provider, "KIS")
         && (equalsIgnoreCase(sourceMode, "LIVE") || equalsIgnoreCase(sourceMode, "DELAYED"));
+  }
+
+  public boolean isReplayModeEnabled() {
+    return equalsIgnoreCase(provider, "REPLAY") && equalsIgnoreCase(sourceMode, "REPLAY");
   }
 
   private static boolean equalsIgnoreCase(String left, String right) {
@@ -71,6 +81,54 @@ public class FepMarketDataProperties {
 
     public void setDrainIntervalMs(long drainIntervalMs) {
       this.drainIntervalMs = drainIntervalMs;
+    }
+  }
+
+  public static class Replay {
+    private String seed = "epic-11-replay-seed";
+    private BigDecimal speedFactor = new BigDecimal("1.0000");
+    private long startOffset = 0L;
+    private long drainIntervalMs = 1_000L;
+    private List<String> symbols = new ArrayList<>(List.of("005930"));
+
+    public String getSeed() {
+      return seed;
+    }
+
+    public void setSeed(String seed) {
+      this.seed = seed;
+    }
+
+    public BigDecimal getSpeedFactor() {
+      return speedFactor;
+    }
+
+    public void setSpeedFactor(BigDecimal speedFactor) {
+      this.speedFactor = speedFactor;
+    }
+
+    public long getStartOffset() {
+      return startOffset;
+    }
+
+    public void setStartOffset(long startOffset) {
+      this.startOffset = startOffset;
+    }
+
+    public long getDrainIntervalMs() {
+      return drainIntervalMs;
+    }
+
+    public void setDrainIntervalMs(long drainIntervalMs) {
+      this.drainIntervalMs = drainIntervalMs;
+    }
+
+    public List<String> getSymbols() {
+      return symbols;
+    }
+
+    public void setSymbols(List<String> symbols) {
+      this.symbols = symbols == null ? new ArrayList<>() : new ArrayList<>(symbols);
     }
   }
 

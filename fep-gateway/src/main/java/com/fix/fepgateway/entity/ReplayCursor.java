@@ -90,6 +90,12 @@ public class ReplayCursor extends BaseTimeEntity {
     this.cursorOffset = cursorOffset;
   }
 
+  public void synchronize(String seed, String symbol, BigDecimal speedFactor) {
+    this.seed = seed;
+    this.symbol = symbol;
+    this.speedFactor = speedFactor;
+  }
+
   public void changeStatus(String status) {
     this.status = status;
   }

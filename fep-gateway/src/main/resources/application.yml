@@ -11,6 +11,12 @@ fep:
     delayed:
       delay-ms: ${FEP_MARKETDATA_DELAYED_DELAY_MS:900000}
       drain-interval-ms: ${FEP_MARKETDATA_DELAYED_DRAIN_INTERVAL_MS:1000}
+    replay:
+      seed: ${FEP_MARKETDATA_REPLAY_SEED:epic-11-replay-seed}
+      speed-factor: ${FEP_MARKETDATA_REPLAY_SPEED_FACTOR:1.0000}
+      start-offset: ${FEP_MARKETDATA_REPLAY_START_OFFSET:0}
+      drain-interval-ms: ${FEP_MARKETDATA_REPLAY_DRAIN_INTERVAL_MS:1000}
+      symbols: ${FEP_MARKETDATA_REPLAY_SYMBOLS:005930}
     kis:
       env: ${FEP_MARKETDATA_KIS_ENV:paper}
       app-key: ${FEP_MARKETDATA_KIS_APP_KEY:}

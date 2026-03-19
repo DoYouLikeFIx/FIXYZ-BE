@@ -14,10 +14,15 @@ public class FepMarketDataConfigurationValidator {
   }
 
   private void validate() {
-    if (!properties.isKisStreamingModeEnabled()) {
-      return;
+    if (properties.isKisStreamingModeEnabled()) {
+      validateKisStreamingConfiguration();
     }
+    if (properties.isReplayModeEnabled()) {
+      validateReplayConfiguration();
+    }
+  }
 
+  private void validateKisStreamingConfiguration() {
     require(
         !isBlank(properties.getKis().getAppKey()),
         "FEP_MARKETDATA_KIS_APP_KEY is required for KIS LIVE/DELAYED mode"
@@ -44,6 +49,21 @@ public class FepMarketDataConfigurationValidator {
           "fep.marketdata.delayed.drain-interval-ms must be greater than zero for DELAYED mode"
       );
     }
+  }
+
+  private void validateReplayConfiguration() {
+    require(!isBlank(properties.getReplay().getSeed()),
+        "fep.marketdata.replay.seed must not be blank for REPLAY mode");
+    require(properties.getReplay().getSpeedFactor() != null,
+        "fep.marketdata.replay.speed-factor must not be null for REPLAY mode");
+    require(properties.getReplay().getSpeedFactor().signum() > 0,
+        "fep.marketdata.replay.speed-factor must be greater than zero for REPLAY mode");
+    require(properties.getReplay().getStartOffset() >= 0,
+        "fep.marketdata.replay.start-offset must be zero or positive for REPLAY mode");
+    require(properties.getReplay().getDrainIntervalMs() > 0,
+        "fep.marketdata.replay.drain-interval-ms must be greater than zero for REPLAY mode");
+    require(!properties.getReplay().getSymbols().isEmpty(),
+        "fep.marketdata.replay.symbols must contain at least one symbol for REPLAY mode");
   }
 
   private static boolean isAllowed(String value, List<String> allowed) {

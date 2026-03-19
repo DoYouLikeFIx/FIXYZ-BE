@@ -117,6 +117,42 @@ class FepMarketDataConfigurationValidatorTest {
         });
   }
 
+  @Test
+  void shouldAllowReplayModeWithDeterministicSettings() {
+    contextRunner
+        .withPropertyValues(
+            "fep.marketdata.provider=REPLAY",
+            "fep.marketdata.source-mode=REPLAY",
+            "fep.marketdata.replay.seed=test-seed",
+            "fep.marketdata.replay.speed-factor=1.5000",
+            "fep.marketdata.replay.start-offset=0",
+            "fep.marketdata.replay.drain-interval-ms=1000",
+            "fep.marketdata.replay.symbols[0]=005930"
+        )
+        .run(context -> assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  void shouldFailWhenReplayModeHasInvalidSpeedFactor() {
+    contextRunner
+        .withPropertyValues(
+            "fep.marketdata.provider=REPLAY",
+            "fep.marketdata.source-mode=REPLAY",
+            "fep.marketdata.replay.seed=test-seed",
+            "fep.marketdata.replay.speed-factor=0",
+            "fep.marketdata.replay.start-offset=0",
+            "fep.marketdata.replay.drain-interval-ms=1000",
+            "fep.marketdata.replay.symbols[0]=005930"
+        )
+        .run(context -> {
+          assertThat(context).hasFailed();
+          Throwable rootCause = rootCauseOf(context.getStartupFailure());
+          assertThat(rootCause)
+              .isInstanceOf(IllegalStateException.class)
+              .hasMessageContaining("speed-factor");
+        });
+  }
+
   @Configuration
   @EnableConfigurationProperties(FepMarketDataProperties.class)
   static class TestConfig {
