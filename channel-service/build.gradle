@@ -119,9 +119,8 @@ tasks.register('correlationPropagationTests', Test) {
   classpath = sourceSets.test.runtimeClasspath
   filter {
     includeTestsMatching('com.fix.channel.filter.CorrelationIdFilterTest')
-    includeTestsMatching(
-        'com.fix.channel.controller.ChannelErrorContractTest.shouldForwardCorrelationAndTraceparentHeadersAtAuthenticatedExecutionBoundary'
-    )
+    includeTestsMatching('com.fix.channel.client.CorebankClientTest')
+    includeTestsMatching('com.fix.channel.integration.ChannelCorrelationPropagationIntegrationTest')
   }
 }
 
