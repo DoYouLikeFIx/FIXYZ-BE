@@ -11,6 +11,7 @@ import com.fix.channel.vo.OrderSessionCreateCommand;
 import java.math.BigDecimal;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +31,7 @@ public class OrderSessionPersistenceService {
   private final ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository;
   private final OrderSessionRepository orderSessionRepository;
   private final AuditLogService auditLogService;
+  private final Clock clock;
 
   @PersistenceContext
   private EntityManager entityManager;
@@ -308,11 +310,13 @@ public class OrderSessionPersistenceService {
         externalSyncStatus,
         executedAt
     );
+    Instant now = clock.instant();
     upsertManualRecoveryQueueEntry(
         managedSession.getOrderSessionId(),
         managedSession.getClOrdId(),
         attemptCount,
-        failureReason
+        failureReason,
+        now
     );
     entityManager.flush();
     recordOrderSessionAudit(
@@ -388,9 +392,9 @@ public class OrderSessionPersistenceService {
       String orderSessionId,
       String clOrdId,
       int attemptCount,
-      String reason
+      String reason,
+      Instant now
   ) {
-    Instant now = Instant.now();
     ManualRecoveryQueueEntry queueEntry = manualRecoveryQueueEntryRepository.findByOrderSessionId(orderSessionId)
         .orElse(null);
     if (queueEntry == null) {

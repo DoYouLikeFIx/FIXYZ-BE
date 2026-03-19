@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -18,10 +19,12 @@ public class OrderSessionRecoveryLockService {
   private static final Duration LOCK_TTL = Duration.ofSeconds(120);
   private static final String LOCK_KEY_PREFIX = "ch:recovery-lock:";
   private static final DefaultRedisScript<Long> RELEASE_IF_MATCHES_SCRIPT = createReleaseIfMatchesScript();
+  private static final int LOCAL_LOCK_CLEANUP_INTERVAL = 100;
 
   private final ObjectProvider<StringRedisTemplate> redisTemplateProvider;
   private final Clock clock;
   private final ConcurrentMap<String, LocalLock> localLocks = new ConcurrentHashMap<>();
+  private final AtomicInteger operationsSinceLastCleanup = new AtomicInteger();
 
   public OrderSessionRecoveryLockService(
       ObjectProvider<StringRedisTemplate> redisTemplateProvider,
@@ -55,6 +58,8 @@ public class OrderSessionRecoveryLockService {
     if (lockToken == null || lockToken.isBlank()) {
       return;
     }
+    Instant now = clock.instant();
+    maybeCleanupLocalLocks(now);
     String lockKey = lockKey(orderSessionId);
     StringRedisTemplate redisTemplate = redisTemplateProvider.getIfAvailable();
     if (redisTemplate != null) {
@@ -68,7 +73,8 @@ public class OrderSessionRecoveryLockService {
   }
 
   private String tryAcquireLocally(String lockKey, String lockToken) {
-    Instant now = Instant.now(clock);
+    Instant now = clock.instant();
+    maybeCleanupLocalLocks(now);
     LocalLock candidateLock = new LocalLock(lockToken, now.plus(LOCK_TTL));
     LocalLock acquired = localLocks.compute(lockKey, (unused, existing) -> {
       if (existing == null || !existing.expiresAt().isAfter(now)) {
@@ -77,6 +83,24 @@ public class OrderSessionRecoveryLockService {
       return existing;
     });
     return acquired == candidateLock ? lockToken : null;
+  }
+
+  private void maybeCleanupLocalLocks(Instant now) {
+    int operations = operationsSinceLastCleanup.incrementAndGet();
+    if (operations < LOCAL_LOCK_CLEANUP_INTERVAL) {
+      return;
+    }
+    operationsSinceLastCleanup.set(0);
+    cleanupExpiredLocalLocks(now);
+  }
+
+  private void cleanupExpiredLocalLocks(Instant now) {
+    for (var entry : localLocks.entrySet()) {
+      LocalLock lock = entry.getValue();
+      if (!lock.expiresAt().isAfter(now)) {
+        localLocks.remove(entry.getKey(), lock);
+      }
+    }
   }
 
   private String lockKey(String orderSessionId) {

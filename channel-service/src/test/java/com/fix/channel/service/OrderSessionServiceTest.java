@@ -20,6 +20,7 @@ import com.fix.channel.vo.OrderSessionQueryCommand;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -742,6 +743,7 @@ class OrderSessionServiceTest {
         ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository,
         OrderSessionRepository orderSessionRepository,
         AuditLogService auditLogService,
+        Clock clock,
         PlatformTransactionManager transactionManager,
         InMemoryOrderSessionTtlStore orderSessionTtlStore
     ) {
@@ -749,6 +751,7 @@ class OrderSessionServiceTest {
           manualRecoveryQueueEntryRepository,
           orderSessionRepository,
           auditLogService,
+          clock,
           transactionManager,
           orderSessionTtlStore
       );
@@ -844,10 +847,11 @@ class OrderSessionServiceTest {
         ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository,
         OrderSessionRepository orderSessionRepository,
         AuditLogService auditLogService,
+        Clock clock,
         PlatformTransactionManager transactionManager,
         InMemoryOrderSessionTtlStore orderSessionTtlStore
     ) {
-      super(manualRecoveryQueueEntryRepository, orderSessionRepository, auditLogService);
+      super(manualRecoveryQueueEntryRepository, orderSessionRepository, auditLogService, clock);
       this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
       this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
       this.orderSessionTtlStore = orderSessionTtlStore;
