@@ -57,6 +57,7 @@ tasks.register('correlationPropagationTests', Test) {
   classpath = sourceSets.test.runtimeClasspath
   filter {
     includeTestsMatching('com.fix.fepgateway.dataplane.fix.FepSimulatorTraceBridgeClientTest')
+    includeTestsMatching('com.fix.fepgateway.dataplane.fix.FixDataPlaneServiceTraceBridgeTest')
     includeTestsMatching('com.fix.fepgateway.filter.CorrelationIdFilterTest')
     includeTestsMatching('com.fix.fepgateway.security.InternalSecretFilterTest')
     includeTestsMatching('com.fix.fepgateway.integration.FepGatewaySimulatorTraceBridgeIntegrationTest')

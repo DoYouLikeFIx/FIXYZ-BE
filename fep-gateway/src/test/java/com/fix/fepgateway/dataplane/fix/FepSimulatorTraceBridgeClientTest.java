@@ -5,21 +5,21 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.fix.common.web.CommonHeaders;
+import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.slf4j.MDC;
 import org.springframework.web.client.RestClient;
 
-@ExtendWith(OutputCaptureExtension.class)
 class FepSimulatorTraceBridgeClientTest {
 
   private static final String TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
@@ -41,21 +41,29 @@ class FepSimulatorTraceBridgeClientTest {
     wireMockServer.resetAll();
   }
 
+  @AfterEach
+  void clearContext() {
+    CorrelationIdSupport.clearMdc();
+    MDC.remove(TraceparentSupport.MDC_KEY);
+  }
+
   @Test
   void shouldForwardCorrelationIdAndTraceparentToSimulator() {
     wireMockServer.stubFor(get(urlEqualTo("/fep-internal/v1/ping"))
         .willReturn(aResponse().withStatus(200)));
 
+    CorrelationIdSupport.putInMdc("trace-simulator-unit-001");
+    TraceparentSupport.putInMdc(TRACEPARENT);
+
     FepSimulatorTraceBridgeClient client = new FepSimulatorTraceBridgeClient(
         RestClient.builder(),
         "http://127.0.0.1:" + wireMockServer.port(),
-        "test-secret"
+        "test-secret",
+        true
     );
 
-    FepSimulatorTraceBridgeClient.TraceBridgeResult result =
-        client.bridgeTrace("trace-simulator-unit-001", TRACEPARENT);
+    client.bridgeCurrentTrace();
 
-    assertThat(result.forwarded()).isTrue();
     wireMockServer.verify(getRequestedFor(urlEqualTo("/fep-internal/v1/ping"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-simulator-unit-001"))
@@ -63,61 +71,36 @@ class FepSimulatorTraceBridgeClientTest {
   }
 
   @Test
-  void shouldLogSuccessfulBridgeForwarding(CapturedOutput output) {
-    wireMockServer.stubFor(get(urlEqualTo("/fep-internal/v1/ping"))
-        .willReturn(aResponse().withStatus(200)));
-
+  void shouldSkipBridgeWhenDisabled() {
     FepSimulatorTraceBridgeClient client = new FepSimulatorTraceBridgeClient(
         RestClient.builder(),
         "http://127.0.0.1:" + wireMockServer.port(),
-        "test-secret"
+        "test-secret",
+        false
     );
 
-    client.bridgeTrace("trace-simulator-unit-logging", TRACEPARENT);
+    client.bridgeCurrentTrace();
 
-    assertThat(output.getOut())
-        .contains("operation=SIMULATOR_TRACE_DIAGNOSTIC")
-        .contains("correlationId=trace-simulator-unit-logging")
-        .contains("traceparent=" + TRACEPARENT)
-        .contains("result=forwarded");
-  }
-
-  @Test
-  void shouldRejectMissingDiagnosticTraceHeadersWithoutCallingSimulator() {
-    FepSimulatorTraceBridgeClient client = new FepSimulatorTraceBridgeClient(
-        RestClient.builder(),
-        "http://127.0.0.1:" + wireMockServer.port(),
-        "test-secret"
-    );
-
-    FepSimulatorTraceBridgeClient.TraceBridgeResult result = client.bridgeTrace("", "bad-traceparent");
-
-    assertThat(result.forwarded()).isFalse();
-    assertThat(result.message()).contains("missing or invalid");
     wireMockServer.verify(0, getRequestedFor(urlEqualTo("/fep-internal/v1/ping")));
   }
 
   @Test
-  void shouldReturnDiagnosticFailureAndLogWarningWhenSimulatorFails(CapturedOutput output) {
+  void shouldSwallowBridgeFailureForBestEffortSemantics() {
     wireMockServer.stubFor(get(urlEqualTo("/fep-internal/v1/ping"))
         .willReturn(aResponse().withStatus(500)));
+
+    CorrelationIdSupport.putInMdc("trace-simulator-unit-002");
+    TraceparentSupport.putInMdc(TRACEPARENT);
 
     FepSimulatorTraceBridgeClient client = new FepSimulatorTraceBridgeClient(
         RestClient.builder(),
         "http://127.0.0.1:" + wireMockServer.port(),
-        "test-secret"
+        "test-secret",
+        true
     );
 
-    FepSimulatorTraceBridgeClient.TraceBridgeResult result =
-        client.bridgeTrace("trace-simulator-unit-002", TRACEPARENT);
+    assertThatCode(client::bridgeCurrentTrace).doesNotThrowAnyException();
 
-    assertThat(result.forwarded()).isFalse();
-    assertThat(result.message()).contains("500");
     wireMockServer.verify(1, getRequestedFor(urlEqualTo("/fep-internal/v1/ping")));
-    assertThat(output.getOut())
-        .contains("operation=SIMULATOR_TRACE_DIAGNOSTIC")
-        .contains("correlationId=trace-simulator-unit-002")
-        .contains("traceparent=" + TRACEPARENT)
-        .contains("500");
   }
 }

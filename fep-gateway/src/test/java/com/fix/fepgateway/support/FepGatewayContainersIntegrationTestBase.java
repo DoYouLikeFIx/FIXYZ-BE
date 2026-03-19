@@ -46,6 +46,7 @@ public abstract class FepGatewayContainersIntegrationTestBase {
     registry.add("spring.datasource.username", MYSQL_CONTAINER::getUsername);
     registry.add("spring.datasource.password", MYSQL_CONTAINER::getPassword);
     registry.add("spring.datasource.driver-class-name", MYSQL_CONTAINER::getDriverClassName);
+    registry.add("spring.jpa.database-platform", () -> "org.hibernate.dialect.MySQLDialect");
     registry.add("spring.data.redis.host", REDIS_CONTAINER::getHost);
     registry.add("spring.data.redis.port", () -> REDIS_CONTAINER.getMappedPort(6379));
   }

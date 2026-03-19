@@ -4,12 +4,15 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fix.common.web.CommonHeaders;
+import com.fix.fepgateway.support.FepGatewayContainersIntegrationTestBase;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import org.junit.jupiter.api.AfterAll;
@@ -27,8 +30,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-class FepGatewaySimulatorTraceBridgeIntegrationTest {
+class FepGatewaySimulatorTraceBridgeIntegrationTest extends FepGatewayContainersIntegrationTestBase {
 
+  private static final String SUBMIT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174111";
   private static final String TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
   private static final WireMockServer wireMockServer =
       new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
@@ -52,8 +56,9 @@ class FepGatewaySimulatorTraceBridgeIntegrationTest {
       wireMockServer.start();
     }
     registry.add("internal.secret", () -> "test-secret");
+    registry.add("fep.simulator.trace-bridge-enabled", () -> true);
     registry.add(
-        "fep.simulator.diagnostics-base-url",
+        "fep.simulator.control-plane-base-url",
         () -> "http://127.0.0.1:" + wireMockServer.port()
     );
   }
@@ -111,6 +116,42 @@ class FepGatewaySimulatorTraceBridgeIntegrationTest {
 
     wireMockServer.verify(getRequestedFor(urlEqualTo("/fep-internal/v1/ping"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-simulator-diagnostic-failure"))
+        .withHeader(CommonHeaders.TRACEPARENT, equalTo(TRACEPARENT)));
+  }
+
+  @Test
+  void shouldForwardCorrelationIdAndTraceparentToFepSimulatorOnSubmit() throws Exception {
+    wireMockServer.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlEqualTo("/fep-internal/v1/ping"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("{\"service\":\"fep-simulator\",\"boundary\":\"open\"}")));
+
+    mockMvc.perform(post("/fep/v1/orders")
+            .contentType(APPLICATION_JSON)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-simulator-bridge-001")
+            .header(CommonHeaders.TRACEPARENT, TRACEPARENT)
+            .header(CommonHeaders.X_CL_ORD_ID, SUBMIT_CL_ORD_ID)
+            .content("""
+                {
+                  "clOrdId": "%s",
+                  "accountId": "ACC-TRACE-001",
+                  "symbol": "005930",
+                  "securityExchange": "KRX",
+                  "side": "BUY",
+                  "orderType": "LIMIT",
+                  "qty": 10,
+                  "price": 72000,
+                  "currency": "KRW",
+                  "referenceId": "ref-trace-001"
+                }
+                """.formatted(SUBMIT_CL_ORD_ID)))
+        .andExpect(status().isOk());
+
+    wireMockServer.verify(getRequestedFor(urlEqualTo("/fep-internal/v1/ping"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-simulator-bridge-001"))
         .withHeader(CommonHeaders.TRACEPARENT, equalTo(TRACEPARENT)));
   }
 }
