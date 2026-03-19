@@ -21,6 +21,7 @@ import com.fix.corebank.dto.response.InternalAccountOrderHistoryResponse;
 import com.fix.corebank.dto.response.InternalAccountPositionResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusTransitionResponse;
+import com.fix.corebank.dto.response.InternalLedgerIntegritySummaryResponse;
 import com.fix.corebank.dto.response.InternalLedgerReconciliationCaseResponse;
 import com.fix.corebank.dto.response.InternalLedgerReconciliationRepairResponse;
 import com.fix.corebank.dto.response.InternalLedgerReconciliationRerunResponse;
@@ -29,6 +30,7 @@ import com.fix.corebank.dto.response.InternalPortfolioResponse;
 import com.fix.corebank.dto.response.InternalPortfolioProvisioningResponse;
 import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderService;
+import com.fix.corebank.service.LedgerIntegrityObservabilityService;
 import com.fix.corebank.service.LedgerReconciliationService;
 import com.fix.corebank.service.LedgerRepairService;
 import jakarta.validation.Valid;
@@ -56,17 +58,20 @@ public class InternalCorebankController {
 
   private final CorebankOrderService corebankOrderService;
   private final AccountProvisioningService accountProvisioningService;
+  private final LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService;
   private final LedgerReconciliationService ledgerReconciliationService;
   private final LedgerRepairService ledgerRepairService;
 
   public InternalCorebankController(
       CorebankOrderService corebankOrderService,
       AccountProvisioningService accountProvisioningService,
+      LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService,
       LedgerReconciliationService ledgerReconciliationService,
       LedgerRepairService ledgerRepairService
   ) {
     this.corebankOrderService = corebankOrderService;
     this.accountProvisioningService = accountProvisioningService;
+    this.ledgerIntegrityObservabilityService = ledgerIntegrityObservabilityService;
     this.ledgerReconciliationService = ledgerReconciliationService;
     this.ledgerRepairService = ledgerRepairService;
   }
@@ -171,6 +176,13 @@ public class InternalCorebankController {
       @ParameterObject @Valid @ModelAttribute InternalOrderRequeryRequest request
   ) {
     return ApiResponse.success(InternalOrderResponse.from(corebankOrderService.requeryOrder(request.toVo(clOrdId))));
+  }
+
+  @GetMapping("/ledger-integrity/summary")
+  public ApiResponse<InternalLedgerIntegritySummaryResponse> ledgerIntegritySummary() {
+    return ApiResponse.success(InternalLedgerIntegritySummaryResponse.from(
+        ledgerIntegrityObservabilityService.readSummary()
+    ));
   }
 
   @PostMapping(value = "/ledger-integrity/anomalies/{anomalyId}/cases", consumes = MediaType.APPLICATION_JSON_VALUE)
