@@ -51,7 +51,7 @@ public class OrderSessionRecoveryAttemptStore {
         return new LocalAttempt(1, now.plus(ATTEMPT_TTL));
       }
       int nextCount = current.count() == Integer.MAX_VALUE ? Integer.MAX_VALUE : current.count() + 1;
-      return new LocalAttempt(nextCount, now.plus(ATTEMPT_TTL));
+      return new LocalAttempt(nextCount, current.expiresAt());
     }).count();
   }
 

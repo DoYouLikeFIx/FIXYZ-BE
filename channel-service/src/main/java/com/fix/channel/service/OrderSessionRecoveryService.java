@@ -9,9 +9,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -80,7 +78,7 @@ public class OrderSessionRecoveryService {
     List<OrderSession> timedOutSessions = orderSessionService.findTimedOutExecutingSessions(cutoff, batchSize);
     for (OrderSession session : timedOutSessions) {
       try {
-        orderSessionService.beginRequerying(session, EXECUTING_TIMEOUT_REASON);
+        orderSessionService.beginRequerying(session.getOrderSessionId(), EXECUTING_TIMEOUT_REASON);
       } catch (RuntimeException ex) {
         log.warn(
             "Failed to transition timed-out order session to REQUERYING: sessionId={}, clOrdId={}",
@@ -93,21 +91,17 @@ public class OrderSessionRecoveryService {
   }
 
   private void processRequeryingSessions() {
-    Set<String> processedSessionIds = new HashSet<>();
+    Long cursorId = null;
     while (true) {
-      List<OrderSession> requeryingSessions = orderSessionService.findRequeryingSessions(batchSize);
+      List<OrderSession> requeryingSessions = orderSessionService.findRequeryingSessionsAfter(cursorId, batchSize);
       if (requeryingSessions.isEmpty()) {
         return;
       }
-      boolean processedAny = false;
       for (OrderSession session : requeryingSessions) {
-        if (!processedSessionIds.add(session.getOrderSessionId())) {
-          continue;
-        }
-        processedAny = true;
         processSingleSession(session);
       }
-      if (requeryingSessions.size() < batchSize || !processedAny) {
+      cursorId = requeryingSessions.get(requeryingSessions.size() - 1).getId();
+      if (requeryingSessions.size() < batchSize) {
         return;
       }
     }
@@ -129,7 +123,7 @@ public class OrderSessionRecoveryService {
 
       if (isTerminalSuccess(result)) {
         orderSessionService.completeExecution(
-            session,
+            orderSessionId,
             result.getExecutionResult(),
             result.getExecutedQty(),
             result.getLeavesQty(),
@@ -145,7 +139,7 @@ public class OrderSessionRecoveryService {
 
       if (Boolean.TRUE.equals(result.getEscalationRequired())) {
         orderSessionService.markEscalated(
-            session,
+            orderSessionId,
             escalationReason(result),
             result.getExecutionResult(),
             result.getExecutedQty(),
