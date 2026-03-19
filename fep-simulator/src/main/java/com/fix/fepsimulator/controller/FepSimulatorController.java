@@ -3,6 +3,8 @@ package com.fix.fepsimulator.controller;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.fix.common.web.CorrelationIdSupport;
+import com.fix.common.web.TraceparentSupport;
 import io.swagger.v3.oas.annotations.Parameter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,10 +59,12 @@ public class FepSimulatorController {
       @org.springframework.web.bind.annotation.RequestHeader(com.fix.common.web.CommonHeaders.TRACEPARENT)
       String traceparent
   ) {
+    String ensuredCorrelationId = CorrelationIdSupport.currentOrGenerate();
+    String ensuredTraceparent = TraceparentSupport.currentOrGenerate();
     log.info(
         "operation=SIMULATOR_TRACE_DIAGNOSTIC_RECEIVED correlationId={} traceparent={} boundary=open",
-        correlationId,
-        traceparent
+        ensuredCorrelationId,
+        ensuredTraceparent
     );
     return Map.of("service", "fep-simulator", "boundary", "open");
   }

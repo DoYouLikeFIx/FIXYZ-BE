@@ -20,7 +20,6 @@ public class FepGatewayTraceDiagnosticController {
 
   @GetMapping("/fep-internal/v1/diagnostics/trace-forwarding/simulator")
   public ApiResponse<FepSimulatorTraceBridgeClient.TraceBridgeResult> forwardTraceToSimulator(
-      @RequestHeader(CommonHeaders.X_INTERNAL_SECRET) String internalSecret,
       @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
       @RequestHeader(CommonHeaders.TRACEPARENT) String traceparent
   ) {
