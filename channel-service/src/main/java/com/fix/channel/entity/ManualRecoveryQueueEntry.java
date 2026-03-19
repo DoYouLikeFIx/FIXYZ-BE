@@ -51,6 +51,12 @@ public class ManualRecoveryQueueEntry extends BaseTimeEntity {
   @Column(name = "published_at")
   private Instant publishedAt;
 
+  @Column(name = "publish_claim_token", length = 64)
+  private String publishClaimToken;
+
+  @Column(name = "publish_claimed_at")
+  private Instant publishClaimedAt;
+
   protected ManualRecoveryQueueEntry() {
   }
 
@@ -106,14 +112,34 @@ public class ManualRecoveryQueueEntry extends BaseTimeEntity {
     return publishedAt;
   }
 
+  public String getPublishClaimToken() {
+    return publishClaimToken;
+  }
+
+  public Instant getPublishClaimedAt() {
+    return publishClaimedAt;
+  }
+
   public void refresh(int attemptCount, String reason, Instant enqueuedAt) {
     this.attemptCount = attemptCount;
     this.reason = reason;
     this.enqueuedAt = enqueuedAt;
     this.publishedAt = null;
+    clearPublishClaim();
   }
 
   public void markPublished(Instant publishedAt) {
     this.publishedAt = publishedAt;
+    clearPublishClaim();
+  }
+
+  public void markClaimed(String publishClaimToken, Instant publishClaimedAt) {
+    this.publishClaimToken = publishClaimToken;
+    this.publishClaimedAt = publishClaimedAt;
+  }
+
+  public void clearPublishClaim() {
+    this.publishClaimToken = null;
+    this.publishClaimedAt = null;
   }
 }
