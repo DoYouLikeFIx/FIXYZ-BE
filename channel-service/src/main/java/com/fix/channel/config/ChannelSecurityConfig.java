@@ -103,27 +103,8 @@ public class ChannelSecurityConfig {
         .httpBasic(AbstractHttpConfigurer::disable)
         .formLogin(AbstractHttpConfigurer::disable)
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers(
-                "/api/v1/ping",
-                "/api/v1/errors/boom",
-                "/api/v1/auth/csrf",
-                "/api/v1/auth/register",
-                "/api/v1/auth/login",
-                "/api/v1/auth/otp/verify",
-                "/api/v1/auth/mfa-recovery/rebind",
-                "/api/v1/auth/mfa-recovery/rebind/confirm",
-                "/api/v1/members/me/totp/enroll",
-                "/api/v1/members/me/totp/confirm",
-                "/api/v1/auth/password/forgot",
-                "/api/v1/auth/password/forgot/challenge",
-                "/api/v1/auth/password/reset",
-                "/swagger-ui/**",
-                "/v3/api-docs/**",
-                "/actuator/health",
-                "/actuator/info"
-            ).permitAll()
-            .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-            .requestMatchers("/actuator/**").hasRole("ADMIN")
+            .requestMatchers(ChannelSecurityPaths.publicPathPatterns()).permitAll()
+            .requestMatchers(ChannelSecurityPaths.adminOnlyPathPatterns()).hasRole("ADMIN")
             .anyRequest().authenticated());
     return http.build();
   }
