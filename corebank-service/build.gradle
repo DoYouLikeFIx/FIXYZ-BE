@@ -102,8 +102,39 @@ tasks.named('check') {
   dependsOn tasks.named('verifyCommittedOpenApi')
 }
 
+sourceSets {
+  resilienceScenario {
+    java.srcDir 'src/resilienceScenario/java'
+    resources.srcDir 'src/resilienceScenario/resources'
+    compileClasspath += sourceSets.main.output + sourceSets.test.output + configurations.testRuntimeClasspath
+    runtimeClasspath += output + compileClasspath
+  }
+}
+
+configurations {
+  resilienceScenarioImplementation.extendsFrom testImplementation
+  resilienceScenarioCompileOnly.extendsFrom testCompileOnly
+  resilienceScenarioRuntimeOnly.extendsFrom testRuntimeOnly
+  resilienceScenarioAnnotationProcessor.extendsFrom testAnnotationProcessor
+}
+
 tasks.withType(Test).configureEach {
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
+}
+
+tasks.register('resilienceScenarioTest', Test) {
+  description = 'Runs cross-module resilience scenario coverage for Story 6.6.'
+  group = 'verification'
+  testClassesDirs = sourceSets.resilienceScenario.output.classesDirs
+  classpath = sourceSets.resilienceScenario.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  useJUnitPlatform()
+  maxParallelForks = 1
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+}
+
+tasks.named('check') {
+  dependsOn tasks.named('resilienceScenarioTest')
 }
 
 dependencies {
@@ -137,4 +168,7 @@ dependencies {
   testImplementation 'org.testcontainers:testcontainers'
   testImplementation 'org.testcontainers:mysql'
   testImplementation "org.wiremock:wiremock-standalone:${rootProject.ext.wiremockVersion}"
+
+  resilienceScenarioImplementation project(':fep-gateway')
+  resilienceScenarioImplementation project(':fep-simulator')
 }
