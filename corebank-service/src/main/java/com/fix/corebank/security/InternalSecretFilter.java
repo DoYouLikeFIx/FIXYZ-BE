@@ -50,7 +50,7 @@ public class InternalSecretFilter extends OncePerRequestFilter {
   }
 
   private boolean requiresInternalSecret(String requestUri) {
-    return requestUri.startsWith("/internal/");
+    return CorebankInternalSecretPaths.requiresInternalSecret(requestUri);
   }
 
   private void writeUnauthorizedResponse(HttpServletRequest request, HttpServletResponse response) throws IOException {
