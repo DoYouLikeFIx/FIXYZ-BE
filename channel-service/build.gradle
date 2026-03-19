@@ -111,6 +111,20 @@ tasks.register('criticalContractSuites', Test) {
   }
 }
 
+tasks.register('correlationPropagationTests', Test) {
+  description = 'Runs channel correlation propagation regressions.'
+  group = 'verification'
+  useJUnitPlatform()
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  filter {
+    includeTestsMatching('com.fix.channel.filter.CorrelationIdFilterTest')
+    includeTestsMatching(
+        'com.fix.channel.controller.ChannelErrorContractTest.shouldForwardCorrelationAndTraceparentHeadersAtAuthenticatedExecutionBoundary'
+    )
+  }
+}
+
 dependencies {
   implementation project(':core-common')
   implementation project(':channel-domain')

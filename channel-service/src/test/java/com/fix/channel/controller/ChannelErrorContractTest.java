@@ -2,6 +2,7 @@ package com.fix.channel.controller;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -216,6 +217,66 @@ class ChannelErrorContractTest {
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-timeout")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldForwardCorrelationAndTraceparentHeadersAtAuthenticatedExecutionBoundary() throws Exception {
+    String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+    WIRE_MOCK_SERVER.resetAll();
+    orderSessionTestFixture.reset();
+    String orderSessionId = orderSessionTestFixture.createInitiatedSessionId(
+        301L,
+        1L,
+        "123e4567-e89b-42d3-a456-426614174261",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(70100),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plusSeconds(3600)
+    );
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlEqualTo("/internal/v1/orders"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "orderId": 90002,
+                    "clOrdId": "123e4567-e89b-42d3-a456-426614174261",
+                    "status": "FILLED",
+                    "idempotent": false,
+                    "orderQuantity": 2.0000,
+                    "executionResult": "FILLED",
+                    "executedQty": 2.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": 70100.0000,
+                    "externalOrderId": "FEP-KRX-90002",
+                    "externalSyncStatus": "CONFIRMED",
+                    "executedAt": "2026-03-12T00:06:00Z"
+                  }
+                }
+                """)));
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .with(csrf())
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-propagation")
+            .header(CommonHeaders.TRACEPARENT, traceparent))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-propagation"))
+        .andExpect(header().string(CommonHeaders.TRACEPARENT, traceparent));
+
+    WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-propagation"))
+        .withHeader(CommonHeaders.TRACEPARENT, matching("^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"))
+        .withHeader(CommonHeaders.TRACEPARENT, equalTo(traceparent)));
   }
 
   @Test
