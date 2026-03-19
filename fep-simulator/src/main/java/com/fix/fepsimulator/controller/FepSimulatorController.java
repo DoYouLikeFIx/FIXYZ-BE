@@ -3,8 +3,14 @@ package com.fix.fepsimulator.controller;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +52,14 @@ public class FepSimulatorController {
   }
 
   @GetMapping("/api/v1/errors/boom")
+  @Operation(summary = "Boom")
+  @ApiResponses({
+      @ApiResponse(
+          responseCode = "400",
+          description = "Bad Request",
+          content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+      )
+  })
   public void boom() {
     throw new BusinessException(ErrorCode.VALIDATION_FAILED, "simulator bad request");
   }
