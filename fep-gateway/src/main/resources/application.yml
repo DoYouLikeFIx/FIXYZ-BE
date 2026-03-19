@@ -5,6 +5,17 @@ internal:
   secret: ${INTERNAL_SECRET:local-internal-secret}
 
 fep:
+  marketdata:
+    provider: ${FEP_MARKETDATA_PROVIDER:NONE}
+    source-mode: ${FEP_MARKETDATA_SOURCE_MODE:REPLAY}
+    kis:
+      env: ${FEP_MARKETDATA_KIS_ENV:paper}
+      app-key: ${FEP_MARKETDATA_KIS_APP_KEY:}
+      app-secret: ${FEP_MARKETDATA_KIS_APP_SECRET:}
+      ws:
+        tr-id: ${FEP_MARKETDATA_KIS_WS_TR_ID:H0STCNT0}
+        custtype: ${FEP_MARKETDATA_KIS_WS_CUSTTYPE:P}
+        symbols: ${FEP_MARKETDATA_KIS_SYMBOLS:005930}
   replay:
     max-virtual-fill-deviation-bps: ${FEP_REPLAY_MAX_VIRTUAL_FILL_DEVIATION_BPS:500}
 
