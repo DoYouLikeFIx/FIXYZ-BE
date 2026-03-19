@@ -205,7 +205,8 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
         .andExpect(jsonPath("$.data.totalElements").value(2))
         .andExpect(jsonPath("$.data.content.length()").value(1))
         .andExpect(jsonPath("$.data.content[0].eventType").value("ORDER_OTP_FAIL"))
-        .andExpect(jsonPath("$.data.content[0].memberId").value(target.getId()));
+        .andExpect(jsonPath("$.data.content[0].memberId").value(target.getId()))
+        .andExpect(jsonPath("$.data.content[0].ipAddress").value("127.0.0.0"));
   }
 
   @Test
@@ -349,7 +350,7 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
   }
 
   @Test
-  void shouldPersistForwardedClientIpInAdminAudit() throws Exception {
+  void shouldPersistMaskedForwardedClientIpInAdminAudit() throws Exception {
     resetStores();
     Member admin = createMember("M-ADMIN-007", "admin7@fixyz.com", "ROLE_ADMIN");
     Member target = createMember("M-USER-007", "user7@fixyz.com", "ROLE_USER");
@@ -368,12 +369,12 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
     assertThat(auditLogRepository.findAll())
         .anySatisfy(log -> {
           assertThat(log.getAction()).isEqualTo(AuditAction.ADMIN_FORCE_LOGOUT.value());
-          assertThat(log.getIpAddress()).isEqualTo("203.0.113.10");
+          assertThat(log.getIpAddress()).isEqualTo("203.0.113.0");
         });
   }
 
   @Test
-  void shouldPersistRealIpWhenForwardedForIsMissing() throws Exception {
+  void shouldPersistMaskedRealIpWhenForwardedForIsMissing() throws Exception {
     resetStores();
     Member admin = createMember("M-ADMIN-008", "admin8@fixyz.com", "ROLE_ADMIN");
     Member target = createMember("M-USER-008", "user8@fixyz.com", "ROLE_USER");
@@ -392,7 +393,7 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
     assertThat(auditLogRepository.findAll())
         .anySatisfy(log -> {
           assertThat(log.getAction()).isEqualTo(AuditAction.ADMIN_FORCE_LOGOUT.value());
-          assertThat(log.getIpAddress()).isEqualTo("198.51.100.44");
+          assertThat(log.getIpAddress()).isEqualTo("198.51.100.0");
         });
   }
 
