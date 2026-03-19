@@ -4,6 +4,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.patch;
 import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
@@ -17,8 +19,10 @@ import com.fix.channel.vo.AccountPositionQueryCommand;
 import com.fix.channel.vo.AccountPositionsQueryCommand;
 import com.fix.channel.vo.AccountPositionResult;
 import com.fix.channel.vo.AccountSummaryQueryCommand;
+import com.fix.channel.vo.AdminOrderReplayCommand;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryResult;
+import com.fix.channel.vo.OrderReplayResult;
 import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
@@ -141,6 +145,131 @@ class CorebankClientTest {
         .withQueryParam("attemptCount", equalTo("2"))
         .withHeader("X-Internal-Secret", equalTo("test-secret"))
         .withHeader("X-Correlation-Id", equalTo("trace-requery-2")));
+  }
+
+  @Test
+  void shouldMapReplayResponseAndForwardGovernancePayload() {
+    wireMockServer.stubFor(post(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174301/replay"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "clOrdId": "123e4567-e89b-42d3-a456-426614174301",
+                    "finalStatus": "COMPLETED",
+                    "executionResult": "FILLED",
+                    "executionSource": "VIRTUAL_FILL",
+                    "executedQty": 10.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": 72000.0000,
+                    "externalOrderId": "FEP-301",
+                    "externalSyncStatus": "CONFIRMED",
+                    "executedAt": "2026-03-10T00:00:00Z",
+                    "processedBy": "123e4567-e89b-42d3-a456-426614174399",
+                    "processedAt": "2026-03-10T00:05:00Z"
+                  }
+                }
+                """)));
+
+    OrderReplayResult result = corebankClient.replayOrder(
+        "123e4567-e89b-42d3-a456-426614174301",
+        AdminOrderReplayCommand.of(
+            "APPROVE",
+            "123e4567-e89b-42d3-a456-426614174355",
+            "OPS-INC-1",
+            "KRX outage resolved after manual exchange confirmation",
+            72000L
+        ),
+        "123e4567-e89b-42d3-a456-426614174399",
+        "trace-replay-301"
+    );
+
+    assertThat(result.getFinalStatus()).isEqualTo("COMPLETED");
+    assertThat(result.getExecutionSource()).isEqualTo("VIRTUAL_FILL");
+    assertThat(result.getProcessedBy()).isEqualTo("123e4567-e89b-42d3-a456-426614174399");
+    assertThat(result.getProcessedAt()).isEqualTo(Instant.parse("2026-03-10T00:05:00Z"));
+
+    wireMockServer.verify(postRequestedFor(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174301/replay"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-replay-301"))
+        .withRequestBody(matching(".*\"manualDecision\":\"APPROVE\".*"))
+        .withRequestBody(matching(".*\"operatorId\":\"123e4567-e89b-42d3-a456-426614174399\".*"))
+        .withRequestBody(matching(".*\"approvedBy\":\"123e4567-e89b-42d3-a456-426614174355\".*")));
+  }
+
+  @Test
+  void shouldNormalizeReplayConflictCodeToOrd009() {
+    wireMockServer.stubFor(post(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174301/replay"))
+        .willReturn(aResponse()
+            .withStatus(409)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "9009",
+                  "message": "replay target must be ESCALATED",
+                  "details": {
+                    "upstreamStatus": "ESCALATED"
+                  }
+                }
+                """)));
+
+    assertThatThrownBy(() -> corebankClient.replayOrder(
+        "123e4567-e89b-42d3-a456-426614174301",
+        AdminOrderReplayCommand.of(
+            "APPROVE",
+            "123e4567-e89b-42d3-a456-426614174355",
+            "OPS-INC-1",
+            "KRX outage resolved after manual exchange confirmation",
+            72000L
+        ),
+        "123e4567-e89b-42d3-a456-426614174399",
+        "trace-replay-ord-009"
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED);
+          assertThat(businessException.getMessage()).isEqualTo("replay target must be ESCALATED");
+          assertThat(businessException.getDetails()).isEqualTo(Map.of("upstreamStatus", "ESCALATED"));
+        });
+  }
+
+  @Test
+  void shouldNormalizeReplayConflictWithoutMachineCodeToOrd009() {
+    wireMockServer.stubFor(post(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174301/replay"))
+        .willReturn(aResponse()
+            .withStatus(409)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "message": "corebank replay state drift detected",
+                  "details": {
+                    "corebankStatus": "FILLED"
+                  }
+                }
+                """)));
+
+    assertThatThrownBy(() -> corebankClient.replayOrder(
+        "123e4567-e89b-42d3-a456-426614174301",
+        AdminOrderReplayCommand.of(
+            "APPROVE",
+            "123e4567-e89b-42d3-a456-426614174355",
+            "OPS-INC-1",
+            "KRX outage resolved after manual exchange confirmation",
+            72000L
+        ),
+        "123e4567-e89b-42d3-a456-426614174399",
+        "trace-replay-ord-009-generic"
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED);
+          assertThat(businessException.getMessage()).isEqualTo("corebank replay state drift detected");
+          assertThat(businessException.getDetails()).isEqualTo(Map.of("corebankStatus", "FILLED"));
+        });
   }
 
   @Test

@@ -218,7 +218,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
           assertThat(log.getMemberId()).isEqualTo(saved.getId());
           assertThat(log.getAction()).isEqualTo("LOGOUT");
           assertThat(log.getTargetType()).isEqualTo("SESSION");
-          assertThat(log.getTargetId()).isEqualTo(sessionId);
+          assertThat(log.getTargetId()).isEqualTo("[REDACTED]");
           assertThat(log.getIpAddress()).isNotBlank();
           assertThat(log.getUserAgent()).isNotBlank();
           assertThat(log.getCorrelationId()).isNotBlank();
