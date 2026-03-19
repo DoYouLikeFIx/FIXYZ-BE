@@ -2,7 +2,10 @@ package com.fix.channel.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,10 +30,14 @@ import org.springframework.test.util.ReflectionTestUtils;
 @ExtendWith(MockitoExtension.class)
 class OrderSessionRecoveryServiceTest {
 
+  private static final Instant NOW = Instant.parse("2026-03-18T00:00:00Z");
+
   @Mock
   private OrderSessionService orderSessionService;
   @Mock
   private CorebankClient corebankClient;
+  @Mock
+  private ChannelScaffoldService channelScaffoldService;
   @Mock
   private ManualRecoveryQueueService manualRecoveryQueueService;
   @Mock
@@ -40,7 +47,6 @@ class OrderSessionRecoveryServiceTest {
 
   private SimpleMeterRegistry meterRegistry;
   private OrderSessionRecoveryService recoveryService;
-  private long orderSessionEntityIdSequence;
 
   @BeforeEach
   void setUp() {
@@ -48,15 +54,16 @@ class OrderSessionRecoveryServiceTest {
     recoveryService = new OrderSessionRecoveryService(
         orderSessionService,
         corebankClient,
+        channelScaffoldService,
         manualRecoveryQueueService,
         recoveryLockService,
         attemptStore,
-        Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC),
+        Clock.fixed(NOW, ZoneOffset.UTC),
         meterRegistry,
         100,
-        Duration.ofSeconds(30)
+        Duration.ofSeconds(30),
+        5
     );
-    orderSessionEntityIdSequence = 1L;
   }
 
   @Test
@@ -65,11 +72,12 @@ class OrderSessionRecoveryServiceTest {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174401");
     when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100)))
         .thenReturn(List.of(executing));
-    when(orderSessionService.beginRequerying(eq(executing.getOrderSessionId()), eq("EXECUTING_TIMEOUT")))
+    when(orderSessionService.beginRequerying(eq(executing), eq("EXECUTING_TIMEOUT")))
         .thenReturn(requerying);
-    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
-    when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
-    when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(1);
+    when(orderSessionService.findRequeryingSessionsAfter(eq(NOW), isNull(), isNull(), eq(100)))
+        .thenReturn(List.of(requerying));
+    when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn("lock-401");
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(1));
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class)))
         .thenReturn(OrderRequeryResult.of(
             1L,
@@ -82,6 +90,7 @@ class OrderSessionRecoveryServiceTest {
             null,
             null,
             null,
+            null,
             "UNKNOWN",
             true,
             false,
@@ -91,17 +100,17 @@ class OrderSessionRecoveryServiceTest {
 
     recoveryService.runRecoveryCycle();
 
-    verify(orderSessionService).beginRequerying(eq(executing.getOrderSessionId()), eq("EXECUTING_TIMEOUT"));
+    verify(orderSessionService).beginRequerying(eq(executing), eq("EXECUTING_TIMEOUT"));
     verify(corebankClient).requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class));
+    verify(manualRecoveryQueueService).publishPendingEntries();
+    verify(channelScaffoldService, never()).bootstrapNotification(any(), any(), any());
   }
 
   @Test
   void shouldConvergeToCompletedWhenRequeryReturnsFilled() {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174402");
-    when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
-    when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
-    when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(2);
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(2));
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(2), any(String.class)))
         .thenReturn(OrderRequeryResult.of(
             2L,
@@ -113,27 +122,43 @@ class OrderSessionRecoveryServiceTest {
             BigDecimal.ZERO,
             BigDecimal.valueOf(72000),
             "FEP-402",
-            Instant.parse("2026-03-18T00:00:00Z"),
+            NOW,
+            null,
             null,
             false,
             false,
             2,
             5
         ));
-
-    recoveryService.runRecoveryCycle();
-
-    verify(orderSessionService).completeExecution(
-        eq(requerying.getOrderSessionId()),
+    when(orderSessionService.completeExecution(
+        eq(requerying),
         eq("FILLED"),
         eq(BigDecimal.ONE),
         eq(BigDecimal.ZERO),
         eq(BigDecimal.valueOf(72000)),
         eq("FEP-402"),
         eq("CONFIRMED"),
-        eq(Instant.parse("2026-03-18T00:00:00Z"))
+        eq(NOW)
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).completeExecution(
+        eq(requerying),
+        eq("FILLED"),
+        eq(BigDecimal.ONE),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("FEP-402"),
+        eq("CONFIRMED"),
+        eq(NOW)
     );
     verify(attemptStore).clear(requerying.getOrderSessionId());
+    verify(channelScaffoldService).bootstrapNotification(
+        eq(requerying.getMemberId()),
+        eq("ORDER"),
+        eq("orderSessionId=" + requerying.getOrderSessionId() + " status=COMPLETED")
+    );
     assertThat(meterRegistry.get("channel.order.recovery.convergence")
         .tag("outcome", "success")
         .counter()
@@ -143,10 +168,8 @@ class OrderSessionRecoveryServiceTest {
   @Test
   void shouldConvergeToCompletedWhenRequeryReturnsAccepted() {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174412");
-    when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
-    when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
-    when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(1);
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(1));
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class)))
         .thenReturn(OrderRequeryResult.of(
             12L,
@@ -158,41 +181,66 @@ class OrderSessionRecoveryServiceTest {
             BigDecimal.ZERO,
             BigDecimal.valueOf(71000),
             "FEP-412",
-            Instant.parse("2026-03-18T00:00:00Z"),
+            NOW,
+            null,
             null,
             false,
             false,
             1,
             5
         ));
-
-    recoveryService.runRecoveryCycle();
-
-    verify(orderSessionService).completeExecution(
-        eq(requerying.getOrderSessionId()),
+    when(orderSessionService.completeExecution(
+        eq(requerying),
         eq("FILLED"),
         eq(BigDecimal.ONE),
         eq(BigDecimal.ZERO),
         eq(BigDecimal.valueOf(71000)),
         eq("FEP-412"),
         eq("CONFIRMED"),
-        eq(Instant.parse("2026-03-18T00:00:00Z"))
+        eq(NOW)
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).completeExecution(
+        eq(requerying),
+        eq("FILLED"),
+        eq(BigDecimal.ONE),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(71000)),
+        eq("FEP-412"),
+        eq("CONFIRMED"),
+        eq(NOW)
     );
   }
 
   @Test
-  void shouldEscalateWhenRequeryThresholdIsExceeded() {
-    OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174403");
-    when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
-    when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
-    when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(5);
+  void shouldEscalateUnknownWhenRetryLimitIsReachedEvenWithoutEscalationFlag() {
+    assertRetryLimitEscalation("UNKNOWN", "ESCALATED");
+  }
+
+  @Test
+  void shouldEscalatePendingWhenRetryLimitIsReachedEvenWithoutEscalationFlag() {
+    assertRetryLimitEscalation("PENDING", "FAILED");
+  }
+
+  @Test
+  void shouldEscalateMalformedWhenRetryLimitIsReachedEvenWithoutEscalationFlag() {
+    assertRetryLimitEscalation("MALFORMED", "FAILED");
+  }
+
+  @Test
+  void shouldUseLocalDefaultRetryLimitWhenRequeryResponseOmitsMaxRetryCount() {
+    OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174426");
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(5));
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(5), any(String.class)))
         .thenReturn(OrderRequeryResult.of(
-            3L,
+            16L,
             requerying.getClOrdId(),
             "UNKNOWN",
-            "ESCALATED",
+            "FAILED",
+            null,
             null,
             null,
             null,
@@ -201,50 +249,210 @@ class OrderSessionRecoveryServiceTest {
             null,
             "retry exhausted",
             false,
-            true,
+            false,
             5,
-            5
+            null
         ));
-
-    recoveryService.runRecoveryCycle();
-
-    verify(orderSessionService).markEscalated(
-        eq(requerying.getOrderSessionId()),
+    when(orderSessionService.markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
         eq(OrderSession.ESCALATED_MANUAL_REVIEW),
         eq(null),
         eq(null),
         eq(null),
         eq(null),
         eq(null),
-        eq("ESCALATED"),
-        eq(null)
+        eq("FAILED"),
+        eq(null),
+        eq(5)
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq("FAILED"),
+        eq(null),
+        eq(5)
     );
-    verify(manualRecoveryQueueService).enqueue(
-        eq(requerying.getOrderSessionId()),
-        eq(requerying.getClOrdId()),
-        eq(5),
-        eq(OrderSession.ESCALATED_MANUAL_REVIEW)
+  }
+
+  @Test
+  void shouldConvergeToCompletedWhenRequeryReturnsPartiallyFilled() {
+    OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174413");
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(3));
+    when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(3), any(String.class)))
+        .thenReturn(OrderRequeryResult.of(
+            13L,
+            requerying.getClOrdId(),
+            "PARTIALLY_FILLED",
+            "CONFIRMED",
+            "PARTIAL_FILL",
+            BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5),
+            BigDecimal.valueOf(71000),
+            "FEP-413",
+            NOW,
+            null,
+            null,
+            false,
+            false,
+            3,
+            5
+        ));
+    when(orderSessionService.completeExecution(
+        eq(requerying),
+        eq("PARTIAL_FILL"),
+        eq(BigDecimal.valueOf(5)),
+        eq(BigDecimal.valueOf(5)),
+        eq(BigDecimal.valueOf(71000)),
+        eq("FEP-413"),
+        eq("CONFIRMED"),
+        eq(NOW)
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).completeExecution(
+        eq(requerying),
+        eq("PARTIAL_FILL"),
+        eq(BigDecimal.valueOf(5)),
+        eq(BigDecimal.valueOf(5)),
+        eq(BigDecimal.valueOf(71000)),
+        eq("FEP-413"),
+        eq("CONFIRMED"),
+        eq(NOW)
+    );
+  }
+
+  @Test
+  void shouldConvergeToCanceledWhenRequeryReturnsCanceled() {
+    OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174415");
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(2));
+    when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(2), any(String.class)))
+        .thenReturn(OrderRequeryResult.of(
+            15L,
+            requerying.getClOrdId(),
+            "CANCELED",
+            "CONFIRMED",
+            "PARTIAL_FILL_CANCEL",
+            BigDecimal.valueOf(3),
+            BigDecimal.valueOf(7),
+            BigDecimal.valueOf(72000),
+            "FEP-415",
+            Instant.parse("2026-03-18T00:05:00Z"),
+            Instant.parse("2026-03-18T00:06:00Z"),
+            null,
+            false,
+            false,
+            2,
+            5
+        ));
+    when(orderSessionService.cancelExecution(
+        eq(requerying),
+        eq("PARTIAL_FILL_CANCEL"),
+        eq(BigDecimal.valueOf(3)),
+        eq(BigDecimal.valueOf(7)),
+        eq(BigDecimal.valueOf(72000)),
+        eq("FEP-415"),
+        eq("CONFIRMED"),
+        eq(Instant.parse("2026-03-18T00:05:00Z")),
+        eq(Instant.parse("2026-03-18T00:06:00Z"))
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).cancelExecution(
+        eq(requerying),
+        eq("PARTIAL_FILL_CANCEL"),
+        eq(BigDecimal.valueOf(3)),
+        eq(BigDecimal.valueOf(7)),
+        eq(BigDecimal.valueOf(72000)),
+        eq("FEP-415"),
+        eq("CONFIRMED"),
+        eq(Instant.parse("2026-03-18T00:05:00Z")),
+        eq(Instant.parse("2026-03-18T00:06:00Z"))
     );
     verify(attemptStore).clear(requerying.getOrderSessionId());
-    assertThat(meterRegistry.get("channel.order.recovery.convergence")
-        .tag("outcome", "escalated")
-        .counter()
-        .count()).isEqualTo(1.0d);
+    verify(channelScaffoldService).bootstrapNotification(
+        eq(requerying.getMemberId()),
+        eq("ORDER"),
+        eq("orderSessionId=" + requerying.getOrderSessionId() + " status=CANCELED")
+    );
+  }
+
+  @Test
+  void shouldEscalateRejectedRequeryStatusEvenWithoutEscalationFlag() {
+    OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174414");
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(1));
+    when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class)))
+        .thenReturn(OrderRequeryResult.of(
+            14L,
+            requerying.getClOrdId(),
+            "REJECTED",
+            "REJECTED",
+            "DECLINED",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "order rejected",
+            false,
+            false,
+            1,
+            5
+        ));
+    when(orderSessionService.markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("DECLINED"),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq("REJECTED"),
+        eq(null),
+        eq(1)
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("DECLINED"),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq("REJECTED"),
+        eq(null),
+        eq(1)
+    );
   }
 
   @Test
   void shouldRecordAttemptMetricForEachRequery() {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174404");
-    when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
-    when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
-    when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(1);
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(1));
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class)))
         .thenReturn(OrderRequeryResult.of(
             4L,
             requerying.getClOrdId(),
             "ACCEPTED",
             "FAILED",
+            null,
             null,
             null,
             null,
@@ -266,21 +474,31 @@ class OrderSessionRecoveryServiceTest {
   }
 
   @Test
-  void shouldPageThroughRequeryingSessionsWithoutStarvingLaterBatches() {
+  void shouldContinueScanningLaterRequeryingBatchesWithoutStarvingBacklog() {
     OrderSession first = requeryingSession("123e4567-e89b-42d3-a456-426614174421");
     OrderSession second = requeryingSession("123e4567-e89b-42d3-a456-426614174422");
     OrderSession third = requeryingSession("123e4567-e89b-42d3-a456-426614174423");
+    setUpdatedAt(first, Instant.parse("2026-03-18T00:01:00Z"));
+    setUpdatedAt(second, Instant.parse("2026-03-18T00:02:00Z"));
+    setUpdatedAt(third, Instant.parse("2026-03-18T00:03:00Z"));
     when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(2))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessionsAfter(null, 2)).thenReturn(List.of(first, second));
-    when(orderSessionService.findRequeryingSessionsAfter(second.getId(), 2)).thenReturn(List.of(third));
-    when(recoveryLockService.tryAcquire(any(String.class))).thenReturn(true);
-    when(attemptStore.nextAttempt(any(String.class))).thenReturn(1);
-    when(corebankClient.requeryOrder(any(String.class), eq(1), any(String.class)))
+    when(orderSessionService.findRequeryingSessionsAfter(eq(NOW), isNull(), isNull(), eq(2)))
+        .thenReturn(List.of(first, second));
+    when(orderSessionService.findRequeryingSessionsAfter(
+        eq(NOW),
+        eq(second.getUpdatedAt()),
+        eq(second.getOrderSessionId()),
+        eq(2)
+    )).thenReturn(List.of(third));
+    when(recoveryLockService.tryAcquire(anyString())).thenReturn("lock-batch");
+    when(attemptStore.reserveAttempt(anyString())).thenReturn(reservation(1));
+    when(corebankClient.requeryOrder(anyString(), eq(1), anyString()))
         .thenReturn(OrderRequeryResult.of(
             5L,
             first.getClOrdId(),
             "UNKNOWN",
             "FAILED",
+            null,
             null,
             null,
             null,
@@ -297,19 +515,197 @@ class OrderSessionRecoveryServiceTest {
     OrderSessionRecoveryService smallBatchRecoveryService = new OrderSessionRecoveryService(
         orderSessionService,
         corebankClient,
+        channelScaffoldService,
         manualRecoveryQueueService,
         recoveryLockService,
         attemptStore,
-        Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC),
+        Clock.fixed(NOW, ZoneOffset.UTC),
         meterRegistry,
         2,
-        Duration.ofSeconds(30)
+        Duration.ofSeconds(30),
+        5
     );
+
     smallBatchRecoveryService.runRecoveryCycle();
 
-    verify(orderSessionService).findRequeryingSessionsAfter(null, 2);
-    verify(orderSessionService).findRequeryingSessionsAfter(second.getId(), 2);
-    verify(corebankClient, times(3)).requeryOrder(any(String.class), eq(1), any(String.class));
+    verify(orderSessionService, times(2)).findRequeryingSessionsAfter(any(), any(), any(), eq(2));
+    verify(corebankClient, times(3)).requeryOrder(anyString(), eq(1), anyString());
+  }
+
+  @Test
+  void shouldPreserveExistingExecutionSnapshotWhenEscalatingUnknownRecoveryOutcome() {
+    OrderSession requerying = requeryingSessionWithSnapshot("123e4567-e89b-42d3-a456-426614174424");
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(5));
+    when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(5), any(String.class)))
+        .thenReturn(OrderRequeryResult.of(
+            6L,
+            requerying.getClOrdId(),
+            "UNKNOWN",
+            "ESCALATED",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "retry exhausted",
+            false,
+            true,
+            5,
+            5
+        ));
+    when(orderSessionService.markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("FILLED"),
+        eq(BigDecimal.ONE),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("FEP-424"),
+        eq("ESCALATED"),
+        eq(NOW),
+        eq(5)
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("FILLED"),
+        eq(BigDecimal.ONE),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("FEP-424"),
+        eq("ESCALATED"),
+        eq(NOW),
+        eq(5)
+    );
+  }
+
+  @Test
+  void shouldEscalateWhenRepeatedRequeryFailuresExhaustRetryBudget() {
+    OrderSession requerying = requeryingSessionWithSnapshot("123e4567-e89b-42d3-a456-426614174425");
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(5));
+    when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(5), any(String.class)))
+        .thenThrow(new IllegalStateException("corebank unavailable"));
+    when(orderSessionService.markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("FILLED"),
+        eq(BigDecimal.ONE),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("FEP-424"),
+        eq("FAILED"),
+        eq(NOW),
+        eq(5)
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("FILLED"),
+        eq(BigDecimal.ONE),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("FEP-424"),
+        eq("FAILED"),
+        eq(NOW),
+        eq(5)
+    );
+    verify(attemptStore).clear(requerying.getOrderSessionId());
+    verify(channelScaffoldService).bootstrapNotification(
+        eq(requerying.getMemberId()),
+        eq("ORDER"),
+        eq("orderSessionId=" + requerying.getOrderSessionId() + " status=ESCALATED")
+    );
+    assertThat(meterRegistry.get("channel.order.recovery.convergence")
+        .tag("outcome", "escalated")
+        .counter()
+        .count()).isEqualTo(1.0d);
+  }
+
+  private void assertRetryLimitEscalation(String status, String externalSyncStatus) {
+    OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174403");
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(5));
+    when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(5), any(String.class)))
+        .thenReturn(OrderRequeryResult.of(
+            3L,
+            requerying.getClOrdId(),
+            status,
+            externalSyncStatus,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "retry exhausted",
+            false,
+            false,
+            5,
+            5
+        ));
+    when(orderSessionService.markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(externalSyncStatus),
+        eq(null),
+        eq(5)
+    )).thenReturn(requerying);
+
+    recoveryService.runRecoveryCycle();
+
+    verify(orderSessionService).markEscalatedAndEnqueueManualRecovery(
+        eq(requerying),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(null),
+        eq(externalSyncStatus),
+        eq(null),
+        eq(5)
+    );
+    verify(attemptStore).clear(requerying.getOrderSessionId());
+    verify(channelScaffoldService).bootstrapNotification(
+        eq(requerying.getMemberId()),
+        eq("ORDER"),
+        eq("orderSessionId=" + requerying.getOrderSessionId() + " status=ESCALATED")
+    );
+    assertThat(meterRegistry.get("channel.order.recovery.convergence")
+        .tag("outcome", "escalated")
+        .counter()
+        .count()).isEqualTo(1.0d);
+  }
+
+  private void stubSingleRequeryingSession(OrderSession requerying) {
+    when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
+    when(orderSessionService.findRequeryingSessionsAfter(eq(NOW), isNull(), isNull(), eq(100)))
+        .thenReturn(List.of(requerying));
+    when(recoveryLockService.tryAcquire(requerying.getOrderSessionId()))
+        .thenReturn("lock-" + requerying.getOrderSessionId());
+  }
+
+  private OrderSessionRecoveryAttemptStore.AttemptReservation reservation(int attemptCount) {
+    return new OrderSessionRecoveryAttemptStore.AttemptReservation(
+        attemptCount,
+        NOW.plusSeconds(Math.max(1, attemptCount) * 60L)
+    );
   }
 
   private OrderSession executingSession(String clOrdId) {
@@ -327,7 +723,6 @@ class OrderSessionRecoveryServiceTest {
         "TRUSTED_AUTH_SESSION",
         Instant.parse("2026-03-18T01:00:00Z")
     );
-    ReflectionTestUtils.setField(session, "id", orderSessionEntityIdSequence++);
     session.startExecuting();
     return session;
   }
@@ -336,5 +731,24 @@ class OrderSessionRecoveryServiceTest {
     OrderSession session = executingSession(clOrdId);
     session.beginRequerying("EXECUTING_TIMEOUT");
     return session;
+  }
+
+  private OrderSession requeryingSessionWithSnapshot(String clOrdId) {
+    OrderSession session = executingSession(clOrdId);
+    session.beginRequerying(
+        "UNKNOWN_EXECUTION_OUTCOME",
+        "FILLED",
+        BigDecimal.ONE,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "FEP-424",
+        "FAILED",
+        NOW
+    );
+    return session;
+  }
+
+  private void setUpdatedAt(OrderSession session, Instant updatedAt) {
+    ReflectionTestUtils.setField(session, "updatedAt", updatedAt);
   }
 }

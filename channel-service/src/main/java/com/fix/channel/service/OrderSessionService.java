@@ -241,8 +241,28 @@ public class OrderSessionService {
     return orderSessionPersistenceService.markRequerying(session, failureReason);
   }
 
-  public OrderSession beginRequerying(String orderSessionId, String failureReason) {
-    return orderSessionPersistenceService.markRequerying(orderSessionId, failureReason);
+  public OrderSession beginRequerying(
+      OrderSession session,
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
+    return orderSessionPersistenceService.markRequerying(
+        session,
+        failureReason,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
   }
 
   public OrderSession completeExecution(
@@ -257,28 +277,6 @@ public class OrderSessionService {
   ) {
     return orderSessionPersistenceService.markCompleted(
         session,
-        executionResult,
-        executedQty,
-        leavesQty,
-        executedPrice,
-        externalOrderId,
-        externalSyncStatus,
-        executedAt
-    );
-  }
-
-  public OrderSession completeExecution(
-      String orderSessionId,
-      String executionResult,
-      BigDecimal executedQty,
-      BigDecimal leavesQty,
-      BigDecimal executedPrice,
-      String externalOrderId,
-      String externalSyncStatus,
-      Instant executedAt
-  ) {
-    return orderSessionPersistenceService.markCompleted(
-        orderSessionId,
         executionResult,
         executedQty,
         leavesQty,
@@ -293,10 +291,6 @@ public class OrderSessionService {
     return orderSessionPersistenceService.markEscalated(session, failureReason);
   }
 
-  public OrderSession markEscalated(String orderSessionId, String failureReason) {
-    return orderSessionPersistenceService.markEscalated(orderSessionId, failureReason);
-  }
-
   public OrderSession markEscalated(
       OrderSession session,
       String failureReason,
@@ -321,8 +315,8 @@ public class OrderSessionService {
     );
   }
 
-  public OrderSession markEscalated(
-      String orderSessionId,
+  public OrderSession markEscalatedAndEnqueueManualRecovery(
+      OrderSession session,
       String failureReason,
       String executionResult,
       BigDecimal executedQty,
@@ -330,10 +324,11 @@ public class OrderSessionService {
       BigDecimal executedPrice,
       String externalOrderId,
       String externalSyncStatus,
-      Instant executedAt
+      Instant executedAt,
+      int attemptCount
   ) {
-    return orderSessionPersistenceService.markEscalated(
-        orderSessionId,
+    return orderSessionPersistenceService.markEscalatedAndEnqueueManualRecovery(
+        session,
         failureReason,
         executionResult,
         executedQty,
@@ -341,7 +336,32 @@ public class OrderSessionService {
         executedPrice,
         externalOrderId,
         externalSyncStatus,
-        executedAt
+        executedAt,
+        attemptCount
+    );
+  }
+
+  public OrderSession cancelExecution(
+      OrderSession session,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt,
+      Instant canceledAt
+  ) {
+    return orderSessionPersistenceService.markCanceled(
+        session,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt,
+        canceledAt
     );
   }
 
@@ -361,8 +381,22 @@ public class OrderSessionService {
     return orderSessionPersistenceService.findTimedOutExecutingSessions(cutoffTime, batchSize);
   }
 
-  public java.util.List<OrderSession> findRequeryingSessionsAfter(Long cursorId, int batchSize) {
-    return orderSessionPersistenceService.findRequeryingSessionsAfter(cursorId, batchSize);
+  public java.util.List<OrderSession> findRequeryingSessions(int batchSize) {
+    return findRequeryingSessionsAfter(Instant.now(clock), null, null, batchSize);
+  }
+
+  public java.util.List<OrderSession> findRequeryingSessionsAfter(
+      Instant eligibleAt,
+      Instant updatedAtCursor,
+      String orderSessionIdCursor,
+      int batchSize
+  ) {
+    return orderSessionPersistenceService.findRequeryingSessionsAfter(
+        eligibleAt,
+        updatedAtCursor,
+        orderSessionIdCursor,
+        batchSize
+    );
   }
 
   OrderSession requireOwnedSession(Long memberId, String orderSessionId) {

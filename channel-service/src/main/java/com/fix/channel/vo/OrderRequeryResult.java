@@ -15,6 +15,7 @@ public class OrderRequeryResult {
   private final BigDecimal executedPrice;
   private final String externalOrderId;
   private final Instant executedAt;
+  private final Instant canceledAt;
   private final String message;
   private final Boolean retriable;
   private final Boolean escalationRequired;
@@ -32,6 +33,7 @@ public class OrderRequeryResult {
       BigDecimal executedPrice,
       String externalOrderId,
       Instant executedAt,
+      Instant canceledAt,
       String message,
       Boolean retriable,
       Boolean escalationRequired,
@@ -48,6 +50,7 @@ public class OrderRequeryResult {
     this.executedPrice = executedPrice;
     this.externalOrderId = externalOrderId;
     this.executedAt = executedAt;
+    this.canceledAt = canceledAt;
     this.message = message;
     this.retriable = retriable;
     this.escalationRequired = escalationRequired;
@@ -72,6 +75,44 @@ public class OrderRequeryResult {
       Integer attemptCount,
       Integer maxRetryCount
   ) {
+    return of(
+        orderId,
+        clOrdId,
+        status,
+        externalSyncStatus,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        executedAt,
+        null,
+        message,
+        retriable,
+        escalationRequired,
+        attemptCount,
+        maxRetryCount
+    );
+  }
+
+  public static OrderRequeryResult of(
+      Long orderId,
+      String clOrdId,
+      String status,
+      String externalSyncStatus,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      Instant executedAt,
+      Instant canceledAt,
+      String message,
+      Boolean retriable,
+      Boolean escalationRequired,
+      Integer attemptCount,
+      Integer maxRetryCount
+  ) {
     return new OrderRequeryResult(
         orderId,
         clOrdId,
@@ -83,6 +124,7 @@ public class OrderRequeryResult {
         executedPrice,
         externalOrderId,
         executedAt,
+        canceledAt,
         message,
         retriable,
         escalationRequired,
@@ -129,6 +171,10 @@ public class OrderRequeryResult {
 
   public Instant getExecutedAt() {
     return executedAt;
+  }
+
+  public Instant getCanceledAt() {
+    return canceledAt;
   }
 
   public String getMessage() {

@@ -17,6 +17,7 @@ import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.PasswordResetToken;
 import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
+import com.fix.channel.repository.ManualRecoveryQueueEntryRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.PasswordResetTokenRepository;
@@ -340,13 +341,21 @@ class LogPiiComplianceTest {
       SecurityEventService capturingSecurityEventService
   ) {
     OrderSessionRepository orderSessionRepository = org.mockito.Mockito.mock(OrderSessionRepository.class);
+    ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository =
+        org.mockito.Mockito.mock(ManualRecoveryQueueEntryRepository.class);
     SecurityEventRepository eventRepository = org.mockito.Mockito.mock(SecurityEventRepository.class);
     EntityManager entityManager = org.mockito.Mockito.mock(EntityManager.class);
     OrderSessionRateLimitService rateLimitService = org.mockito.Mockito.mock(OrderSessionRateLimitService.class);
     OrderSessionTtlStore ttlStore = org.mockito.Mockito.mock(OrderSessionTtlStore.class);
     AccountPositionService accountPositionService = org.mockito.Mockito.mock(AccountPositionService.class);
+    Clock clock = Clock.fixed(Instant.parse("2026-03-19T00:00:00Z"), ZoneOffset.UTC);
     OrderSessionPersistenceService orderSessionPersistenceService =
-        new OrderSessionPersistenceService(orderSessionRepository, capturingAuditLogService);
+        new OrderSessionPersistenceService(
+            manualRecoveryQueueEntryRepository,
+            orderSessionRepository,
+            capturingAuditLogService,
+            clock
+        );
     ReflectionTestUtils.setField(orderSessionPersistenceService, "entityManager", entityManager);
     OrderSessionService orderSessionService = new OrderSessionService(
         orderSessionRepository,
@@ -362,7 +371,7 @@ class LogPiiComplianceTest {
         accountPositionService,
         org.mockito.Mockito.mock(TotpService.class),
         org.mockito.Mockito.mock(TotpReplayGuardService.class),
-        Clock.fixed(Instant.parse("2026-03-19T00:00:00Z"), ZoneOffset.UTC)
+        clock
     );
     ReflectionTestUtils.setField(orderSessionService, "recentLoginMfaWindow", Duration.ofMinutes(60));
     ReflectionTestUtils.setField(orderSessionService, "autoAuthorizeMaxNotional", BigDecimal.valueOf(500_000));
@@ -647,17 +656,23 @@ class LogPiiComplianceTest {
 
   private void exerciseOrderCleanupFailurePath() {
     OrderSessionRepository orderSessionRepository = org.mockito.Mockito.mock(OrderSessionRepository.class);
+    ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository =
+        org.mockito.Mockito.mock(ManualRecoveryQueueEntryRepository.class);
     SecurityEventRepository eventRepository = org.mockito.Mockito.mock(SecurityEventRepository.class);
     EntityManager entityManager = org.mockito.Mockito.mock(EntityManager.class);
     OrderSessionRateLimitService rateLimitService = org.mockito.Mockito.mock(OrderSessionRateLimitService.class);
     OrderSessionTtlStore ttlStore = org.mockito.Mockito.mock(OrderSessionTtlStore.class);
     AccountPositionService accountPositionService = org.mockito.Mockito.mock(AccountPositionService.class);
     AuditLogService capturingAuditLogService = org.mockito.Mockito.mock(AuditLogService.class);
-    OrderSessionPersistenceService persistenceService =
-        new OrderSessionPersistenceService(orderSessionRepository, capturingAuditLogService);
-    ReflectionTestUtils.setField(persistenceService, "entityManager", entityManager);
-
     Clock clock = Clock.fixed(Instant.parse("2026-03-19T00:00:00Z"), ZoneOffset.UTC);
+    OrderSessionPersistenceService persistenceService =
+        new OrderSessionPersistenceService(
+            manualRecoveryQueueEntryRepository,
+            orderSessionRepository,
+            capturingAuditLogService,
+            clock
+        );
+    ReflectionTestUtils.setField(persistenceService, "entityManager", entityManager);
     OrderSessionService orderSessionService = new OrderSessionService(
         orderSessionRepository,
         org.mockito.Mockito.mock(MemberRepository.class),

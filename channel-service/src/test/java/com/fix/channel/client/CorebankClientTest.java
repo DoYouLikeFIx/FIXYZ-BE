@@ -115,6 +115,7 @@ class CorebankClientTest {
                     "executedPrice": 72000.0000,
                     "externalOrderId": "FEP-300",
                     "executedAt": "2026-03-10T00:00:00Z",
+                    "canceledAt": "2026-03-10T00:01:00Z",
                     "message": null,
                     "retriable": false,
                     "escalationRequired": false,
@@ -134,6 +135,7 @@ class CorebankClientTest {
     assertThat(result.getExternalSyncStatus()).isEqualTo("CONFIRMED");
     assertThat(result.getAttemptCount()).isEqualTo(2);
     assertThat(result.getMaxRetryCount()).isEqualTo(5);
+    assertThat(result.getCanceledAt()).isEqualTo(Instant.parse("2026-03-10T00:01:00Z"));
 
     wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174300/requery"))
         .withQueryParam("attemptCount", equalTo("2"))
