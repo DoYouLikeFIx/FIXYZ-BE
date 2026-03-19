@@ -109,6 +109,55 @@
         }
       }
     },
+    "/internal/v1/orders/{clOrdId}/replay": {
+      "post": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "operationId": "replayOrder",
+        "parameters": [
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalOrderReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalOrderReplayResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/ledger-integrity/cases/{caseId}/rerun": {
       "post": {
         "tags": [
@@ -889,6 +938,110 @@
           "maxRetryCount": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "InternalOrderReplayRequest": {
+        "required": [
+          "approvedBy",
+          "evidenceRef",
+          "manualDecision",
+          "operatorId",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "manualDecision": {
+            "minLength": 1,
+            "pattern": "APPROVE|REJECT",
+            "type": "string"
+          },
+          "operatorId": {
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "approvedBy": {
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "evidenceRef": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "executionPrice": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseInternalOrderReplayResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalOrderReplayResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "InternalOrderReplayResponse": {
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "type": "string"
+          },
+          "finalStatus": {
+            "type": "string"
+          },
+          "executionResult": {
+            "type": "string"
+          },
+          "executionSource": {
+            "type": "string"
+          },
+          "executedQty": {
+            "type": "number"
+          },
+          "leavesQty": {
+            "type": "number"
+          },
+          "executedPrice": {
+            "type": "number"
+          },
+          "externalOrderId": {
+            "type": "string"
+          },
+          "externalSyncStatus": {
+            "type": "string"
+          },
+          "executedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canceledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "processedBy": {
+            "type": "string"
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
