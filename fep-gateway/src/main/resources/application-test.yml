@@ -1,6 +1,7 @@
 fep:
   simulator:
-    diagnostics-base-url: http://127.0.0.1:18082
+    control-plane-base-url: http://127.0.0.1:18082
+    trace-bridge-enabled: false
 
 spring:
   flyway:

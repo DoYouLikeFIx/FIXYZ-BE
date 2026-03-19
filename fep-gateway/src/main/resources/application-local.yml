@@ -6,4 +6,4 @@ spring:
 
 fep:
   simulator:
-    diagnostics-base-url: ${FEP_SIMULATOR_DIAGNOSTICS_BASE_URL:http://localhost:8082}
+    control-plane-base-url: ${FEP_SIMULATOR_CONTROL_PLANE_BASE_URL:http://localhost:8082}
