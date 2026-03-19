@@ -19,17 +19,20 @@ public class FepSimulatorTraceBridgeClient {
 
   private final RestClient restClient;
   private final String internalSecret;
+  private final boolean enabled;
 
   public FepSimulatorTraceBridgeClient(
       RestClient.Builder restClientBuilder,
-      @Value("${fep.simulator.diagnostics-base-url:http://fep-simulator:8082}") String baseUrl,
-      @Value("${internal.secret:local-internal-secret}") String internalSecret
+      @Value("${fep.simulator.control-plane-base-url:http://fep-simulator:8082}") String baseUrl,
+      @Value("${internal.secret:local-internal-secret}") String internalSecret,
+      @Value("${fep.simulator.trace-bridge-enabled:true}") boolean enabled
   ) {
     this.restClient = restClientBuilder
         .requestFactory(createRequestFactory())
         .baseUrl(baseUrl)
         .build();
     this.internalSecret = internalSecret;
+    this.enabled = enabled;
   }
 
   public TraceBridgeResult bridgeTrace(String correlationId, String traceparent) {
@@ -66,6 +69,25 @@ public class FepSimulatorTraceBridgeClient {
           ex.getMessage()
       );
       return new TraceBridgeResult(normalizedCorrelationId, normalizedTraceparent, false, ex.getMessage());
+    }
+  }
+
+  public void bridgeCurrentTrace() {
+    if (!enabled) {
+      return;
+    }
+
+    TraceBridgeResult result = bridgeTrace(
+        CorrelationIdSupport.currentOrGenerate(),
+        TraceparentSupport.currentOrGenerate()
+    );
+    if (!result.forwarded()) {
+      log.warn(
+          "operation=SIMULATOR_TRACE_BRIDGE correlationId={} traceparent={} message={}",
+          result.correlationId(),
+          result.traceparent(),
+          result.message()
+      );
     }
   }
 

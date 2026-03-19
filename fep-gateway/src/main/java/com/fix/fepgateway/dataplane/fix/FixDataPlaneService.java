@@ -16,12 +16,29 @@ import com.fix.fepgateway.vo.GatewayOrderReplayCommand;
 import com.fix.fepgateway.vo.GatewayOrderSubmitCommand;
 import com.fix.fepgateway.vo.FepReplayDecision;
 import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class FixDataPlaneService {
 
+  private static final Logger log = LoggerFactory.getLogger(FixDataPlaneService.class);
+
+  private final FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient;
+
+  @Autowired
+  public FixDataPlaneService(FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient) {
+    this.fepSimulatorTraceBridgeClient = fepSimulatorTraceBridgeClient;
+  }
+
+  protected FixDataPlaneService() {
+    this.fepSimulatorTraceBridgeClient = null;
+  }
+
   public GatewayOrderResult sendOrderStatusRequest(String clOrdId, GatewayOrder order) {
+    bridgeTraceToSimulator(clOrdId);
     if (order == null) {
       return new GatewayOrderResult(
           clOrdId,
@@ -43,6 +60,7 @@ public class FixDataPlaneService {
   }
 
   public GatewayExecutionOutcome sendNewOrder(GatewayOrderSubmitCommand command) {
+    bridgeTraceToSimulator(command.clOrdId());
     long executedPrice = command.orderType().name().equals("LIMIT") ? command.price() : command.preTradePrice();
     return new GatewayExecutionOutcome(
         "FEP-%s-%s".formatted(command.securityExchange().name(), command.clOrdId()),
@@ -59,6 +77,7 @@ public class FixDataPlaneService {
   }
 
   public GatewayExecutionOutcome sendCancel(GatewayOrderCancelCommand command, GatewayOrder order) {
+    bridgeTraceToSimulator(command.getClOrdId());
     if ("TIMEOUT".equals(order.getCancelFailureMode())) {
       throw new BusinessException(ErrorCode.CANCEL_TIMEOUT, "cancel acknowledgement timed out");
     }
@@ -87,6 +106,7 @@ public class FixDataPlaneService {
   }
 
   public GatewayReplayExecution sendReplay(GatewayOrderReplayCommand command, GatewayOrder order) {
+    bridgeTraceToSimulator(command.getClOrdId());
     long totalQty = order.totalQty();
     long executedQty = order.getExecutedQty() == null ? 0L : order.getExecutedQty();
 
@@ -216,6 +236,16 @@ public class FixDataPlaneService {
         null,
         FepReplayExecutionSource.FILLED
     );
+  }
+
+  private void bridgeTraceToSimulator(String clOrdId) {
+    if (fepSimulatorTraceBridgeClient != null) {
+      try {
+        fepSimulatorTraceBridgeClient.bridgeCurrentTrace();
+      } catch (RuntimeException ex) {
+        log.debug("Ignoring simulator trace bridge failure for clOrdId={}", clOrdId, ex);
+      }
+    }
   }
 
   private GatewayReplayExecution resolveRequeryOutcome(
