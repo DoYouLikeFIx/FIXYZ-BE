@@ -275,7 +275,6 @@ class ChannelErrorContractTest {
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-propagation"))
-        .withHeader(CommonHeaders.TRACEPARENT, matching("^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"))
         .withHeader(CommonHeaders.TRACEPARENT, equalTo(traceparent)));
   }
 

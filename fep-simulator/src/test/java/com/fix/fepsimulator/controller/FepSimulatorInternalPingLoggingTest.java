@@ -53,4 +53,25 @@ class FepSimulatorInternalPingLoggingTest {
         .contains("traceparent=" + TRACEPARENT)
         .contains("boundary=open");
   }
+
+  @Test
+  void shouldLogNormalizedHeadersFromFilterContext(CapturedOutput output) throws Exception {
+    String oversizedCorrelationId = "trace-simulator-log-002-oversized-correlation-id-for-normalization-check";
+    String uppercaseTraceparent = "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01";
+
+    mockMvc.perform(get("/fep-internal/v1/ping")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, oversizedCorrelationId)
+            .header(CommonHeaders.TRACEPARENT, uppercaseTraceparent))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, oversizedCorrelationId.substring(0, 64)))
+        .andExpect(header().string(CommonHeaders.TRACEPARENT, TRACEPARENT));
+
+    assertThat(output.getOut())
+        .contains("operation=SIMULATOR_TRACE_DIAGNOSTIC_RECEIVED")
+        .contains("correlationId=" + oversizedCorrelationId.substring(0, 64))
+        .doesNotContain("correlationId=" + oversizedCorrelationId)
+        .contains("traceparent=" + TRACEPARENT)
+        .doesNotContain("traceparent=" + uppercaseTraceparent);
+  }
 }
