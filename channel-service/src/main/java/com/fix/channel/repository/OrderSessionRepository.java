@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface OrderSessionRepository extends JpaRepository<OrderSession, Long>, OrderSessionCustomRepository {
   Optional<OrderSession> findByOrderSessionId(String orderSessionId);
@@ -35,5 +37,23 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
       Pageable pageable
   );
 
-  List<OrderSession> findByStatusOrderByUpdatedAtAsc(OrderSessionStatus status, Pageable pageable);
+  List<OrderSession> findByStatusOrderByUpdatedAtAscOrderSessionIdAsc(OrderSessionStatus status, Pageable pageable);
+
+  @Query("""
+      SELECT os
+      FROM OrderSession os
+      WHERE os.status = :status
+        AND (
+          :updatedAtCursor IS NULL
+          OR os.updatedAt > :updatedAtCursor
+          OR (os.updatedAt = :updatedAtCursor AND os.orderSessionId > :orderSessionIdCursor)
+        )
+      ORDER BY os.updatedAt ASC, os.orderSessionId ASC
+      """)
+  List<OrderSession> findByStatusAfterUpdatedAtCursorOrderByUpdatedAtAscOrderSessionIdAsc(
+      @Param("status") OrderSessionStatus status,
+      @Param("updatedAtCursor") Instant updatedAtCursor,
+      @Param("orderSessionIdCursor") String orderSessionIdCursor,
+      Pageable pageable
+  );
 }
