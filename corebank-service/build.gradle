@@ -4,59 +4,12 @@ plugins {
   id 'org.springdoc.openapi-gradle-plugin'
 }
 
-def springdocPort = 18081
+ext.openapiDefaultPort = 28081
+ext.openapiManagementPort = 29081
+ext.openapiReadyUrl = 'http://localhost:29081/actuator/health'
+ext.openapiBootRunDependencies = [':core-common:jar', ':corebank-domain:jar']
 
-openApi {
-  apiDocsUrl = "http://localhost:${springdocPort}/v3/api-docs"
-  outputDir = file("$buildDir/openapi")
-  outputFileName = "${project.name}.json"
-  waitTimeInSeconds = 60
-  customBootRun {
-    args = ["--spring.profiles.active=openapi"]
-  }
-}
-
-tasks.named('forkedSpringBootRun') {
-  dependsOn(':core-common:jar', ':corebank-domain:jar')
-}
-
-def generatedOpenApiFile = layout.buildDirectory.file("openapi/${project.name}.json")
-def committedOpenApiFile = rootProject.layout.projectDirectory.file("contracts/openapi/${project.name}.json")
-
-tasks.register('verifyCommittedOpenApi') {
-  dependsOn tasks.named('generateOpenApiDocs')
-
-  doLast {
-    File generated = generatedOpenApiFile.get().asFile
-    File committed = committedOpenApiFile.asFile
-
-    if (!generated.exists()) {
-      throw new GradleException("Generated OpenAPI file is missing: ${generated}")
-    }
-    if (!committed.exists()) {
-      throw new GradleException("Committed OpenAPI file is missing: ${committed}")
-    }
-
-    Closure<String> normalizeOpenApi = { File file ->
-      file.getText('UTF-8')
-          .replace("\r\n", "\n")
-          .replaceFirst(/\n\z/, '')
-    }
-
-    String generatedText = normalizeOpenApi(generated)
-    String committedText = normalizeOpenApi(committed)
-    def jsonSlurper = new groovy.json.JsonSlurper()
-    if (jsonSlurper.parseText(generatedText) != jsonSlurper.parseText(committedText)) {
-      throw new GradleException(
-          "Committed OpenAPI snapshot is out of date. Regenerate :corebank-service:generateOpenApiDocs and sync contracts/openapi/${project.name}.json."
-      )
-    }
-  }
-}
-
-tasks.named('check') {
-  dependsOn tasks.named('verifyCommittedOpenApi')
-}
+apply from: rootProject.file('gradle/openapi-contract.gradle')
 
 tasks.register('correlationPropagationTests', Test) {
   description = 'Runs the corebank correlation-id propagation regression suite.'

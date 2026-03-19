@@ -49,6 +49,7 @@ class CorebankOpenApiCompatibilityTest {
     JsonNode requeryOperation = paths.path("/internal/v1/orders/{clOrdId}/requery").path("get");
     JsonNode requeryParameters = requeryOperation.path("parameters");
     JsonNode attemptCountParameter = parameterByName(requeryParameters, "attemptCount");
+    JsonNode portfolioOperation = paths.path("/internal/v1/portfolio").path("get");
     JsonNode positionsOperation = paths.path("/internal/v1/accounts/{accountId}/positions").path("get");
     JsonNode positionsListOperation = paths.path("/internal/v1/accounts/{accountId}/positions/list").path("get");
     JsonNode summaryOperation = paths.path("/internal/v1/accounts/{accountId}/summary").path("get");
@@ -137,6 +138,13 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(attemptCountParameter.path("schema").path("default").asInt())
         .isEqualTo(1);
     assertThat(parameterByName(requeryParameters, "request").isMissingNode()).isTrue();
+    assertThat(parameterByName(portfolioOperation.path("parameters"), "X-Internal-Secret").isMissingNode()).isFalse();
+    assertThat(schemaRef(portfolioOperation, "401"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(portfolioOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(portfolioOperation.path("responses").path("401").path("headers").path("traceparent").path("schema")
+        .path("type").asText()).isEqualTo("string");
   }
 
   @Test
@@ -274,5 +282,16 @@ class CorebankOpenApiCompatibilityTest {
     }
     String schemaName = ref.substring("#/components/schemas/".length());
     return contract.path("components").path("schemas").path(schemaName);
+  }
+
+  private String schemaRef(JsonNode operation, String statusCode) {
+    JsonNode content = operation.path("responses").path(statusCode).path("content");
+    if (content.has("application/json")) {
+      return content.path("application/json").path("schema").path("$ref").asText();
+    }
+    if (content.fieldNames().hasNext()) {
+      return content.path(content.fieldNames().next()).path("schema").path("$ref").asText();
+    }
+    return "";
   }
 }
