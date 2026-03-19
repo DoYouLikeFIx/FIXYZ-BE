@@ -15,7 +15,9 @@ import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -25,18 +27,28 @@ class FepClientPropagationTest {
 
   private static final String CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174247";
   private static final String TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+  private static final WireMockServer WIRE_MOCK_SERVER =
+      new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
 
-  private WireMockServer wireMockServer;
   private FepClient fepClient;
+
+  @BeforeAll
+  static void startWireMock() {
+    WIRE_MOCK_SERVER.start();
+  }
+
+  @AfterAll
+  static void stopWireMock() {
+    WIRE_MOCK_SERVER.stop();
+  }
 
   @BeforeEach
   void setUp() {
-    wireMockServer = new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort());
-    wireMockServer.start();
+    WIRE_MOCK_SERVER.resetAll();
     fepClient = new FepClient(
         RestClient.builder()
             .requestFactory(new SimpleClientHttpRequestFactory())
-            .baseUrl("http://127.0.0.1:" + wireMockServer.port())
+            .baseUrl("http://127.0.0.1:" + WIRE_MOCK_SERVER.port())
             .build(),
         "test-internal-secret"
     );
@@ -45,14 +57,11 @@ class FepClientPropagationTest {
   @AfterEach
   void tearDown() {
     CorrelationIdSupport.clearMdc();
-    if (wireMockServer != null) {
-      wireMockServer.stop();
-    }
   }
 
   @Test
   void shouldForwardCorrelationIdAndClOrdIdOnSubmit() {
-    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(aResponse()
             .withStatus(200)
             .withHeader("Content-Type", "application/json")
@@ -61,7 +70,7 @@ class FepClientPropagationTest {
     FepOrderResult result = fepClient.submitOrder(buildSubmitPayload(), "trace-core-submit-001");
 
     assertThat(result.clOrdId()).isEqualTo(CL_ORD_ID);
-    wireMockServer.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
+    WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-internal-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-submit-001"))
         .withHeader(CommonHeaders.X_CL_ORD_ID, equalTo(CL_ORD_ID)));
@@ -69,7 +78,7 @@ class FepClientPropagationTest {
 
   @Test
   void shouldForwardTraceparentOnSubmit() {
-    wireMockServer.stubFor(post(urlEqualTo("/fep/v1/orders"))
+    WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(aResponse()
             .withStatus(200)
             .withHeader("Content-Type", "application/json")
@@ -79,13 +88,13 @@ class FepClientPropagationTest {
 
     fepClient.submitOrder(buildSubmitPayload(), "trace-core-submit-002");
 
-    wireMockServer.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
+    WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/fep/v1/orders"))
         .withHeader(CommonHeaders.TRACEPARENT, equalTo(TRACEPARENT)));
   }
 
   @Test
   void shouldForwardCorrelationIdAndTraceparentOnStatusQuery() {
-    wireMockServer.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID)))
+    WIRE_MOCK_SERVER.stubFor(get(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID)))
         .willReturn(aResponse()
             .withStatus(200)
             .withHeader("Content-Type", "application/json")
@@ -97,7 +106,7 @@ class FepClientPropagationTest {
 
     assertThat(result.clOrdId()).isEqualTo(CL_ORD_ID);
     assertThat(result.ordStatus()).isEqualTo(FepOrdStatus.PENDING);
-    wireMockServer.verify(getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID)))
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlEqualTo("/fep/v1/orders/%s/status".formatted(CL_ORD_ID)))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-internal-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-status-001"))
         .withHeader(CommonHeaders.TRACEPARENT, equalTo(TRACEPARENT)));

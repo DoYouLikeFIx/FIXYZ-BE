@@ -58,10 +58,6 @@ tasks.named('check') {
   dependsOn tasks.named('verifyCommittedOpenApi')
 }
 
-tasks.withType(Test).configureEach {
-  systemProperty 'corebank.ledger-integrity.enabled', 'false'
-}
-
 tasks.register('correlationPropagationTests', Test) {
   description = 'Runs the corebank correlation-id propagation regression suite.'
   group = 'verification'
@@ -70,8 +66,6 @@ tasks.register('correlationPropagationTests', Test) {
   filter {
     includeTestsMatching('com.fix.corebank.filter.CorrelationIdFilterTest')
     includeTestsMatching('com.fix.corebank.security.InternalSecretFilterTest')
-    includeTestsMatching('com.fix.corebank.client.FepClientPropagationTest')
-    includeTestsMatching('com.fix.corebank.integration.CorebankCorrelationPropagationIntegrationTest')
   }
 }
 

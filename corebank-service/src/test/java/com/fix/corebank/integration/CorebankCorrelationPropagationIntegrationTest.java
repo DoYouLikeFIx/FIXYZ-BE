@@ -17,6 +17,7 @@ import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.MemberRepository;
 import com.fix.corebank.repository.PositionRepository;
+import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.AfterAll;
@@ -28,19 +29,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@TestPropertySource(properties = {
-    "spring.datasource.url=jdbc:h2:mem:core_correlation_propagation;MODE=MySQL;DB_CLOSE_DELAY=-1",
-    "spring.datasource.driver-class-name=org.h2.Driver",
-    "spring.datasource.username=sa",
-    "spring.datasource.password=",
+@SpringBootTest(properties = {
+    "spring.jpa.hibernate.ddl-auto=none",
     "internal.secret=test-secret"
 })
-class CorebankCorrelationPropagationIntegrationTest {
+@AutoConfigureMockMvc
+class CorebankCorrelationPropagationIntegrationTest extends CorebankContainersIntegrationTestBase {
 
   private static final String CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174246";
   private static final String TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
