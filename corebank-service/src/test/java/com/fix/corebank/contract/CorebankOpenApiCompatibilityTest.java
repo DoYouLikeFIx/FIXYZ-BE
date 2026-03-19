@@ -45,6 +45,14 @@ class CorebankOpenApiCompatibilityTest {
         contract,
         accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText()
     );
+    JsonNode ledgerIntegritySummaryResponse = contract.path("components").path("schemas")
+        .path("ApiResponseInternalLedgerIntegritySummaryResponse");
+    JsonNode ledgerIntegritySummarySchema = contract.path("components").path("schemas")
+        .path("InternalLedgerIntegritySummaryResponse");
+    JsonNode ledgerIntegrityFailedIdentifierSchema = resolveRefSchema(
+        contract,
+        ledgerIntegritySummarySchema.path("properties").path("latestFailedIdentifiers").path("items").path("$ref").asText()
+    );
     JsonNode internalOrderSchema = contract.path("components").path("schemas").path("InternalOrderResponse");
     JsonNode requeryOperation = paths.path("/internal/v1/orders/{clOrdId}/requery").path("get");
     JsonNode requeryParameters = requeryOperation.path("parameters");
@@ -53,6 +61,7 @@ class CorebankOpenApiCompatibilityTest {
     JsonNode positionsOperation = paths.path("/internal/v1/accounts/{accountId}/positions").path("get");
     JsonNode positionsListOperation = paths.path("/internal/v1/accounts/{accountId}/positions/list").path("get");
     JsonNode summaryOperation = paths.path("/internal/v1/accounts/{accountId}/summary").path("get");
+    JsonNode ledgerIntegritySummaryOperation = paths.path("/internal/v1/ledger-integrity/summary").path("get");
 
     assertThat(fieldNames(paths))
         .contains(
@@ -64,7 +73,8 @@ class CorebankOpenApiCompatibilityTest {
             "/internal/v1/accounts/{accountId}/positions/list",
             "/internal/v1/accounts/{accountId}/status",
             "/internal/v1/accounts/default",
-            "/internal/v1/accounts/{accountId}/orders"
+            "/internal/v1/accounts/{accountId}/orders",
+            "/internal/v1/ledger-integrity/summary"
         );
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
@@ -94,22 +104,70 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(ledgerIntegritySummaryResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
         .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
     assertThat(fieldNames(accountStatusSchema.path("properties")))
         .contains("accountNumber", "status", "orderEligible", "denialCode", "asOf");
     assertThat(fieldNames(accountStatusTransitionSchema.path("properties")))
         .contains("previousStatus", "newStatus", "changed", "eventId", "reason", "actor", "context", "asOf");
+    assertThat(fieldNames(ledgerIntegritySummarySchema.path("properties")))
+        .contains(
+            "latestRunId",
+            "latestRunCheckedAt",
+            "latestRunPassed",
+            "latestRunAnomalyCount",
+            "latestRunSummaryMessage",
+            "unresolvedAnomalyCount",
+            "repairPendingCount",
+            "criticalAnomalyCount",
+            "staleLastRun",
+            "latestFailedRunId",
+            "latestFailedIdentifiers"
+        );
+    assertThat(ledgerIntegritySummarySchema.path("properties").path("criticalAnomalyCount").path("type").asText())
+        .isEqualTo("integer");
+    assertThat(ledgerIntegritySummarySchema.path("properties").path("criticalAnomalyCount").path("format").asText())
+        .isEqualTo("int64");
+    assertThat(ledgerIntegritySummarySchema.path("properties").path("staleLastRun").path("type").asText())
+        .isEqualTo("boolean");
+    assertThat(requiredFields(ledgerIntegritySummarySchema))
+        .doesNotContain(
+            "latestRunId",
+            "latestRunCheckedAt",
+            "latestRunPassed",
+            "latestRunAnomalyCount",
+            "latestRunSummaryMessage",
+            "latestFailedRunId"
+        );
+    assertThat(fieldNames(ledgerIntegrityFailedIdentifierSchema.path("properties")))
+        .contains(
+            "anomalyId",
+            "anomalyType",
+            "accountId",
+            "symbol",
+            "positionId",
+            "executionId",
+            "orderId",
+            "clOrdId",
+            "journalEntryId",
+            "ledgerEntryId"
+        );
     assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseInternalAccountPositionResponse");
     assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseInternalAccountPositionResponse");
+    assertThat(ledgerIntegritySummaryOperation.path("responses").path("200").path("content").path("*/*").path("schema")
+        .path("$ref").asText()).isEqualTo("#/components/schemas/ApiResponseInternalLedgerIntegritySummaryResponse");
     assertThat(positionsListOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseListInternalAccountPositionResponse");
     assertThat(accountPositionListResponse.path("properties").path("data").path("type").asText())
         .isEqualTo("array");
     assertThat(accountPositionListResponse.path("properties").path("data").path("items").path("$ref").asText())
         .isEqualTo("#/components/schemas/InternalAccountPositionResponse");
+    assertThat(ledgerIntegritySummaryResponse.path("properties").path("data").path("$ref").asText())
+        .isEqualTo("#/components/schemas/InternalLedgerIntegritySummaryResponse");
     assertThat(fieldNames(accountOrderHistorySchema.path("properties")))
         .contains("content", "totalElements", "totalPages", "number", "size");
     assertThat(fieldNames(accountOrderHistoryItemSchema.path("properties")))
@@ -139,6 +197,8 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo(1);
     assertThat(parameterByName(requeryParameters, "request").isMissingNode()).isTrue();
     assertThat(parameterByName(portfolioOperation.path("parameters"), "X-Internal-Secret").isMissingNode()).isFalse();
+    assertThat(parameterByName(ledgerIntegritySummaryOperation.path("parameters"), "X-Internal-Secret").isMissingNode())
+        .isFalse();
     assertThat(schemaRef(portfolioOperation, "401"))
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(portfolioOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
@@ -264,6 +324,15 @@ class CorebankOpenApiCompatibilityTest {
   private Set<String> fieldNames(JsonNode node) {
     Set<String> names = new TreeSet<>();
     node.fieldNames().forEachRemaining(names::add);
+    return names;
+  }
+
+  private Set<String> requiredFields(JsonNode schema) {
+    Set<String> names = new TreeSet<>();
+    JsonNode required = schema.path("required");
+    if (required.isArray()) {
+      required.forEach(field -> names.add(field.asText()));
+    }
     return names;
   }
 
