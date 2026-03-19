@@ -50,7 +50,7 @@ public class InternalSecretFilter extends OncePerRequestFilter {
   }
 
   private boolean requiresInternalSecret(String requestUri) {
-    return requestUri.startsWith("/fep/") || requestUri.startsWith("/fep-internal/");
+    return FepGatewayInternalSecretPaths.requiresInternalSecret(requestUri);
   }
 
   private void writeUnauthorizedResponse(HttpServletRequest request, HttpServletResponse response) throws IOException {
