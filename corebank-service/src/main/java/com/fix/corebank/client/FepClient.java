@@ -28,6 +28,7 @@ public class FepClient {
 
   private static final String FEP_ORDERS_PATH = "/fep/v1/orders";
   private static final String FEP_ORDER_STATUS_PATH = "/fep/v1/orders/{clOrdId}/status";
+  private static final String FEP_ORDER_REPLAY_PATH = "/fep/v1/orders/{clOrdId}/replay";
 
   private final RestClient restClient;
   private final String internalSecret;
@@ -101,6 +102,31 @@ public class FepClient {
     }
   }
 
+  @CircuitBreaker(name = "fep-replay", fallbackMethod = "replayOrderFallback")
+  public FepReplayResult replayOrder(FepReplayPayload payload, String correlationId) {
+    if (!ContractPatterns.isUuidV4(payload.clOrdId())) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "clOrdId must be a UUID v4");
+    }
+    try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
+      FepGatewayEnvelope<FepGatewayReplayResponse> response = restClient.post()
+          .uri(FEP_ORDER_REPLAY_PATH, payload.clOrdId())
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(payload)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      FepGatewayReplayResponse responseBody = extractReplayBody(response);
+      return FepReplayResult.fromResponse(responseBody, payload.clOrdId());
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
   @SuppressWarnings("unused")
   private FepOrderResult submitOrderFallback(FepOutboundOrderPayload payload, String correlationId, Throwable throwable) {
     throw translateFailure(throwable);
@@ -111,11 +137,26 @@ public class FepClient {
     throw translateFailure(throwable);
   }
 
+  @SuppressWarnings("unused")
+  private FepReplayResult replayOrderFallback(FepReplayPayload payload, String correlationId, Throwable throwable) {
+    throw translateFailure(throwable);
+  }
+
   private FepGatewayOrderResponse extractBody(FepGatewayEnvelope<FepGatewayOrderResponse> response, String operationName) {
     if (response == null || !response.success() || response.data() == null) {
       throw new BusinessException(
           ErrorCode.FEP_GATEWAY_UNAVAILABLE,
           "empty " + operationName + " response from fep gateway"
+      );
+    }
+    return response.data();
+  }
+
+  private FepGatewayReplayResponse extractReplayBody(FepGatewayEnvelope<FepGatewayReplayResponse> response) {
+    if (response == null || !response.success() || response.data() == null) {
+      throw new BusinessException(
+          ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+          "empty replay response from fep gateway"
       );
     }
     return response.data();
