@@ -63,6 +63,11 @@ public class LedgerIntegrityObservabilityService {
 
   private static final int MAX_ALERT_IDENTIFIERS = 10;
   private static final int MAX_SUMMARY_IDENTIFIERS = 25;
+  private static final List<String> LEDGER_INTEGRITY_TABLE_NAMES = List.of(
+      "ledger_integrity_runs",
+      "ledger_integrity_anomaly_records",
+      "ledger_reconciliation_cases"
+  );
 
   private final LedgerIntegrityRunRepository runRepository;
   private final LedgerIntegrityAnomalyRecordRepository anomalyRepository;
@@ -131,7 +136,7 @@ public class LedgerIntegrityObservabilityService {
     this.properties = properties;
     this.clock = clock;
     this.readOnlyTransactions = readOnlyTransactions;
-    this.latestRunPassedGauge = meterRegistry.gauge("corebank.ledger.integrity.run.passed", new AtomicLong());
+    this.latestRunPassedGauge = meterRegistry.gauge("corebank.ledger.integrity.run.passed", new AtomicLong(-1L));
     this.unresolvedBacklogGauge = meterRegistry.gauge("corebank.ledger.integrity.backlog.unresolved", new AtomicLong());
     this.repairPendingGauge = meterRegistry.gauge("corebank.ledger.integrity.backlog.repair_pending", new AtomicLong());
     this.criticalAnomalyGauge = meterRegistry.gauge("corebank.ledger.integrity.backlog.critical", new AtomicLong());
@@ -148,7 +153,15 @@ public class LedgerIntegrityObservabilityService {
 
   @PostConstruct
   void initialize() {
-    updateMetrics(loadContext().summary());
+    try {
+      updateMetrics(loadContext().summary());
+    } catch (RuntimeException ex) {
+      if (!isMissingLedgerIntegritySchema(ex)) {
+        throw ex;
+      }
+      log.info("Skipping ledger integrity observability initialization because ledger integrity tables are unavailable");
+      updateMetrics(emptySummary());
+    }
   }
 
   public LedgerIntegrityObservabilitySummary readSummary() {
@@ -181,6 +194,22 @@ public class LedgerIntegrityObservabilityService {
     return Objects.requireNonNull(
         readOnlyTransactions.execute(status -> buildContext()),
         "ledger integrity observability context"
+    );
+  }
+
+  private LedgerIntegrityObservabilitySummary emptySummary() {
+    return LedgerIntegrityObservabilitySummary.of(
+        null,
+        null,
+        null,
+        null,
+        null,
+        0L,
+        0L,
+        0L,
+        true,
+        null,
+        List.of()
     );
   }
 
@@ -469,6 +498,22 @@ public class LedgerIntegrityObservabilityService {
                 identifier.getLedgerEntryId()
             ))
         .toList();
+  }
+
+  private boolean isMissingLedgerIntegritySchema(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      String message = current.getMessage();
+      if (message != null
+          && (message.contains("doesn't exist")
+              || message.contains("does not exist")
+              || message.contains("no such table"))
+          && LEDGER_INTEGRITY_TABLE_NAMES.stream().anyMatch(message::contains)) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
   }
 
   private static TransactionOperations newReadOnlyTransactions(PlatformTransactionManager transactionManager) {
