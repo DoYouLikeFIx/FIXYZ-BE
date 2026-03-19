@@ -35,5 +35,11 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
       Pageable pageable
   );
 
-  List<OrderSession> findByStatusOrderByUpdatedAtAsc(OrderSessionStatus status, Pageable pageable);
+  List<OrderSession> findByStatusOrderByIdAsc(OrderSessionStatus status, Pageable pageable);
+
+  List<OrderSession> findByStatusAndIdGreaterThanOrderByIdAsc(
+      OrderSessionStatus status,
+      Long cursorId,
+      Pageable pageable
+  );
 }
