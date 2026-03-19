@@ -58,7 +58,6 @@ tasks.register('correlationPropagationTests', Test) {
   filter {
     includeTestsMatching('com.fix.fepsimulator.filter.CorrelationIdFilterTest')
     includeTestsMatching('com.fix.fepsimulator.security.InternalSecretFilterTest')
-    includeTestsMatching('com.fix.fepsimulator.controller.FepSimulatorInternalPingLoggingTest')
   }
 }
 

@@ -5,7 +5,7 @@ import java.util.Map;
 
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
-import io.swagger.v3.oas.annotations.Parameter;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,16 +51,9 @@ public class FepSimulatorController {
   }
 
   @GetMapping("/fep-internal/v1/ping")
-  public Map<String, String> internalPing(
-      @Parameter(hidden = true)
-      @org.springframework.web.bind.annotation.RequestHeader(com.fix.common.web.CommonHeaders.X_CORRELATION_ID)
-      String correlationId,
-      @Parameter(hidden = true)
-      @org.springframework.web.bind.annotation.RequestHeader(com.fix.common.web.CommonHeaders.TRACEPARENT)
-      String traceparent
-  ) {
-    String ensuredCorrelationId = CorrelationIdSupport.currentOrGenerate();
-    String ensuredTraceparent = TraceparentSupport.currentOrGenerate();
+  public Map<String, String> internalPing(HttpServletRequest request) {
+    String ensuredCorrelationId = CorrelationIdSupport.ensureCorrelationId(request);
+    String ensuredTraceparent = TraceparentSupport.ensureTraceparent(request);
     log.info(
         "operation=SIMULATOR_TRACE_DIAGNOSTIC_RECEIVED correlationId={} traceparent={} boundary=open",
         ensuredCorrelationId,

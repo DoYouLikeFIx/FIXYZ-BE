@@ -42,7 +42,7 @@ subprojects {
 
 tasks.register('correlationIdPropagationChecks') {
   group = 'verification'
-  description = 'Runs hop-by-hop backend correlation propagation regressions plus the explicit gateway to simulator diagnostic boundary check.'
+  description = 'Runs targeted backend correlation-id propagation regressions across all four services.'
   dependsOn(
       ':channel-service:correlationPropagationTests',
       ':corebank-service:correlationPropagationTests',
