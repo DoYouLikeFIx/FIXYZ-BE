@@ -3,6 +3,7 @@ package com.fix.fepgateway.controller;
 import com.fix.common.error.ApiResponse;
 import com.fix.common.web.CommonHeaders;
 import com.fix.fepgateway.dataplane.fix.FepSimulatorTraceBridgeClient;
+import com.fix.fepgateway.dto.response.FepTraceDiagnosticResponse;
 import io.swagger.v3.oas.annotations.Hidden;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -19,10 +20,12 @@ public class FepGatewayTraceDiagnosticController {
   }
 
   @GetMapping("/fep-internal/v1/diagnostics/trace-forwarding/simulator")
-  public ApiResponse<FepSimulatorTraceBridgeClient.TraceBridgeResult> forwardTraceToSimulator(
+  public ApiResponse<FepTraceDiagnosticResponse> forwardTraceToSimulator(
       @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
       @RequestHeader(CommonHeaders.TRACEPARENT) String traceparent
   ) {
-    return ApiResponse.success(fepSimulatorTraceBridgeClient.bridgeTrace(correlationId, traceparent));
+    return ApiResponse.success(FepTraceDiagnosticResponse.from(
+        fepSimulatorTraceBridgeClient.bridgeTrace(correlationId, traceparent)
+    ));
   }
 }
