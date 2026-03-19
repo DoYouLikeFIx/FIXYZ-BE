@@ -41,7 +41,7 @@ public final class LogPiiMasking {
       "(?i)(\"(?:" + SECRET_KEY_PATTERN + ")\"\\s*:\\s*)(-?\\d+(?:\\.\\d+)?|true|false|null)"
   );
   private static final Pattern ACCOUNT_ASSIGNMENT_PATTERN = Pattern.compile(
-      "(?i)(\\b(?:" + ACCOUNT_KEY_PATTERN + ")\\b\\s*=\\s*)([^,;\\r\\n]+)"
+      "(?i)(\\b(?:" + ACCOUNT_KEY_PATTERN + ")\\b\\s*=\\s*)([^,;&\\r\\n]+)"
   );
   private static final Pattern ACCOUNT_JSON_STRING_PATTERN = Pattern.compile(
       "(?i)((?:\"(?:" + ACCOUNT_KEY_PATTERN + ")\"\\s*:\\s*\"))([^\"]*)((?:\"))"
