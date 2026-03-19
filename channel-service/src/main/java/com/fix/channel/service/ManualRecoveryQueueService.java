@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,19 +31,24 @@ public class ManualRecoveryQueueService {
   private final ObjectMapper objectMapper;
   private final Clock clock;
   private final int publishBatchSize;
+  private final Duration publishClaimTimeout;
 
   public ManualRecoveryQueueService(
       ObjectProvider<StringRedisTemplate> redisTemplateProvider,
       ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository,
       ObjectMapper objectMapper,
       Clock clock,
-      @Value("${order.session.recovery.manual-queue.publish-batch-size:100}") int publishBatchSize
+      @Value("${order.session.recovery.manual-queue.publish-batch-size:100}") int publishBatchSize,
+      @Value("${order.session.recovery.manual-queue.claim-timeout:5m}") Duration publishClaimTimeout
   ) {
     this.redisTemplateProvider = redisTemplateProvider;
     this.manualRecoveryQueueEntryRepository = manualRecoveryQueueEntryRepository;
     this.objectMapper = objectMapper;
     this.clock = clock;
     this.publishBatchSize = Math.max(1, publishBatchSize);
+    this.publishClaimTimeout = publishClaimTimeout == null || publishClaimTimeout.isNegative()
+        ? Duration.ZERO
+        : publishClaimTimeout;
   }
 
   public void publishPendingEntries() {
@@ -72,6 +78,18 @@ public class ManualRecoveryQueueService {
   }
 
   private void publishSingleEntry(StringRedisTemplate redisTemplate, ManualRecoveryQueueEntry entry) {
+    Instant now = Instant.now(clock);
+    String claimToken = UUID.randomUUID().toString();
+    int claimed = manualRecoveryQueueEntryRepository.claimPendingIfAvailable(
+        entry.getId(),
+        entry.getEnqueuedAt(),
+        claimToken,
+        now,
+        now.minus(publishClaimTimeout)
+    );
+    if (claimed == 0) {
+      return;
+    }
     try {
       String payload = serialize(entry);
       Long publishResult = redisTemplate.execute(
@@ -87,17 +105,19 @@ public class ManualRecoveryQueueService {
             entry.getOrderSessionId(),
             entry.getClOrdId()
         );
+        releaseClaim(entry, claimToken);
         return;
       }
 
-      int updated = manualRecoveryQueueEntryRepository.markPublishedIfPending(
+      int updated = manualRecoveryQueueEntryRepository.markPublishedIfClaimed(
           entry.getId(),
           entry.getEnqueuedAt(),
-          Instant.now(clock)
+          claimToken,
+          now
       );
-      if (updated == 0 && publishResult.longValue() == 1L) {
+      if (updated == 0) {
         log.warn(
-            "Manual recovery queue payload published to Redis but pending row was not acknowledged: sessionId={}, clOrdId={}",
+            "Manual recovery queue payload published to Redis but claimed row was not acknowledged: sessionId={}, clOrdId={}",
             entry.getOrderSessionId(),
             entry.getClOrdId()
         );
@@ -109,6 +129,7 @@ public class ManualRecoveryQueueService {
           entry.getClOrdId(),
           ex
       );
+      releaseClaim(entry, claimToken);
     } catch (RuntimeException ex) {
       log.warn(
           "Failed to publish manual recovery queue payload to Redis: sessionId={}, clOrdId={}",
@@ -116,6 +137,7 @@ public class ManualRecoveryQueueService {
           entry.getClOrdId(),
           ex
       );
+      releaseClaim(entry, claimToken);
     }
   }
 
@@ -125,6 +147,7 @@ public class ManualRecoveryQueueService {
 
   private String serialize(ManualRecoveryQueueEntry entry) throws JsonProcessingException {
     return objectMapper.writeValueAsString(new ManualRecoveryTaskPayload(
+        entry.getId(),
         entry.getEnqueuedAt().toString(),
         entry.getOrderSessionId(),
         entry.getClOrdId(),
@@ -134,12 +157,21 @@ public class ManualRecoveryQueueService {
   }
 
   private record ManualRecoveryTaskPayload(
+      Long entryId,
       String enqueuedAt,
       String orderSessionId,
       String clOrdId,
       int attemptCount,
       String reason
   ) {
+  }
+
+  private void releaseClaim(ManualRecoveryQueueEntry entry, String claimToken) {
+    manualRecoveryQueueEntryRepository.releaseClaimIfMatches(
+        entry.getId(),
+        entry.getEnqueuedAt(),
+        claimToken
+    );
   }
 
   private static DefaultRedisScript<Long> createPublishIfAbsentScript() {

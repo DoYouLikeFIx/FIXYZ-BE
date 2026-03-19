@@ -381,15 +381,21 @@ public class OrderSessionService {
   }
 
   public java.util.List<OrderSession> findRequeryingSessions(int batchSize) {
-    return findRequeryingSessionsAfter(null, null, batchSize);
+    return findRequeryingSessionsAfter(Instant.now(clock), null, null, batchSize);
   }
 
   public java.util.List<OrderSession> findRequeryingSessionsAfter(
+      Instant eligibleAt,
       Instant updatedAtCursor,
       String orderSessionIdCursor,
       int batchSize
   ) {
-    return orderSessionPersistenceService.findRequeryingSessionsAfter(updatedAtCursor, orderSessionIdCursor, batchSize);
+    return orderSessionPersistenceService.findRequeryingSessionsAfter(
+        eligibleAt,
+        updatedAtCursor,
+        orderSessionIdCursor,
+        batchSize
+    );
   }
 
   OrderSession requireOwnedSession(Long memberId, String orderSessionId) {

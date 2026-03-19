@@ -362,19 +362,22 @@ public class OrderSessionPersistenceService {
 
   @Transactional(readOnly = true)
   List<OrderSession> findRequeryingSessionsAfter(
+      Instant eligibleAt,
       Instant updatedAtCursor,
       String orderSessionIdCursor,
       int batchSize
   ) {
     PageRequest pageRequest = PageRequest.of(0, Math.max(1, batchSize));
     if (updatedAtCursor == null || orderSessionIdCursor == null || orderSessionIdCursor.isBlank()) {
-      return orderSessionRepository.findByStatusOrderByUpdatedAtAscOrderSessionIdAsc(
+      return orderSessionRepository.findEligibleByStatusOrderByUpdatedAtAscOrderSessionIdAsc(
           OrderSessionStatus.REQUERYING,
+          eligibleAt,
           pageRequest
       );
     }
     return orderSessionRepository.findByStatusAfterUpdatedAtCursorOrderByUpdatedAtAscOrderSessionIdAsc(
         OrderSessionStatus.REQUERYING,
+        eligibleAt,
         updatedAtCursor,
         orderSessionIdCursor,
         pageRequest

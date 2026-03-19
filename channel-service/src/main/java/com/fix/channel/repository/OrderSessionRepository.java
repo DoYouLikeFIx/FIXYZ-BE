@@ -44,6 +44,10 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
       FROM OrderSession os
       WHERE os.status = :status
         AND (
+          os.recoveryNextAttemptAt IS NULL
+          OR os.recoveryNextAttemptAt <= :eligibleAt
+        )
+        AND (
           :updatedAtCursor IS NULL
           OR os.updatedAt > :updatedAtCursor
           OR (os.updatedAt = :updatedAtCursor AND os.orderSessionId > :orderSessionIdCursor)
@@ -52,8 +56,25 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
       """)
   List<OrderSession> findByStatusAfterUpdatedAtCursorOrderByUpdatedAtAscOrderSessionIdAsc(
       @Param("status") OrderSessionStatus status,
+      @Param("eligibleAt") Instant eligibleAt,
       @Param("updatedAtCursor") Instant updatedAtCursor,
       @Param("orderSessionIdCursor") String orderSessionIdCursor,
+      Pageable pageable
+  );
+
+  @Query("""
+      SELECT os
+      FROM OrderSession os
+      WHERE os.status = :status
+        AND (
+          os.recoveryNextAttemptAt IS NULL
+          OR os.recoveryNextAttemptAt <= :eligibleAt
+        )
+      ORDER BY os.updatedAt ASC, os.orderSessionId ASC
+      """)
+  List<OrderSession> findEligibleByStatusOrderByUpdatedAtAscOrderSessionIdAsc(
+      @Param("status") OrderSessionStatus status,
+      @Param("eligibleAt") Instant eligibleAt,
       Pageable pageable
   );
 }

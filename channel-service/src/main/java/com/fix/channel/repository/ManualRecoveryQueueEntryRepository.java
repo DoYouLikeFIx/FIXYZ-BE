@@ -30,4 +30,63 @@ public interface ManualRecoveryQueueEntryRepository extends JpaRepository<Manual
       @Param("enqueuedAt") Instant enqueuedAt,
       @Param("publishedAt") Instant publishedAt
   );
+
+  @Transactional
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query("""
+      UPDATE ManualRecoveryQueueEntry entry
+         SET entry.publishClaimToken = :claimToken,
+             entry.publishClaimedAt = :claimedAt
+       WHERE entry.id = :id
+         AND entry.publishedAt IS NULL
+         AND entry.enqueuedAt = :enqueuedAt
+         AND (
+           entry.publishClaimToken IS NULL
+           OR entry.publishClaimedAt IS NULL
+           OR entry.publishClaimedAt < :staleBefore
+         )
+      """)
+  int claimPendingIfAvailable(
+      @Param("id") Long id,
+      @Param("enqueuedAt") Instant enqueuedAt,
+      @Param("claimToken") String claimToken,
+      @Param("claimedAt") Instant claimedAt,
+      @Param("staleBefore") Instant staleBefore
+  );
+
+  @Transactional
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query("""
+      UPDATE ManualRecoveryQueueEntry entry
+         SET entry.publishedAt = :publishedAt,
+             entry.publishClaimToken = NULL,
+             entry.publishClaimedAt = NULL
+       WHERE entry.id = :id
+         AND entry.publishedAt IS NULL
+         AND entry.enqueuedAt = :enqueuedAt
+         AND entry.publishClaimToken = :claimToken
+      """)
+  int markPublishedIfClaimed(
+      @Param("id") Long id,
+      @Param("enqueuedAt") Instant enqueuedAt,
+      @Param("claimToken") String claimToken,
+      @Param("publishedAt") Instant publishedAt
+  );
+
+  @Transactional
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query("""
+      UPDATE ManualRecoveryQueueEntry entry
+         SET entry.publishClaimToken = NULL,
+             entry.publishClaimedAt = NULL
+       WHERE entry.id = :id
+         AND entry.publishedAt IS NULL
+         AND entry.enqueuedAt = :enqueuedAt
+         AND entry.publishClaimToken = :claimToken
+      """)
+  int releaseClaimIfMatches(
+      @Param("id") Long id,
+      @Param("enqueuedAt") Instant enqueuedAt,
+      @Param("claimToken") String claimToken
+  );
 }

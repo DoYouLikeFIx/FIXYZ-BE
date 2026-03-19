@@ -29,9 +29,11 @@ public class OrderSessionRecoveryService {
   private static final String UNKNOWN_STATUS = "UNKNOWN";
   private static final String PENDING_STATUS = "PENDING";
   private static final String MALFORMED_STATUS = "MALFORMED";
+  private static final String NOTIFICATION_CHANNEL_ORDER = "ORDER";
 
   private final OrderSessionService orderSessionService;
   private final CorebankClient corebankClient;
+  private final ChannelScaffoldService channelScaffoldService;
   private final ManualRecoveryQueueService manualRecoveryQueueService;
   private final OrderSessionRecoveryLockService recoveryLockService;
   private final OrderSessionRecoveryAttemptStore attemptStore;
@@ -46,6 +48,7 @@ public class OrderSessionRecoveryService {
   public OrderSessionRecoveryService(
       OrderSessionService orderSessionService,
       CorebankClient corebankClient,
+      ChannelScaffoldService channelScaffoldService,
       ManualRecoveryQueueService manualRecoveryQueueService,
       OrderSessionRecoveryLockService recoveryLockService,
       OrderSessionRecoveryAttemptStore attemptStore,
@@ -57,6 +60,7 @@ public class OrderSessionRecoveryService {
   ) {
     this.orderSessionService = orderSessionService;
     this.corebankClient = corebankClient;
+    this.channelScaffoldService = channelScaffoldService;
     this.manualRecoveryQueueService = manualRecoveryQueueService;
     this.recoveryLockService = recoveryLockService;
     this.attemptStore = attemptStore;
@@ -101,11 +105,12 @@ public class OrderSessionRecoveryService {
   }
 
   private void processRequeryingSessions() {
+    Instant eligibleAt = Instant.now(clock);
     Instant updatedAtCursor = null;
     String orderSessionIdCursor = null;
     while (true) {
       List<OrderSession> requeryingSessions =
-          orderSessionService.findRequeryingSessionsAfter(updatedAtCursor, orderSessionIdCursor, batchSize);
+          orderSessionService.findRequeryingSessionsAfter(eligibleAt, updatedAtCursor, orderSessionIdCursor, batchSize);
       if (requeryingSessions.isEmpty()) {
         return;
       }
@@ -123,11 +128,16 @@ public class OrderSessionRecoveryService {
 
   private void processSingleSession(OrderSession session) {
     String orderSessionId = session.getOrderSessionId();
-    if (!recoveryLockService.tryAcquire(orderSessionId)) {
+    String lockToken = recoveryLockService.tryAcquire(orderSessionId);
+    if (lockToken == null) {
       return;
     }
     try {
-      int attemptCount = attemptStore.nextAttempt(orderSessionId);
+      OrderSessionRecoveryAttemptStore.AttemptReservation reservation = attemptStore.reserveAttempt(orderSessionId);
+      if (reservation == null) {
+        return;
+      }
+      int attemptCount = reservation.attemptCount();
       requeryAttemptCounter.increment();
       OrderRequeryResult result;
       try {
@@ -142,7 +152,7 @@ public class OrderSessionRecoveryService {
       }
 
       if (isTerminalSuccess(result)) {
-        orderSessionService.completeExecution(
+        OrderSession completedSession = orderSessionService.completeExecution(
             session,
             firstNonNull(result.getExecutionResult(), session.getExecutionResult()),
             firstNonNull(result.getExecutedQty(), session.getExecutedQty()),
@@ -154,11 +164,12 @@ public class OrderSessionRecoveryService {
         );
         attemptStore.clear(orderSessionId);
         convergenceSuccessCounter.increment();
+        publishTerminalNotification(completedSession, "COMPLETED");
         return;
       }
 
       if (isTerminalCanceled(result)) {
-        orderSessionService.cancelExecution(
+        OrderSession canceledSession = orderSessionService.cancelExecution(
             session,
             firstNonNull(result.getExecutionResult(), session.getExecutionResult()),
             firstNonNull(result.getExecutedQty(), session.getExecutedQty()),
@@ -171,11 +182,12 @@ public class OrderSessionRecoveryService {
         );
         attemptStore.clear(orderSessionId);
         convergenceSuccessCounter.increment();
+        publishTerminalNotification(canceledSession, "CANCELED");
         return;
       }
 
       if (shouldEscalate(result, attemptCount)) {
-        orderSessionService.markEscalatedAndEnqueueManualRecovery(
+        OrderSession escalatedSession = orderSessionService.markEscalatedAndEnqueueManualRecovery(
             session,
             escalationReason(result),
             firstNonNull(result.getExecutionResult(), session.getExecutionResult()),
@@ -189,6 +201,7 @@ public class OrderSessionRecoveryService {
         );
         attemptStore.clear(orderSessionId);
         convergenceEscalatedCounter.increment();
+        publishTerminalNotification(escalatedSession, "ESCALATED");
       }
     } catch (RuntimeException ex) {
       log.warn(
@@ -198,7 +211,7 @@ public class OrderSessionRecoveryService {
           ex
       );
     } finally {
-      recoveryLockService.release(orderSessionId);
+      recoveryLockService.release(orderSessionId, lockToken);
     }
   }
 
@@ -256,7 +269,7 @@ public class OrderSessionRecoveryService {
 
   private void handleRequeryFailure(OrderSession session, int attemptCount, RuntimeException ex) {
     if (attemptCount >= maxRetryCount) {
-      orderSessionService.markEscalatedAndEnqueueManualRecovery(
+      OrderSession escalatedSession = orderSessionService.markEscalatedAndEnqueueManualRecovery(
           session,
           ESCALATED_REASON,
           session.getExecutionResult(),
@@ -270,6 +283,7 @@ public class OrderSessionRecoveryService {
       );
       attemptStore.clear(session.getOrderSessionId());
       convergenceEscalatedCounter.increment();
+      publishTerminalNotification(escalatedSession, "ESCALATED");
       log.warn(
           "Order session recovery requery failed and escalated after retry exhaustion: sessionId={}, clOrdId={}, attemptCount={}",
           session.getOrderSessionId(),
@@ -285,6 +299,14 @@ public class OrderSessionRecoveryService {
         session.getClOrdId(),
         attemptCount,
         ex
+    );
+  }
+
+  private void publishTerminalNotification(OrderSession session, String terminalStatus) {
+    channelScaffoldService.bootstrapNotification(
+        session.getMemberId(),
+        NOTIFICATION_CHANNEL_ORDER,
+        "orderSessionId=" + session.getOrderSessionId() + " status=" + terminalStatus
     );
   }
 
