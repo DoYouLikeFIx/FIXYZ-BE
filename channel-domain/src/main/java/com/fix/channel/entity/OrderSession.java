@@ -100,6 +100,12 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "canceled_at")
   private Instant canceledAt;
 
+  @Column(name = "recovery_attempt_count")
+  private Integer recoveryAttemptCount;
+
+  @Column(name = "recovery_next_attempt_at")
+  private Instant recoveryNextAttemptAt;
+
   protected OrderSession() {
   }
 
@@ -265,6 +271,14 @@ public class OrderSession extends BaseTimeEntity {
     return canceledAt;
   }
 
+  public Integer getRecoveryAttemptCount() {
+    return recoveryAttemptCount;
+  }
+
+  public Instant getRecoveryNextAttemptAt() {
+    return recoveryNextAttemptAt;
+  }
+
   public boolean ownedBy(Long memberId) {
     return Objects.equals(this.memberId, memberId);
   }
@@ -297,6 +311,7 @@ public class OrderSession extends BaseTimeEntity {
     assertAwaitingOtpVerification();
     transitionTo(OrderSessionStatus.AUTHED, "order session is not awaiting otp verification");
     this.status = OrderSessionStatus.AUTHED;
+    clearRecoveryAttemptState();
   }
 
   public void extendExpiry(Instant expiresAt) {
@@ -310,6 +325,7 @@ public class OrderSession extends BaseTimeEntity {
     transitionTo(OrderSessionStatus.EXECUTING, "order session is not authorized for execution");
     this.status = OrderSessionStatus.EXECUTING;
     this.executingStartedAt = Instant.now();
+    clearRecoveryAttemptState();
   }
 
   public void beginRequerying(String failureReason) {
@@ -339,6 +355,7 @@ public class OrderSession extends BaseTimeEntity {
     this.status = OrderSessionStatus.REQUERYING;
     this.executingStartedAt = null;
     this.failureReason = requireFailureReason(failureReason);
+    clearRecoveryAttemptState();
     if (hasExecutionSnapshot(
         executionResult,
         executedQty,
@@ -384,6 +401,7 @@ public class OrderSession extends BaseTimeEntity {
     );
     this.failureReason = null;
     this.executingStartedAt = null;
+    clearRecoveryAttemptState();
   }
 
   public void cancel(
@@ -410,6 +428,7 @@ public class OrderSession extends BaseTimeEntity {
     );
     this.failureReason = null;
     this.executingStartedAt = null;
+    clearRecoveryAttemptState();
   }
 
   public void escalate(String failureReason) {
@@ -418,6 +437,7 @@ public class OrderSession extends BaseTimeEntity {
     clearExecutionOutcome();
     this.failureReason = requireFailureReason(failureReason);
     this.executingStartedAt = null;
+    clearRecoveryAttemptState();
   }
 
   public void escalate(
@@ -443,6 +463,7 @@ public class OrderSession extends BaseTimeEntity {
     );
     this.failureReason = requireFailureReason(failureReason);
     this.executingStartedAt = null;
+    clearRecoveryAttemptState();
   }
 
   public void fail(String failureReason) {
@@ -451,6 +472,7 @@ public class OrderSession extends BaseTimeEntity {
     clearExecutionOutcome();
     this.failureReason = requireFailureReason(failureReason);
     this.executingStartedAt = null;
+    clearRecoveryAttemptState();
   }
 
   public void expire() {
@@ -459,6 +481,29 @@ public class OrderSession extends BaseTimeEntity {
     this.executingStartedAt = null;
     this.failureReason = null;
     this.canceledAt = null;
+    clearRecoveryAttemptState();
+  }
+
+  public int reserveRecoveryAttempt(Instant nextAttemptAt) {
+    if (nextAttemptAt == null) {
+      throw new IllegalArgumentException("next recovery attempt timestamp is required");
+    }
+    int nextAttemptCount = this.recoveryAttemptCount == null ? 1 : this.recoveryAttemptCount + 1;
+    this.recoveryAttemptCount = nextAttemptCount;
+    this.recoveryNextAttemptAt = nextAttemptAt;
+    return nextAttemptCount;
+  }
+
+  public boolean isRecoveryAttemptEligible(Instant referenceTime) {
+    if (referenceTime == null) {
+      throw new IllegalArgumentException("reference time is required");
+    }
+    return this.recoveryNextAttemptAt == null || !this.recoveryNextAttemptAt.isAfter(referenceTime);
+  }
+
+  public void clearRecoveryAttemptState() {
+    this.recoveryAttemptCount = null;
+    this.recoveryNextAttemptAt = null;
   }
 
   private void transitionTo(OrderSessionStatus nextStatus, String message) {
