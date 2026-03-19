@@ -7,6 +7,7 @@ import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.entity.SecurityEvent;
 import com.fix.channel.repository.AuditLogRepository;
+import com.fix.channel.repository.ManualRecoveryQueueEntryRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
@@ -69,6 +70,9 @@ class OrderSessionServiceTest {
   private SecurityEventRepository securityEventRepository;
 
   @Autowired
+  private ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository;
+
+  @Autowired
   private InMemoryOrderSessionTtlStore orderSessionTtlStore;
 
   @Autowired
@@ -83,13 +87,18 @@ class OrderSessionServiceTest {
   @Autowired
   private TotpService totpService;
 
+  @Autowired
+  private PlatformTransactionManager transactionManager;
+
   private Member ownerMember;
   private Member otherMember;
+  private TransactionTemplate requiresNewTransactionTemplate;
 
   @BeforeEach
   void setUp() {
     securityEventRepository.deleteAll();
     auditLogRepository.deleteAll();
+    manualRecoveryQueueEntryRepository.deleteAll();
     orderSessionRepository.deleteAll();
     memberRepository.deleteAll();
     orderSessionTtlStore.reset();
@@ -98,6 +107,8 @@ class OrderSessionServiceTest {
     ownerMember = saveLinkedMember("M-ORD-SVC-001", "svc-owner@fixyz.com", "Service Owner", 101L, "12345678901234");
     otherMember = saveLinkedMember("M-ORD-SVC-002", "svc-other@fixyz.com", "Service Other", 202L, "43210987654321");
     accountPositionService.reset(ownerMember.getAccountId(), ownerMember.getId());
+    requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
+    requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
 
   @Test
@@ -625,6 +636,73 @@ class OrderSessionServiceTest {
         .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.AUTHED));
   }
 
+  @Test
+  void shouldPersistRecoveryTransitionsWhenOrderSessionEntityIsDetached() {
+    OrderSession persistedSession = orderSessionRepository.saveAndFlush(OrderSession.initiated(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174399",
+        ownerLimitCommand("123e4567-e89b-42d3-a456-426614174399", BigDecimal.ONE, BigDecimal.valueOf(70000)).replayFingerprint(),
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(70000),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plus(Duration.ofHours(1))
+    ));
+    persistedSession.startExecuting();
+    orderSessionRepository.saveAndFlush(persistedSession);
+
+    OrderSession detachedExecuting = loadSessionInSeparateTransaction(persistedSession.getOrderSessionId());
+
+    OrderSession requerying = orderSessionService.beginRequerying(
+        detachedExecuting,
+        "UNKNOWN_EXECUTION_OUTCOME",
+        "FILLED",
+        BigDecimal.ONE,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(70000),
+        "FEP-DETACHED-1",
+        "FAILED",
+        Instant.parse("2026-03-18T00:00:00Z")
+    );
+
+    assertThat(orderSessionRepository.findByOrderSessionId(persistedSession.getOrderSessionId()))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.REQUERYING);
+          assertThat(session.getFailureReason()).isEqualTo("UNKNOWN_EXECUTION_OUTCOME");
+          assertThat(session.getExecutionResult()).isEqualTo("FILLED");
+          assertThat(session.getExecutedQty()).isEqualByComparingTo("1");
+          assertThat(session.getExternalOrderId()).isEqualTo("FEP-DETACHED-1");
+          assertThat(session.getExternalSyncStatus()).isEqualTo("FAILED");
+        });
+
+    OrderSession detachedRequerying = loadSessionInSeparateTransaction(requerying.getOrderSessionId());
+
+    orderSessionService.completeExecution(
+        detachedRequerying,
+        "FILLED",
+        BigDecimal.ONE,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(70000),
+        "FEP-DETACHED-1",
+        "CONFIRMED",
+        Instant.parse("2026-03-18T00:01:00Z")
+    );
+
+    assertThat(orderSessionRepository.findByOrderSessionId(persistedSession.getOrderSessionId()))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.COMPLETED);
+          assertThat(session.getFailureReason()).isNull();
+          assertThat(session.getExecutionResult()).isEqualTo("FILLED");
+          assertThat(session.getExecutedQty()).isEqualByComparingTo("1");
+          assertThat(session.getExternalSyncStatus()).isEqualTo("CONFIRMED");
+          assertThat(session.getExecutedAt()).isEqualTo(Instant.parse("2026-03-18T00:01:00Z"));
+        });
+  }
+
   private Member saveLinkedMember(String memberNo, String email, String name, Long accountId, String accountNumber) {
     Member member = Member.registerUser(memberNo, email, "{noop}", name);
     member.updateLinkedAccount(accountId, accountNumber);
@@ -644,6 +722,11 @@ class OrderSessionServiceTest {
     );
   }
 
+  private OrderSession loadSessionInSeparateTransaction(String orderSessionId) {
+    return requiresNewTransactionTemplate.execute(status -> orderSessionRepository.findByOrderSessionId(orderSessionId)
+        .orElseThrow());
+  }
+
   @TestConfiguration
   static class TestConfig {
 
@@ -656,12 +739,14 @@ class OrderSessionServiceTest {
     @Bean
     @Primary
     FaultInjectingOrderSessionPersistenceService testOrderSessionPersistenceService(
+        ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository,
         OrderSessionRepository orderSessionRepository,
         AuditLogService auditLogService,
         PlatformTransactionManager transactionManager,
         InMemoryOrderSessionTtlStore orderSessionTtlStore
     ) {
       return new FaultInjectingOrderSessionPersistenceService(
+          manualRecoveryQueueEntryRepository,
           orderSessionRepository,
           auditLogService,
           transactionManager,
@@ -756,12 +841,13 @@ class OrderSessionServiceTest {
     private final InMemoryOrderSessionTtlStore orderSessionTtlStore;
 
     FaultInjectingOrderSessionPersistenceService(
+        ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository,
         OrderSessionRepository orderSessionRepository,
         AuditLogService auditLogService,
         PlatformTransactionManager transactionManager,
         InMemoryOrderSessionTtlStore orderSessionTtlStore
     ) {
-      super(orderSessionRepository, auditLogService);
+      super(manualRecoveryQueueEntryRepository, orderSessionRepository, auditLogService);
       this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
       this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
       this.orderSessionTtlStore = orderSessionTtlStore;
