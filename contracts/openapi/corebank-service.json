@@ -1,1654 +1,2559 @@
 {
-  "openapi": "3.0.1",
-  "info": {
-    "title": "OpenAPI definition",
-    "version": "v0"
-  },
-  "servers": [
-    {
-      "url": "http://localhost:18081",
-      "description": "Generated server url"
+    "openapi": "3.0.1",
+    "info": {
+        "title": "OpenAPI definition",
+        "version": "v0"
+    },
+    "servers": [
+        {
+            "url": "http://localhost:28081",
+            "description": "Generated server url"
+        }
+    ],
+    "paths": {
+        "/internal/v1/portfolio": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Portfolio",
+                "operationId": "portfolio",
+                "parameters": [
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/InternalPortfolioRequest"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalPortfolioResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Provision Portfolio",
+                "operationId": "provisionPortfolio",
+                "parameters": [
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalPortfolioProvisioningRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalPortfolioProvisioningResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/orders": {
+            "post": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Create Order",
+                "operationId": "createOrder",
+                "parameters": [
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/InternalOrderCreateRequest"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalOrderResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/ledger-integrity/cases/{caseId}/rerun": {
+            "post": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Rerun Ledger Reconciliation Case",
+                "operationId": "rerunLedgerReconciliationCase",
+                "parameters": [
+                    {
+                        "name": "caseId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalLedgerReconciliationRerunRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationRerunResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/ledger-integrity/cases/{caseId}/repairs": {
+            "post": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Apply Ledger Repair",
+                "operationId": "applyLedgerRepair",
+                "parameters": [
+                    {
+                        "name": "caseId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalLedgerReconciliationRepairRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationRepairResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/ledger-integrity/anomalies/{anomalyId}/cases": {
+            "post": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Create Ledger Reconciliation Case",
+                "operationId": "createLedgerReconciliationCase",
+                "parameters": [
+                    {
+                        "name": "anomalyId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalLedgerReconciliationCaseCreateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationCaseResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/ledger-integrity/cases/{caseId}": {
+            "patch": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Transition Ledger Reconciliation Case",
+                "operationId": "transitionLedgerReconciliationCase",
+                "parameters": [
+                    {
+                        "name": "caseId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalLedgerReconciliationCaseTransitionRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationCaseResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/accounts/{accountId}/status": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Account Status",
+                "operationId": "accountStatus",
+                "parameters": [
+                    {
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/InternalAccountStatusRequest"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalAccountStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Transition Account Status",
+                "operationId": "transitionAccountStatus",
+                "parameters": [
+                    {
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/InternalAccountStatusTransitionRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalAccountStatusTransitionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/ping": {
+            "get": {
+                "tags": [
+                    "corebank-controller"
+                ],
+                "summary": "Internal Ping",
+                "operationId": "internalPing",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/orders/{clOrdId}/requery": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Requery Order",
+                "operationId": "requeryOrder",
+                "parameters": [
+                    {
+                        "name": "clOrdId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "attemptCount",
+                        "in": "query",
+                        "description": "1-based requery attempt count from the scheduler. Unresolved results escalate when this reaches recovery.max-retry-count.",
+                        "required": false,
+                        "schema": {
+                            "minimum": 1,
+                            "type": "integer",
+                            "description": "1-based requery attempt count from the scheduler. Unresolved results escalate when this reaches recovery.max-retry-count.",
+                            "format": "int32",
+                            "default": 1
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalOrderResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/accounts/{accountId}/summary": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Account Summary",
+                "operationId": "accountSummary",
+                "parameters": [
+                    {
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/InternalAccountSummaryRequest"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalAccountPositionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/accounts/{accountId}/positions": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Account Position",
+                "operationId": "accountPosition",
+                "parameters": [
+                    {
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/InternalAccountPositionRequest"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalAccountPositionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/accounts/{accountId}/positions/list": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Account Positions",
+                "operationId": "accountPositions",
+                "parameters": [
+                    {
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/InternalAccountPositionsRequest"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseListInternalAccountPositionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/accounts/{accountId}/orders": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Account Order History",
+                "operationId": "accountOrderHistory",
+                "parameters": [
+                    {
+                        "name": "accountId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/InternalAccountOrderHistoryRequest"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalAccountOrderHistoryResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/v1/accounts/default": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Default Account Status",
+                "operationId": "defaultAccountStatus",
+                "parameters": [
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/InternalAccountStatusRequest"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalAccountStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ping": {
+            "get": {
+                "tags": [
+                    "corebank-controller"
+                ],
+                "summary": "Ping",
+                "operationId": "ping",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/errors/boom": {
+            "get": {
+                "tags": [
+                    "corebank-controller"
+                ],
+                "summary": "Boom",
+                "operationId": "boom",
+                "responses": {
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "InternalPortfolioProvisioningRequest": {
+                "type": "object",
+                "properties": {
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "memberNo": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ApiErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "string"
+                    },
+                    "correlationId": {
+                        "type": "string"
+                    },
+                    "userMessageKey": {
+                        "type": "string"
+                    },
+                    "operatorCode": {
+                        "type": "string"
+                    },
+                    "details": {
+                        "type": "object",
+                        "additionalProperties": true
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "additionalProperties": true
+            },
+            "ApiResponseInternalPortfolioProvisioningResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalPortfolioProvisioningResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalPortfolioProvisioningResponse": {
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "accountNumber": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "idempotent": {
+                        "type": "boolean"
+                    },
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalOrderCreateRequest": {
+                "required": [
+                    "accountId",
+                    "clOrdId",
+                    "price",
+                    "quantity",
+                    "side",
+                    "symbol"
+                ],
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "clOrdId": {
+                        "minLength": 1,
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                        "type": "string"
+                    },
+                    "symbol": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "side": {
+                        "minLength": 1,
+                        "type": "string"
+                    },
+                    "quantity": {
+                        "minimum": 0.0001,
+                        "exclusiveMinimum": false,
+                        "type": "number"
+                    },
+                    "price": {
+                        "minimum": 0.0001,
+                        "exclusiveMinimum": false,
+                        "type": "number"
+                    }
+                }
+            },
+            "ApiResponseInternalOrderResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalOrderResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalOrderResponse": {
+                "type": "object",
+                "properties": {
+                    "orderId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "clOrdId": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "externalSyncStatus": {
+                        "type": "string"
+                    },
+                    "idempotent": {
+                        "type": "boolean"
+                    },
+                    "orderQuantity": {
+                        "type": "number"
+                    },
+                    "executionResult": {
+                        "type": "string"
+                    },
+                    "executedQty": {
+                        "type": "number"
+                    },
+                    "leavesQty": {
+                        "type": "number"
+                    },
+                    "executedPrice": {
+                        "type": "number"
+                    },
+                    "externalOrderId": {
+                        "type": "string"
+                    },
+                    "executedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "retriable": {
+                        "type": "boolean"
+                    },
+                    "escalationRequired": {
+                        "type": "boolean"
+                    },
+                    "attemptCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "maxRetryCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                }
+            },
+            "InternalLedgerReconciliationRerunRequest": {
+                "required": [
+                    "actor",
+                    "reason"
+                ],
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "actor": {
+                        "maxLength": 64,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "context": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    }
+                }
+            },
+            "ApiResponseInternalLedgerReconciliationRerunResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalLedgerReconciliationRerunResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalLedgerReconciliationRerunResponse": {
+                "type": "object",
+                "properties": {
+                    "caseId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "previousStatus": {
+                        "type": "string"
+                    },
+                    "currentStatus": {
+                        "type": "string"
+                    },
+                    "changed": {
+                        "type": "boolean"
+                    },
+                    "eventId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "rerunRunId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "anomalyStillPresent": {
+                        "type": "boolean"
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                    "actor": {
+                        "type": "string"
+                    },
+                    "context": {
+                        "type": "string"
+                    },
+                    "asOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalLedgerReconciliationRepairRequest": {
+                "required": [
+                    "actor",
+                    "reason",
+                    "repairKey",
+                    "repairType"
+                ],
+                "type": "object",
+                "properties": {
+                    "repairKey": {
+                        "maxLength": 64,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "repairType": {
+                        "minLength": 1,
+                        "pattern": "REBUILD_POSITION_FROM_EXECUTIONS|ATTACH_LEDGER_CL_ORD_REF|MARK_FALSE_POSITIVE",
+                        "type": "string"
+                    },
+                    "reason": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "actor": {
+                        "maxLength": 64,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "context": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    }
+                }
+            },
+            "ApiResponseInternalLedgerReconciliationRepairResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalLedgerReconciliationRepairResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalLedgerReconciliationRepairResponse": {
+                "type": "object",
+                "properties": {
+                    "repairId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "caseId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "repairKey": {
+                        "type": "string"
+                    },
+                    "repairType": {
+                        "type": "string"
+                    },
+                    "outcome": {
+                        "type": "string"
+                    },
+                    "idempotent": {
+                        "type": "boolean"
+                    },
+                    "mutated": {
+                        "type": "boolean"
+                    },
+                    "caseStatus": {
+                        "type": "string"
+                    },
+                    "rerunRunId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "rerunCaseStatus": {
+                        "type": "string"
+                    },
+                    "summaryMessage": {
+                        "type": "string"
+                    },
+                    "asOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalLedgerReconciliationCaseCreateRequest": {
+                "required": [
+                    "actor",
+                    "reason"
+                ],
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "actor": {
+                        "maxLength": 64,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "context": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    }
+                }
+            },
+            "ApiResponseInternalLedgerReconciliationCaseResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalLedgerReconciliationCaseResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalLedgerReconciliationCaseResponse": {
+                "type": "object",
+                "properties": {
+                    "caseId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "anomalyId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "runId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "previousStatus": {
+                        "type": "string"
+                    },
+                    "currentStatus": {
+                        "type": "string"
+                    },
+                    "changed": {
+                        "type": "boolean"
+                    },
+                    "created": {
+                        "type": "boolean"
+                    },
+                    "eventId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "anomalyType": {
+                        "type": "string"
+                    },
+                    "summaryMessage": {
+                        "type": "string"
+                    },
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "positionId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "executionId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "orderId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "clOrdId": {
+                        "type": "string"
+                    },
+                    "journalEntryId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "ledgerEntryId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "asOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalLedgerReconciliationCaseTransitionRequest": {
+                "required": [
+                    "actor",
+                    "reason",
+                    "status"
+                ],
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "minLength": 1,
+                        "pattern": "NEW|ACKNOWLEDGED|WAIVED|REPAIR_PENDING|RESOLVED|REOPENED",
+                        "type": "string"
+                    },
+                    "reason": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "actor": {
+                        "maxLength": 64,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "context": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    }
+                }
+            },
+            "InternalAccountStatusTransitionRequest": {
+                "required": [
+                    "actor",
+                    "memberId",
+                    "reason",
+                    "status"
+                ],
+                "type": "object",
+                "properties": {
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "status": {
+                        "minLength": 1,
+                        "pattern": "ACTIVE|FROZEN|CLOSED",
+                        "type": "string"
+                    },
+                    "reason": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "actor": {
+                        "maxLength": 64,
+                        "minLength": 0,
+                        "type": "string"
+                    },
+                    "context": {
+                        "maxLength": 255,
+                        "minLength": 0,
+                        "type": "string"
+                    }
+                }
+            },
+            "ApiResponseInternalAccountStatusTransitionResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalAccountStatusTransitionResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalAccountStatusTransitionResponse": {
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "previousStatus": {
+                        "type": "string"
+                    },
+                    "newStatus": {
+                        "type": "string"
+                    },
+                    "changed": {
+                        "type": "boolean"
+                    },
+                    "eventId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                    "actor": {
+                        "type": "string"
+                    },
+                    "context": {
+                        "type": "string"
+                    },
+                    "asOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalPortfolioRequest": {
+                "required": [
+                    "accountId",
+                    "symbol"
+                ],
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "symbol": {
+                        "minLength": 1,
+                        "type": "string"
+                    }
+                }
+            },
+            "ApiResponseInternalPortfolioResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalPortfolioResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalPortfolioResponse": {
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "accountNo": {
+                        "type": "string"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "quantity": {
+                        "type": "number"
+                    },
+                    "dailySellLimit": {
+                        "type": "number"
+                    },
+                    "todaySellQuantity": {
+                        "type": "number"
+                    }
+                }
+            },
+            "InternalAccountSummaryRequest": {
+                "required": [
+                    "memberId"
+                ],
+                "type": "object",
+                "properties": {
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            },
+            "ApiResponseInternalAccountPositionResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalAccountPositionResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalAccountPositionResponse": {
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "quantity": {
+                        "type": "number"
+                    },
+                    "availableQuantity": {
+                        "type": "number"
+                    },
+                    "availableQty": {
+                        "type": "number"
+                    },
+                    "balance": {
+                        "type": "number"
+                    },
+                    "availableBalance": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "asOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalAccountStatusRequest": {
+                "required": [
+                    "memberId"
+                ],
+                "type": "object",
+                "properties": {
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            },
+            "ApiResponseInternalAccountStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalAccountStatusResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalAccountStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "accountNumber": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "orderEligible": {
+                        "type": "boolean"
+                    },
+                    "denialCode": {
+                        "type": "string"
+                    },
+                    "asOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalAccountPositionRequest": {
+                "required": [
+                    "memberId",
+                    "symbol"
+                ],
+                "type": "object",
+                "properties": {
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "symbol": {
+                        "minLength": 1,
+                        "type": "string"
+                    }
+                }
+            },
+            "InternalAccountPositionsRequest": {
+                "required": [
+                    "memberId"
+                ],
+                "type": "object",
+                "properties": {
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            },
+            "ApiResponseListInternalAccountPositionResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InternalAccountPositionResponse"
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalAccountOrderHistoryRequest": {
+                "required": [
+                    "memberId"
+                ],
+                "type": "object",
+                "properties": {
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "page": {
+                        "minimum": 0,
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "size": {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                }
+            },
+            "ApiResponseInternalAccountOrderHistoryResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalAccountOrderHistoryResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalAccountOrderHistoryResponse": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Item"
+                        }
+                    },
+                    "totalElements": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "number": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                }
+            },
+            "Item": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "symbolName": {
+                        "type": "string"
+                    },
+                    "side": {
+                        "type": "string"
+                    },
+                    "qty": {
+                        "type": "number"
+                    },
+                    "unitPrice": {
+                        "type": "number"
+                    },
+                    "totalAmount": {
+                        "type": "number"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "clOrdId": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            }
+        }
     }
-  ],
-  "paths": {
-    "/internal/v1/portfolio": {
-      "get": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "portfolio",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalPortfolioRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalPortfolioResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "provisionPortfolio",
-        "parameters": [
-          {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InternalPortfolioProvisioningRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalPortfolioProvisioningResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/orders": {
-      "post": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "createOrder",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalOrderCreateRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalOrderResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/ledger-integrity/cases/{caseId}/rerun": {
-      "post": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "rerunLedgerReconciliationCase",
-        "parameters": [
-          {
-            "name": "caseId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InternalLedgerReconciliationRerunRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationRerunResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/ledger-integrity/cases/{caseId}/repairs": {
-      "post": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "applyLedgerRepair",
-        "parameters": [
-          {
-            "name": "caseId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InternalLedgerReconciliationRepairRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationRepairResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/ledger-integrity/anomalies/{anomalyId}/cases": {
-      "post": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "createLedgerReconciliationCase",
-        "parameters": [
-          {
-            "name": "anomalyId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InternalLedgerReconciliationCaseCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationCaseResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/ledger-integrity/cases/{caseId}": {
-      "patch": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "transitionLedgerReconciliationCase",
-        "parameters": [
-          {
-            "name": "caseId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InternalLedgerReconciliationCaseTransitionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalLedgerReconciliationCaseResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/accounts/{accountId}/status": {
-      "get": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "accountStatus",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalAccountStatusRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalAccountStatusResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "transitionAccountStatus",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InternalAccountStatusTransitionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalAccountStatusTransitionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/ping": {
-      "get": {
-        "tags": [
-          "corebank-controller"
-        ],
-        "operationId": "internalPing",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/orders/{clOrdId}/requery": {
-      "get": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "requeryOrder",
-        "parameters": [
-          {
-            "name": "clOrdId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-              "type": "string"
-            }
-          },
-          {
-            "name": "attemptCount",
-            "in": "query",
-            "description": "1-based requery attempt count from the scheduler. Unresolved results escalate when this reaches recovery.max-retry-count.",
-            "required": false,
-            "schema": {
-              "minimum": 1,
-              "type": "integer",
-              "description": "1-based requery attempt count from the scheduler. Unresolved results escalate when this reaches recovery.max-retry-count.",
-              "format": "int32",
-              "default": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalOrderResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/accounts/{accountId}/summary": {
-      "get": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "accountSummary",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalAccountSummaryRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalAccountPositionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/accounts/{accountId}/positions": {
-      "get": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "accountPosition",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalAccountPositionRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalAccountPositionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/accounts/{accountId}/positions/list": {
-      "get": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "accountPositions",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalAccountPositionsRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseListInternalAccountPositionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/accounts/{accountId}/orders": {
-      "get": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "accountOrderHistory",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalAccountOrderHistoryRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalAccountOrderHistoryResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/internal/v1/accounts/default": {
-      "get": {
-        "tags": [
-          "internal-corebank-controller"
-        ],
-        "operationId": "defaultAccountStatus",
-        "parameters": [
-          {
-            "name": "request",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/InternalAccountStatusRequest"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseInternalAccountStatusResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/ping": {
-      "get": {
-        "tags": [
-          "corebank-controller"
-        ],
-        "operationId": "ping",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/errors/boom": {
-      "get": {
-        "tags": [
-          "corebank-controller"
-        ],
-        "operationId": "boom",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    }
-  },
-  "components": {
-    "schemas": {
-      "InternalPortfolioProvisioningRequest": {
-        "type": "object",
-        "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "memberNo": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          }
-        }
-      },
-      "ApiErrorResponse": {
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "path": {
-            "type": "string"
-          },
-          "correlationId": {
-            "type": "string"
-          },
-          "userMessageKey": {
-            "type": "string"
-          },
-          "operatorCode": {
-            "type": "string"
-          },
-          "details": {
-            "type": "object",
-            "additionalProperties": true
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": true
-      },
-      "ApiResponseInternalPortfolioProvisioningResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalPortfolioProvisioningResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalPortfolioProvisioningResponse": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "accountNumber": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "idempotent": {
-            "type": "boolean"
-          },
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalOrderCreateRequest": {
-        "required": [
-          "accountId",
-          "clOrdId",
-          "price",
-          "quantity",
-          "side",
-          "symbol"
-        ],
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "clOrdId": {
-            "minLength": 1,
-            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-            "type": "string"
-          },
-          "symbol": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "side": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "quantity": {
-            "minimum": 0.0001,
-            "exclusiveMinimum": false,
-            "type": "number"
-          },
-          "price": {
-            "minimum": 0.0001,
-            "exclusiveMinimum": false,
-            "type": "number"
-          }
-        }
-      },
-      "ApiResponseInternalOrderResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalOrderResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalOrderResponse": {
-        "type": "object",
-        "properties": {
-          "orderId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "clOrdId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "externalSyncStatus": {
-            "type": "string"
-          },
-          "idempotent": {
-            "type": "boolean"
-          },
-          "orderQuantity": {
-            "type": "number"
-          },
-          "executionResult": {
-            "type": "string"
-          },
-          "executedQty": {
-            "type": "number"
-          },
-          "leavesQty": {
-            "type": "number"
-          },
-          "executedPrice": {
-            "type": "number"
-          },
-          "externalOrderId": {
-            "type": "string"
-          },
-          "executedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "message": {
-            "type": "string"
-          },
-          "retriable": {
-            "type": "boolean"
-          },
-          "escalationRequired": {
-            "type": "boolean"
-          },
-          "attemptCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "maxRetryCount": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "InternalLedgerReconciliationRerunRequest": {
-        "required": [
-          "actor",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "reason": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          },
-          "actor": {
-            "maxLength": 64,
-            "minLength": 0,
-            "type": "string"
-          },
-          "context": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponseInternalLedgerReconciliationRerunResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalLedgerReconciliationRerunResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalLedgerReconciliationRerunResponse": {
-        "type": "object",
-        "properties": {
-          "caseId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "previousStatus": {
-            "type": "string"
-          },
-          "currentStatus": {
-            "type": "string"
-          },
-          "changed": {
-            "type": "boolean"
-          },
-          "eventId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "rerunRunId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "anomalyStillPresent": {
-            "type": "boolean"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "actor": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "asOf": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalLedgerReconciliationRepairRequest": {
-        "required": [
-          "actor",
-          "reason",
-          "repairKey",
-          "repairType"
-        ],
-        "type": "object",
-        "properties": {
-          "repairKey": {
-            "maxLength": 64,
-            "minLength": 0,
-            "type": "string"
-          },
-          "repairType": {
-            "minLength": 1,
-            "pattern": "REBUILD_POSITION_FROM_EXECUTIONS|ATTACH_LEDGER_CL_ORD_REF|MARK_FALSE_POSITIVE",
-            "type": "string"
-          },
-          "reason": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          },
-          "actor": {
-            "maxLength": 64,
-            "minLength": 0,
-            "type": "string"
-          },
-          "context": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponseInternalLedgerReconciliationRepairResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalLedgerReconciliationRepairResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalLedgerReconciliationRepairResponse": {
-        "type": "object",
-        "properties": {
-          "repairId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "caseId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "repairKey": {
-            "type": "string"
-          },
-          "repairType": {
-            "type": "string"
-          },
-          "outcome": {
-            "type": "string"
-          },
-          "idempotent": {
-            "type": "boolean"
-          },
-          "mutated": {
-            "type": "boolean"
-          },
-          "caseStatus": {
-            "type": "string"
-          },
-          "rerunRunId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "rerunCaseStatus": {
-            "type": "string"
-          },
-          "summaryMessage": {
-            "type": "string"
-          },
-          "asOf": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalLedgerReconciliationCaseCreateRequest": {
-        "required": [
-          "actor",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "reason": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          },
-          "actor": {
-            "maxLength": 64,
-            "minLength": 0,
-            "type": "string"
-          },
-          "context": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponseInternalLedgerReconciliationCaseResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalLedgerReconciliationCaseResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalLedgerReconciliationCaseResponse": {
-        "type": "object",
-        "properties": {
-          "caseId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "anomalyId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "runId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "previousStatus": {
-            "type": "string"
-          },
-          "currentStatus": {
-            "type": "string"
-          },
-          "changed": {
-            "type": "boolean"
-          },
-          "created": {
-            "type": "boolean"
-          },
-          "eventId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "anomalyType": {
-            "type": "string"
-          },
-          "summaryMessage": {
-            "type": "string"
-          },
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "symbol": {
-            "type": "string"
-          },
-          "positionId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "executionId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "orderId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "clOrdId": {
-            "type": "string"
-          },
-          "journalEntryId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "ledgerEntryId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "asOf": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalLedgerReconciliationCaseTransitionRequest": {
-        "required": [
-          "actor",
-          "reason",
-          "status"
-        ],
-        "type": "object",
-        "properties": {
-          "status": {
-            "minLength": 1,
-            "pattern": "NEW|ACKNOWLEDGED|WAIVED|REPAIR_PENDING|RESOLVED|REOPENED",
-            "type": "string"
-          },
-          "reason": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          },
-          "actor": {
-            "maxLength": 64,
-            "minLength": 0,
-            "type": "string"
-          },
-          "context": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          }
-        }
-      },
-      "InternalAccountStatusTransitionRequest": {
-        "required": [
-          "actor",
-          "memberId",
-          "reason",
-          "status"
-        ],
-        "type": "object",
-        "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "status": {
-            "minLength": 1,
-            "pattern": "ACTIVE|FROZEN|CLOSED",
-            "type": "string"
-          },
-          "reason": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          },
-          "actor": {
-            "maxLength": 64,
-            "minLength": 0,
-            "type": "string"
-          },
-          "context": {
-            "maxLength": 255,
-            "minLength": 0,
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponseInternalAccountStatusTransitionResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalAccountStatusTransitionResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountStatusTransitionResponse": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "previousStatus": {
-            "type": "string"
-          },
-          "newStatus": {
-            "type": "string"
-          },
-          "changed": {
-            "type": "boolean"
-          },
-          "eventId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "actor": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "asOf": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalPortfolioRequest": {
-        "required": [
-          "accountId",
-          "symbol"
-        ],
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "symbol": {
-            "minLength": 1,
-            "type": "string"
-          }
-        }
-      },
-      "ApiResponseInternalPortfolioResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalPortfolioResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalPortfolioResponse": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "accountNo": {
-            "type": "string"
-          },
-          "symbol": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number"
-          },
-          "dailySellLimit": {
-            "type": "number"
-          },
-          "todaySellQuantity": {
-            "type": "number"
-          }
-        }
-      },
-      "InternalAccountSummaryRequest": {
-        "required": [
-          "memberId"
-        ],
-        "type": "object",
-        "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "ApiResponseInternalAccountPositionResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalAccountPositionResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountPositionResponse": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "symbol": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number"
-          },
-          "availableQuantity": {
-            "type": "number"
-          },
-          "availableQty": {
-            "type": "number"
-          },
-          "balance": {
-            "type": "number"
-          },
-          "availableBalance": {
-            "type": "number"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "asOf": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountStatusRequest": {
-        "required": [
-          "memberId"
-        ],
-        "type": "object",
-        "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "ApiResponseInternalAccountStatusResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalAccountStatusResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountStatusResponse": {
-        "type": "object",
-        "properties": {
-          "accountId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "accountNumber": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "orderEligible": {
-            "type": "boolean"
-          },
-          "denialCode": {
-            "type": "string"
-          },
-          "asOf": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountPositionRequest": {
-        "required": [
-          "memberId",
-          "symbol"
-        ],
-        "type": "object",
-        "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "symbol": {
-            "minLength": 1,
-            "type": "string"
-          }
-        }
-      },
-      "InternalAccountPositionsRequest": {
-        "required": [
-          "memberId"
-        ],
-        "type": "object",
-        "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "ApiResponseListInternalAccountPositionResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InternalAccountPositionResponse"
-            }
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountOrderHistoryRequest": {
-        "required": [
-          "memberId"
-        ],
-        "type": "object",
-        "properties": {
-          "memberId": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "page": {
-            "minimum": 0,
-            "type": "integer",
-            "format": "int32"
-          },
-          "size": {
-            "maximum": 100,
-            "minimum": 1,
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "ApiResponseInternalAccountOrderHistoryResponse": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          },
-          "data": {
-            "$ref": "#/components/schemas/InternalAccountOrderHistoryResponse"
-          },
-          "error": {
-            "$ref": "#/components/schemas/ApiErrorResponse"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "InternalAccountOrderHistoryResponse": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Item"
-            }
-          },
-          "totalElements": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "totalPages": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "number": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "size": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "Item": {
-        "type": "object",
-        "properties": {
-          "symbol": {
-            "type": "string"
-          },
-          "symbolName": {
-            "type": "string"
-          },
-          "side": {
-            "type": "string"
-          },
-          "qty": {
-            "type": "number"
-          },
-          "unitPrice": {
-            "type": "number"
-          },
-          "totalAmount": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string"
-          },
-          "clOrdId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      }
-    }
-  }
 }
