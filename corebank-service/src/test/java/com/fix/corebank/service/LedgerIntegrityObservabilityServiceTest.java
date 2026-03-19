@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -261,6 +262,22 @@ class LedgerIntegrityObservabilityServiceTest {
     assertThat(alertCounter("UNRESOLVED_BACKLOG")).isEqualTo(0.0d);
     assertThat(alertCounter("STALE_LAST_RUN")).isEqualTo(0.0d);
     assertThat(output.getOut()).doesNotContain("ledger_integrity_alert");
+  }
+
+  @Test
+  void shouldKeepDefaultMetricsWhenLedgerIntegritySchemaIsUnavailableDuringInitialization(CapturedOutput output) {
+    when(runRepository.findFirstByOrderByIdDesc()).thenThrow(
+        new InvalidDataAccessResourceUsageException("Table 'corebank_it.ledger_integrity_runs' doesn't exist")
+    );
+
+    service.initialize();
+
+    assertThat(meterRegistry.get("corebank.ledger.integrity.run.passed").gauge().value()).isEqualTo(-1.0d);
+    assertThat(meterRegistry.get("corebank.ledger.integrity.backlog.unresolved").gauge().value()).isEqualTo(0.0d);
+    assertThat(meterRegistry.get("corebank.ledger.integrity.backlog.repair_pending").gauge().value()).isEqualTo(0.0d);
+    assertThat(meterRegistry.get("corebank.ledger.integrity.backlog.critical").gauge().value()).isEqualTo(0.0d);
+    assertThat(meterRegistry.get("corebank.ledger.integrity.run.stale").gauge().value()).isEqualTo(1.0d);
+    assertThat(output.getOut()).contains("Skipping ledger integrity observability initialization");
   }
 
   @Test

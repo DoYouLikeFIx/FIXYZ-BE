@@ -13,7 +13,6 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.web.CommonHeaders;
-import com.fix.corebank.entity.LedgerIntegrityAnomalyRecord;
 import com.fix.corebank.filter.CorrelationIdFilter;
 import com.fix.corebank.repository.AccountRepository;
 import com.fix.corebank.repository.ExecutionRepository;
@@ -55,7 +54,6 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 class CorebankInternalApiSkeletonTest {
@@ -418,20 +416,10 @@ class CorebankInternalApiSkeletonTest {
 
   @Test
   void shouldReturnLedgerIntegritySummaryForInternalCaller() throws Exception {
-    LedgerIntegrityAnomalyRecord anomaly = LedgerIntegrityAnomalyRecord.of(
-        71L,
-        "NEGATIVE_POSITION",
-        "negative position",
-        1L,
-        "005930",
-        11L,
-        null,
-        21L,
-        CORE_CL_ORD_ID_1,
-        31L,
-        41L
-    );
-    ReflectionTestUtils.setField(anomaly, "id", 801L);
+    LedgerIntegrityFailedIdentifier identifier = mock(LedgerIntegrityFailedIdentifier.class);
+    when(identifier.getAnomalyId()).thenReturn(801L);
+    when(identifier.getAnomalyType()).thenReturn("NEGATIVE_POSITION");
+    when(identifier.getClOrdId()).thenReturn(CORE_CL_ORD_ID_1);
 
     when(ledgerIntegrityObservabilityService.readSummary()).thenReturn(
         LedgerIntegrityObservabilitySummary.of(
@@ -445,7 +433,7 @@ class CorebankInternalApiSkeletonTest {
             1L,
             false,
             71L,
-            List.of(LedgerIntegrityFailedIdentifier.from(anomaly))
+            List.of(identifier)
         )
     );
 
