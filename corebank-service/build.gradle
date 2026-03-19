@@ -58,6 +58,10 @@ tasks.named('check') {
   dependsOn tasks.named('verifyCommittedOpenApi')
 }
 
+tasks.withType(Test).configureEach {
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+}
+
 dependencies {
   implementation project(':core-common')
   implementation project(':corebank-domain')

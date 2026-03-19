@@ -176,7 +176,55 @@ class OrderSessionResponseSerializationTest {
   }
 
   @Test
-  void shouldRenderEscalatedTerminalContractWithPreservedExecutionFields() throws Exception {
+  void shouldRenderRequeryingContractWithMaskedExecutionFields() throws Exception {
+    OrderSessionResponse response = OrderSessionResponse.from(OrderSessionResult.of(
+        "sess-rq",
+        "cl-rq",
+        "REQUERYING",
+        true,
+        "ELEVATED_ORDER_RISK",
+        101L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000),
+        null,
+        null,
+        null,
+        null,
+        Instant.parse("2026-03-12T01:00:00Z"),
+        15L,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "FEP-KRX-90002",
+        "FAILED",
+        "UNKNOWN_EXECUTION_OUTCOME",
+        Instant.parse("2026-03-12T00:06:30Z"),
+        null,
+        Instant.parse("2026-03-12T00:00:00Z"),
+        Instant.parse("2026-03-12T00:07:00Z"),
+        false
+    ));
+
+    JsonNode data = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+    assertThat(data.path("status").asText()).isEqualTo("REQUERYING");
+    assertThat(data.path("executionResult").isNull()).isTrue();
+    assertThat(data.path("executedQty").isNull()).isTrue();
+    assertThat(data.path("leavesQty").isNull()).isTrue();
+    assertThat(data.path("executedPrice").isNull()).isTrue();
+    assertThat(data.path("externalOrderId").isNull()).isTrue();
+    assertThat(data.path("externalSyncStatus").isNull()).isTrue();
+    assertThat(data.path("failureReason").isNull()).isTrue();
+    assertThat(data.path("executedAt").isNull()).isTrue();
+    assertThat(data.path("canceledAt").isNull()).isTrue();
+  }
+
+  @Test
+  void shouldRenderEscalatedTerminalContractWithMaskedExecutionFields() throws Exception {
     OrderSessionResponse response = OrderSessionResponse.from(OrderSessionResult.of(
         "sess-esc",
         "cl-esc",
@@ -214,15 +262,15 @@ class OrderSessionResponseSerializationTest {
     assertThat(data.path("status").asText()).isEqualTo("ESCALATED");
     assertThat(data.has("expiresAt")).isFalse();
     assertThat(data.has("remainingSeconds")).isFalse();
-    assertThat(data.path("executionResult").asText()).isEqualTo("FILLED");
-    assertThat(data.path("executedQty").decimalValue()).isEqualByComparingTo("10");
-    assertThat(data.path("leavesQty").decimalValue()).isEqualByComparingTo("0");
-    assertThat(data.path("executedPrice").decimalValue()).isEqualByComparingTo("72000");
-    assertThat(data.path("externalOrderId").asText()).isEqualTo("FEP-KRX-90002");
-    assertThat(data.path("externalSyncStatus").asText()).isEqualTo("FAILED");
+    assertThat(data.path("executionResult").isNull()).isTrue();
+    assertThat(data.path("executedQty").isNull()).isTrue();
+    assertThat(data.path("leavesQty").isNull()).isTrue();
+    assertThat(data.path("executedPrice").isNull()).isTrue();
+    assertThat(data.path("externalOrderId").isNull()).isTrue();
+    assertThat(data.path("externalSyncStatus").isNull()).isTrue();
     assertThat(data.path("idempotent").isNull()).isTrue();
     assertThat(data.path("failureReason").asText()).isEqualTo("ESCALATED_MANUAL_REVIEW");
-    assertThat(data.path("executedAt").asText()).isEqualTo("2026-03-12T00:06:30Z");
+    assertThat(data.path("executedAt").isNull()).isTrue();
     assertThat(data.path("canceledAt").isNull()).isTrue();
   }
 

@@ -46,6 +46,7 @@ public record OrderSessionResponse(
 ) {
 
   public static OrderSessionResponse from(OrderSessionResult result) {
+    ExecutionView executionView = ExecutionView.from(result);
     return new OrderSessionResponse(
         result.getOrderSessionId(),
         result.getClOrdId(),
@@ -62,20 +63,63 @@ public record OrderSessionResponse(
         result.getQuoteAsOf(),
         result.getQuoteSourceMode(),
         result.getPreTradePrice(),
-        result.getExecutionResult(),
-        result.getExecutedQty(),
-        result.getLeavesQty(),
-        result.getExecutedPrice(),
-        result.getExternalOrderId(),
-        result.getExternalSyncStatus(),
+        executionView.executionResult(),
+        executionView.executedQty(),
+        executionView.leavesQty(),
+        executionView.executedPrice(),
+        executionView.externalOrderId(),
+        executionView.externalSyncStatus(),
         result.getIdempotent(),
-        result.getFailureReason(),
-        result.getExecutedAt(),
-        result.getCanceledAt(),
+        executionView.failureReason(),
+        executionView.executedAt(),
+        executionView.canceledAt(),
         result.getCreatedAt(),
         result.getUpdatedAt(),
         result.getExpiresAt(),
         result.getRemainingSeconds()
     );
+  }
+
+  private record ExecutionView(
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      String failureReason,
+      Instant executedAt,
+      Instant canceledAt
+  ) {
+
+    private static ExecutionView from(OrderSessionResult result) {
+      if ("REQUERYING".equals(result.getStatus())) {
+        return new ExecutionView(null, null, null, null, null, null, null, null, null);
+      }
+      if ("ESCALATED".equals(result.getStatus())) {
+        return new ExecutionView(
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            result.getFailureReason(),
+            null,
+            null
+        );
+      }
+      return new ExecutionView(
+          result.getExecutionResult(),
+          result.getExecutedQty(),
+          result.getLeavesQty(),
+          result.getExecutedPrice(),
+          result.getExternalOrderId(),
+          result.getExternalSyncStatus(),
+          result.getFailureReason(),
+          result.getExecutedAt(),
+          result.getCanceledAt()
+      );
+    }
   }
 }

@@ -2,7 +2,18 @@ spring:
   session:
     store-type: none
 
+channel:
+  audit-security-retention:
+    enabled: false
+
+auth:
+  password-recovery:
+    cleanup:
+      enabled: false
+
 order:
   session:
+    recovery:
+      enabled: false
     expiry-reconciliation:
       enabled: false

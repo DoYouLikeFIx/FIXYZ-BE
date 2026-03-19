@@ -91,6 +91,36 @@ class ChannelFlywayMigrationTest {
             + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'EXTERNAL_SYNC_STATUS'",
         Integer.class
     );
+    Integer orderSessionRecoveryAttemptCountColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'RECOVERY_ATTEMPT_COUNT'",
+        Integer.class
+    );
+    Integer orderSessionRecoveryNextAttemptAtColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'RECOVERY_NEXT_ATTEMPT_AT'",
+        Integer.class
+    );
+    Integer orderSessionRecoveryCursorIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' "
+            + "AND INDEX_NAME = 'IDX_ORDER_SESSIONS_RECOVERY_CURSOR'",
+        Integer.class
+    );
+    Integer manualRecoveryQueueTableCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MANUAL_RECOVERY_QUEUE_ENTRIES'",
+        Integer.class
+    );
+    Integer manualRecoveryPublishClaimTokenColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'MANUAL_RECOVERY_QUEUE_ENTRIES' AND COLUMN_NAME = 'PUBLISH_CLAIM_TOKEN'",
+        Integer.class
+    );
+    Integer manualRecoveryPublishClaimedAtColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'MANUAL_RECOVERY_QUEUE_ENTRIES' AND COLUMN_NAME = 'PUBLISH_CLAIMED_AT'",
+        Integer.class
+    );
     Integer membersTableCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MEMBERS'",
         Integer.class
@@ -173,6 +203,12 @@ class ChannelFlywayMigrationTest {
     assertThat(orderSessionExecutedAtColumnCount).isEqualTo(1);
     assertThat(orderSessionExternalSyncStatusColumnCount).isNotNull();
     assertThat(orderSessionExternalSyncStatusColumnCount).isEqualTo(1);
+    assertThat(orderSessionRecoveryAttemptCountColumnCount).isEqualTo(1);
+    assertThat(orderSessionRecoveryNextAttemptAtColumnCount).isEqualTo(1);
+    assertThat(orderSessionRecoveryCursorIndexCount).isEqualTo(1);
+    assertThat(manualRecoveryQueueTableCount).isEqualTo(1);
+    assertThat(manualRecoveryPublishClaimTokenColumnCount).isEqualTo(1);
+    assertThat(manualRecoveryPublishClaimedAtColumnCount).isEqualTo(1);
     assertThat(membersTableCount).isNotNull();
     assertThat(membersTableCount).isEqualTo(1);
     assertThat(auditUuidColumnCount).isEqualTo(1);

@@ -19,6 +19,7 @@ import com.fix.channel.vo.AccountPositionResult;
 import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryResult;
+import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
@@ -91,6 +92,55 @@ class CorebankClientTest {
         .isInstanceOf(BusinessException.class)
         .extracting(ex -> ((BusinessException) ex).getErrorCode())
         .isEqualTo(ErrorCode.CORE_DEPENDENCY_UNAVAILABLE);
+  }
+
+  @Test
+  void shouldMapRequeryResponseAndForwardAttemptCount() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174300/requery"))
+        .withQueryParam("attemptCount", equalTo("2"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "orderId": 99,
+                    "clOrdId": "123e4567-e89b-42d3-a456-426614174300",
+                    "status": "FILLED",
+                    "externalSyncStatus": "CONFIRMED",
+                    "executionResult": "FILLED",
+                    "executedQty": 1.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": 72000.0000,
+                    "externalOrderId": "FEP-300",
+                    "executedAt": "2026-03-10T00:00:00Z",
+                    "canceledAt": "2026-03-10T00:01:00Z",
+                    "message": null,
+                    "retriable": false,
+                    "escalationRequired": false,
+                    "attemptCount": 2,
+                    "maxRetryCount": 5
+                  }
+                }
+                """)));
+
+    OrderRequeryResult result = corebankClient.requeryOrder(
+        "123e4567-e89b-42d3-a456-426614174300",
+        2,
+        "trace-requery-2"
+    );
+
+    assertThat(result.getStatus()).isEqualTo("FILLED");
+    assertThat(result.getExternalSyncStatus()).isEqualTo("CONFIRMED");
+    assertThat(result.getAttemptCount()).isEqualTo(2);
+    assertThat(result.getMaxRetryCount()).isEqualTo(5);
+    assertThat(result.getCanceledAt()).isEqualTo(Instant.parse("2026-03-10T00:01:00Z"));
+
+    wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174300/requery"))
+        .withQueryParam("attemptCount", equalTo("2"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-requery-2")));
   }
 
   @Test

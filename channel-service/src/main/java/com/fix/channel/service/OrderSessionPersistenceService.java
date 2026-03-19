@@ -2,14 +2,18 @@ package com.fix.channel.service;
 
 import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
+import com.fix.channel.entity.ManualRecoveryQueueEntry;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
+import com.fix.channel.repository.ManualRecoveryQueueEntryRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import java.math.BigDecimal;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -24,8 +28,10 @@ public class OrderSessionPersistenceService {
   private static final List<OrderSessionStatus> EXPIRABLE_STATUSES =
       List.of(OrderSessionStatus.PENDING_NEW, OrderSessionStatus.AUTHED);
 
+  private final ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository;
   private final OrderSessionRepository orderSessionRepository;
   private final AuditLogService auditLogService;
+  private final Clock clock;
 
   @PersistenceContext
   private EntityManager entityManager;
@@ -101,35 +107,74 @@ public class OrderSessionPersistenceService {
 
   @Transactional
   OrderSession markAuthorized(OrderSession session) {
-    session.authorize();
+    OrderSession managedSession = managedSession(session);
+    managedSession.authorize();
     orderSessionRepository.flush();
-    recordOrderSessionAudit(session, AuditAction.ORDER_SESSION_OTP_VERIFIED, "clOrdId=" + session.getClOrdId());
-    return session;
+    recordOrderSessionAudit(
+        managedSession,
+        AuditAction.ORDER_SESSION_OTP_VERIFIED,
+        "clOrdId=" + managedSession.getClOrdId()
+    );
+    return managedSession;
   }
 
   @Transactional
   OrderSession extendSession(OrderSession session, Instant expiresAt) {
-    session.extendExpiry(expiresAt);
+    OrderSession managedSession = managedSession(session);
+    managedSession.extendExpiry(expiresAt);
     orderSessionRepository.flush();
     recordOrderSessionAudit(
-        session,
+        managedSession,
         AuditAction.ORDER_SESSION_EXTENDED,
-        "clOrdId=" + session.getClOrdId() + ", expiresAt=" + expiresAt
+        "clOrdId=" + managedSession.getClOrdId() + ", expiresAt=" + expiresAt
     );
-    return session;
+    return managedSession;
   }
 
   @Transactional
   void restoreExpiry(OrderSession session, Instant expiresAt) {
-    session.extendExpiry(expiresAt);
+    managedSession(session).extendExpiry(expiresAt);
     orderSessionRepository.flush();
   }
 
   @Transactional
   OrderSession markExecuting(OrderSession session) {
-    session.startExecuting();
+    OrderSession managedSession = managedSession(session);
+    managedSession.startExecuting();
     orderSessionRepository.flush();
-    return session;
+    return managedSession;
+  }
+
+  @Transactional
+  OrderSession markRequerying(OrderSession session, String failureReason) {
+    return markRequerying(session, failureReason, null, null, null, null, null, null, null);
+  }
+
+  @Transactional
+  OrderSession markRequerying(
+      OrderSession session,
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
+    OrderSession managedSession = managedSession(session);
+    managedSession.beginRequerying(
+        failureReason,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
+    orderSessionRepository.flush();
+    return managedSession;
   }
 
   @Transactional
@@ -143,7 +188,8 @@ public class OrderSessionPersistenceService {
       String externalSyncStatus,
       Instant executedAt
   ) {
-    session.complete(
+    OrderSession managedSession = managedSession(session);
+    managedSession.complete(
         executionResult,
         executedQty,
         leavesQty,
@@ -154,23 +200,56 @@ public class OrderSessionPersistenceService {
     );
     orderSessionRepository.flush();
     recordOrderSessionAudit(
-        session,
+        managedSession,
         AuditAction.ORDER_SESSION_EXECUTED,
-        "clOrdId=" + session.getClOrdId() + ", result=" + executionResult
+        "clOrdId=" + managedSession.getClOrdId() + ", result=" + executionResult
     );
-    return session;
+    return managedSession;
+  }
+
+  @Transactional
+  OrderSession markCanceled(
+      OrderSession session,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt,
+      Instant canceledAt
+  ) {
+    OrderSession managedSession = managedSession(session);
+    managedSession.cancel(
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt,
+        canceledAt
+    );
+    orderSessionRepository.flush();
+    recordOrderSessionAudit(
+        managedSession,
+        AuditAction.ORDER_SESSION_CANCELED,
+        "clOrdId=" + managedSession.getClOrdId() + ", result=" + executionResult
+    );
+    return managedSession;
   }
 
   @Transactional
   OrderSession markEscalated(OrderSession session, String failureReason) {
-    session.escalate(failureReason);
+    OrderSession managedSession = managedSession(session);
+    managedSession.escalate(failureReason);
     orderSessionRepository.flush();
     recordOrderSessionAudit(
-        session,
+        managedSession,
         AuditAction.ORDER_SESSION_ESCALATED,
-        "clOrdId=" + session.getClOrdId() + ", reason=" + failureReason
+        "clOrdId=" + managedSession.getClOrdId() + ", reason=" + failureReason
     );
-    return session;
+    return managedSession;
   }
 
   @Transactional
@@ -185,7 +264,8 @@ public class OrderSessionPersistenceService {
       String externalSyncStatus,
       Instant executedAt
   ) {
-    session.escalate(
+    OrderSession managedSession = managedSession(session);
+    managedSession.escalate(
         failureReason,
         executionResult,
         executedQty,
@@ -197,25 +277,151 @@ public class OrderSessionPersistenceService {
     );
     orderSessionRepository.flush();
     recordOrderSessionAudit(
-        session,
+        managedSession,
         AuditAction.ORDER_SESSION_ESCALATED,
-        "clOrdId=" + session.getClOrdId()
+        "clOrdId=" + managedSession.getClOrdId()
             + ", reason=" + failureReason
             + ", externalSyncStatus=" + externalSyncStatus
     );
-    return session;
+    return managedSession;
+  }
+
+  @Transactional
+  OrderSession markEscalatedAndEnqueueManualRecovery(
+      OrderSession session,
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt,
+      int attemptCount
+  ) {
+    OrderSession managedSession = managedSession(session);
+    managedSession.escalate(
+        failureReason,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
+    Instant now = clock.instant();
+    upsertManualRecoveryQueueEntry(
+        managedSession.getOrderSessionId(),
+        managedSession.getClOrdId(),
+        attemptCount,
+        failureReason,
+        now
+    );
+    entityManager.flush();
+    recordOrderSessionAudit(
+        managedSession,
+        AuditAction.ORDER_SESSION_ESCALATED,
+        "clOrdId=" + managedSession.getClOrdId()
+            + ", reason=" + failureReason
+            + ", externalSyncStatus=" + externalSyncStatus
+    );
+    return managedSession;
   }
 
   @Transactional
   OrderSession markFailed(OrderSession session, String failureReason) {
-    session.fail(failureReason);
+    OrderSession managedSession = managedSession(session);
+    managedSession.fail(failureReason);
     orderSessionRepository.flush();
     recordOrderSessionAudit(
-        session,
+        managedSession,
         AuditAction.ORDER_SESSION_FAILED,
-        "clOrdId=" + session.getClOrdId() + ", reason=" + failureReason
+        "clOrdId=" + managedSession.getClOrdId() + ", reason=" + failureReason
     );
-    return session;
+    return managedSession;
+  }
+
+  @Transactional(readOnly = true)
+  List<OrderSession> findTimedOutExecutingSessions(Instant cutoffTime, int batchSize) {
+    int effectiveBatchSize = Math.max(1, batchSize);
+    List<OrderSession> sessions = new ArrayList<>();
+    sessions.addAll(orderSessionRepository.findByStatusAndExecutingStartedAtLessThanEqualOrderByExecutingStartedAtAsc(
+        OrderSessionStatus.EXECUTING,
+        cutoffTime,
+        PageRequest.of(0, effectiveBatchSize)
+    ));
+    if (sessions.size() >= effectiveBatchSize) {
+      return sessions;
+    }
+
+    int remaining = effectiveBatchSize - sessions.size();
+    sessions.addAll(orderSessionRepository.findByStatusAndExecutingStartedAtIsNullAndUpdatedAtLessThanEqualOrderByUpdatedAtAsc(
+        OrderSessionStatus.EXECUTING,
+        cutoffTime,
+        PageRequest.of(0, remaining)
+    ));
+    return sessions;
+  }
+
+  @Transactional(readOnly = true)
+  List<OrderSession> findRequeryingSessionsAfter(
+      Instant eligibleAt,
+      Instant updatedAtCursor,
+      String orderSessionIdCursor,
+      int batchSize
+  ) {
+    PageRequest pageRequest = PageRequest.of(0, Math.max(1, batchSize));
+    if (updatedAtCursor == null || orderSessionIdCursor == null || orderSessionIdCursor.isBlank()) {
+      return orderSessionRepository.findEligibleByStatusOrderByUpdatedAtAscOrderSessionIdAsc(
+          OrderSessionStatus.REQUERYING,
+          eligibleAt,
+          pageRequest
+      );
+    }
+    return orderSessionRepository.findByStatusAfterUpdatedAtCursorOrderByUpdatedAtAscOrderSessionIdAsc(
+        OrderSessionStatus.REQUERYING,
+        eligibleAt,
+        updatedAtCursor,
+        orderSessionIdCursor,
+        pageRequest
+    );
+  }
+
+  private void upsertManualRecoveryQueueEntry(
+      String orderSessionId,
+      String clOrdId,
+      int attemptCount,
+      String reason,
+      Instant now
+  ) {
+    ManualRecoveryQueueEntry queueEntry = manualRecoveryQueueEntryRepository.findByOrderSessionId(orderSessionId)
+        .orElse(null);
+    if (queueEntry == null) {
+      manualRecoveryQueueEntryRepository.save(
+          ManualRecoveryQueueEntry.pending(orderSessionId, clOrdId, attemptCount, reason, now)
+      );
+      return;
+    }
+    queueEntry.refresh(attemptCount, reason, now);
+  }
+
+  private OrderSession managedSession(OrderSession session) {
+    if (session == null) {
+      throw new IllegalArgumentException("order session is required");
+    }
+    if (entityManager.contains(session)) {
+      return session;
+    }
+    if (session.getId() != null) {
+      return orderSessionRepository.findById(session.getId())
+          .orElseThrow(() -> new IllegalStateException("order session not found: " + session.getId()));
+    }
+    if (session.getOrderSessionId() != null) {
+      return orderSessionRepository.findByOrderSessionId(session.getOrderSessionId())
+          .orElseThrow(() -> new IllegalStateException("order session not found: " + session.getOrderSessionId()));
+    }
+    throw new IllegalStateException("order session reference is missing persistent identity");
   }
 
   private AuditLog expiredAuditLog(OrderSession session) {
