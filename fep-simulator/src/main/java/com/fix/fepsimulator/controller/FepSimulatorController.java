@@ -3,6 +3,9 @@ package com.fix.fepsimulator.controller;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -13,6 +16,8 @@ import com.fix.fepsimulator.service.FepSimulatorControlService;
 
 @RestController
 public class FepSimulatorController {
+
+  private static final Logger log = LoggerFactory.getLogger(FepSimulatorController.class);
 
   private final FepSimulatorControlService fepSimulatorControlService;
 
@@ -44,7 +49,19 @@ public class FepSimulatorController {
   }
 
   @GetMapping("/fep-internal/v1/ping")
-  public Map<String, String> internalPing() {
+  public Map<String, String> internalPing(
+      @Parameter(hidden = true)
+      @org.springframework.web.bind.annotation.RequestHeader(com.fix.common.web.CommonHeaders.X_CORRELATION_ID)
+      String correlationId,
+      @Parameter(hidden = true)
+      @org.springframework.web.bind.annotation.RequestHeader(com.fix.common.web.CommonHeaders.TRACEPARENT)
+      String traceparent
+  ) {
+    log.info(
+        "operation=SIMULATOR_TRACE_DIAGNOSTIC_RECEIVED correlationId={} traceparent={} boundary=open",
+        correlationId,
+        traceparent
+    );
     return Map.of("service", "fep-simulator", "boundary", "open");
   }
 }
