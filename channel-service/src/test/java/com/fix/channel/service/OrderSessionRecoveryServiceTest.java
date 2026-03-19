@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class OrderSessionRecoveryServiceTest {
@@ -39,6 +40,7 @@ class OrderSessionRecoveryServiceTest {
 
   private SimpleMeterRegistry meterRegistry;
   private OrderSessionRecoveryService recoveryService;
+  private long orderSessionEntityIdSequence;
 
   @BeforeEach
   void setUp() {
@@ -54,6 +56,7 @@ class OrderSessionRecoveryServiceTest {
         100,
         Duration.ofSeconds(30)
     );
+    orderSessionEntityIdSequence = 1L;
   }
 
   @Test
@@ -62,9 +65,9 @@ class OrderSessionRecoveryServiceTest {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174401");
     when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100)))
         .thenReturn(List.of(executing));
-    when(orderSessionService.beginRequerying(eq(executing), eq("EXECUTING_TIMEOUT")))
+    when(orderSessionService.beginRequerying(eq(executing.getOrderSessionId()), eq("EXECUTING_TIMEOUT")))
         .thenReturn(requerying);
-    when(orderSessionService.findRequeryingSessions(100)).thenReturn(List.of(requerying));
+    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
     when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
     when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(1);
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class)))
@@ -88,7 +91,7 @@ class OrderSessionRecoveryServiceTest {
 
     recoveryService.runRecoveryCycle();
 
-    verify(orderSessionService).beginRequerying(eq(executing), eq("EXECUTING_TIMEOUT"));
+    verify(orderSessionService).beginRequerying(eq(executing.getOrderSessionId()), eq("EXECUTING_TIMEOUT"));
     verify(corebankClient).requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class));
   }
 
@@ -96,7 +99,7 @@ class OrderSessionRecoveryServiceTest {
   void shouldConvergeToCompletedWhenRequeryReturnsFilled() {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174402");
     when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessions(100)).thenReturn(List.of(requerying));
+    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
     when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
     when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(2);
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(2), any(String.class)))
@@ -121,7 +124,7 @@ class OrderSessionRecoveryServiceTest {
     recoveryService.runRecoveryCycle();
 
     verify(orderSessionService).completeExecution(
-        eq(requerying),
+        eq(requerying.getOrderSessionId()),
         eq("FILLED"),
         eq(BigDecimal.ONE),
         eq(BigDecimal.ZERO),
@@ -141,7 +144,7 @@ class OrderSessionRecoveryServiceTest {
   void shouldConvergeToCompletedWhenRequeryReturnsAccepted() {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174412");
     when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessions(100)).thenReturn(List.of(requerying));
+    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
     when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
     when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(1);
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class)))
@@ -166,7 +169,7 @@ class OrderSessionRecoveryServiceTest {
     recoveryService.runRecoveryCycle();
 
     verify(orderSessionService).completeExecution(
-        eq(requerying),
+        eq(requerying.getOrderSessionId()),
         eq("FILLED"),
         eq(BigDecimal.ONE),
         eq(BigDecimal.ZERO),
@@ -181,7 +184,7 @@ class OrderSessionRecoveryServiceTest {
   void shouldEscalateWhenRequeryThresholdIsExceeded() {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174403");
     when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessions(100)).thenReturn(List.of(requerying));
+    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
     when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
     when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(5);
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(5), any(String.class)))
@@ -206,7 +209,7 @@ class OrderSessionRecoveryServiceTest {
     recoveryService.runRecoveryCycle();
 
     verify(orderSessionService).markEscalated(
-        eq(requerying),
+        eq(requerying.getOrderSessionId()),
         eq(OrderSession.ESCALATED_MANUAL_REVIEW),
         eq(null),
         eq(null),
@@ -233,7 +236,7 @@ class OrderSessionRecoveryServiceTest {
   void shouldRecordAttemptMetricForEachRequery() {
     OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174404");
     when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(100))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessions(100)).thenReturn(List.of(requerying));
+    when(orderSessionService.findRequeryingSessionsAfter(null, 100)).thenReturn(List.of(requerying));
     when(recoveryLockService.tryAcquire(requerying.getOrderSessionId())).thenReturn(true);
     when(attemptStore.nextAttempt(requerying.getOrderSessionId())).thenReturn(1);
     when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class)))
@@ -263,13 +266,13 @@ class OrderSessionRecoveryServiceTest {
   }
 
   @Test
-  void shouldNotLoopIndefinitelyWhenRequeryingBatchDoesNotConverge() {
+  void shouldPageThroughRequeryingSessionsWithoutStarvingLaterBatches() {
     OrderSession first = requeryingSession("123e4567-e89b-42d3-a456-426614174421");
     OrderSession second = requeryingSession("123e4567-e89b-42d3-a456-426614174422");
+    OrderSession third = requeryingSession("123e4567-e89b-42d3-a456-426614174423");
     when(orderSessionService.findTimedOutExecutingSessions(any(Instant.class), eq(2))).thenReturn(List.of());
-    when(orderSessionService.findRequeryingSessions(2))
-        .thenReturn(List.of(first, second))
-        .thenReturn(List.of(first, second));
+    when(orderSessionService.findRequeryingSessionsAfter(null, 2)).thenReturn(List.of(first, second));
+    when(orderSessionService.findRequeryingSessionsAfter(second.getId(), 2)).thenReturn(List.of(third));
     when(recoveryLockService.tryAcquire(any(String.class))).thenReturn(true);
     when(attemptStore.nextAttempt(any(String.class))).thenReturn(1);
     when(corebankClient.requeryOrder(any(String.class), eq(1), any(String.class)))
@@ -304,8 +307,9 @@ class OrderSessionRecoveryServiceTest {
     );
     smallBatchRecoveryService.runRecoveryCycle();
 
-    verify(orderSessionService, times(2)).findRequeryingSessions(2);
-    verify(corebankClient, times(2)).requeryOrder(any(String.class), eq(1), any(String.class));
+    verify(orderSessionService).findRequeryingSessionsAfter(null, 2);
+    verify(orderSessionService).findRequeryingSessionsAfter(second.getId(), 2);
+    verify(corebankClient, times(3)).requeryOrder(any(String.class), eq(1), any(String.class));
   }
 
   private OrderSession executingSession(String clOrdId) {
@@ -323,6 +327,7 @@ class OrderSessionRecoveryServiceTest {
         "TRUSTED_AUTH_SESSION",
         Instant.parse("2026-03-18T01:00:00Z")
     );
+    ReflectionTestUtils.setField(session, "id", orderSessionEntityIdSequence++);
     session.startExecuting();
     return session;
   }
