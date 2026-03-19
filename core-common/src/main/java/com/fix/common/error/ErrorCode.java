@@ -62,6 +62,7 @@ public enum ErrorCode {
   ORDER_SESSION_TOTP_REQUIRED("ORD-011", "TOTP enrollment required", 403),
   ORD_ACCOUNT_STATUS_BLOCKED("ORD-012", "Account status blocked", 422),
   RATE_LIMIT_EXCEEDED("RATE_001", "Rate limit exceeded", 429),
+  CONTRACT_RATE_LIMIT_EXCEEDED("RATE-001", "Rate limit exceeded", 429),
   FEP_GATEWAY_UNAVAILABLE("FEP-001", "Exchange service unavailable", 503),
   FEP_GATEWAY_TIMEOUT("FEP-002", "Exchange connectivity timeout", 504),
   FEP_ORDER_REJECTED("FEP-003", "Exchange rejected order", 400),
