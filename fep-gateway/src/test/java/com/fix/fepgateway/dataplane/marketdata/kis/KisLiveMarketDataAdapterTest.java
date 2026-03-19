@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.fepgateway.config.FepMarketDataProperties;
+import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataEventSink;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
+import com.fix.fepgateway.dataplane.marketdata.NormalizedQuoteEvent;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -17,20 +20,21 @@ import org.springframework.web.client.RestClient;
 
 class KisLiveMarketDataAdapterTest {
 
-  private static final MarketDataEventSink NO_OP_SINK = event -> {
-  };
-
   @Test
   void shouldConnectOnceAndSendSubscribePayload() throws Exception {
     FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
-    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient);
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort);
 
-    adapter.start(subscription("sub-005930", "005930"), NO_OP_SINK);
-    adapter.start(subscription("sub-000660", "000660"), NO_OP_SINK);
+    adapter.start(subscription("sub-005930", "005930"), event -> {
+    });
+    adapter.start(subscription("sub-000660", "000660"), event -> {
+    });
 
     assertThat(sessionClient.connectedUris())
         .containsExactly(URI.create("ws://ops.koreainvestment.com:31000"));
     assertThat(sessionClient.session().sentPayloads()).hasSize(2);
+    assertThat(persistencePort.activatedSubscriptions()).hasSize(2);
     assertThat(new ObjectMapper().readTree(sessionClient.session().sentPayloads().get(0))
         .path("body").path("input").path("tr_key").asText()).isEqualTo("005930");
     assertThat(new ObjectMapper().readTree(sessionClient.session().sentPayloads().get(1))
@@ -40,23 +44,31 @@ class KisLiveMarketDataAdapterTest {
   @Test
   void shouldAvoidDuplicateSubscribeForSameRemoteSubscription() {
     FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
-    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient);
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort);
 
-    adapter.start(subscription("sub-1", "005930"), NO_OP_SINK);
-    adapter.start(subscription("sub-2", "005930"), NO_OP_SINK);
+    adapter.start(subscription("sub-1", "005930"), event -> {
+    });
+    adapter.start(subscription("sub-2", "005930"), event -> {
+    });
 
     assertThat(sessionClient.session().sentPayloads()).hasSize(1);
+    assertThat(persistencePort.activatedSubscriptions()).hasSize(1);
   }
 
   @Test
   void shouldSendUnsubscribeAndCloseSessionWhenLastSubscriptionStops() throws Exception {
     FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
-    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient);
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort);
 
-    adapter.start(subscription("sub-005930", "005930"), NO_OP_SINK);
+    adapter.start(subscription("sub-005930", "005930"), event -> {
+    });
     adapter.stop("sub-005930");
 
     assertThat(sessionClient.session().sentPayloads()).hasSize(2);
+    assertThat(persistencePort.deactivatedSubscriptions()).extracting(MarketDataSubscriptionSpec::symbol)
+        .containsExactly("005930");
     assertThat(new ObjectMapper().readTree(sessionClient.session().sentPayloads().get(1))
         .path("header").path("tr_type").asText()).isEqualTo("2");
     assertThat(sessionClient.session().closed()).isTrue();
@@ -65,9 +77,10 @@ class KisLiveMarketDataAdapterTest {
   @Test
   void shouldCacheDecryptionContextFromSubscribeSuccessMessage() {
     FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
-    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient);
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, new RecordingPersistencePort());
 
-    adapter.start(subscription("sub-005930", "005930"), NO_OP_SINK);
+    adapter.start(subscription("sub-005930", "005930"), event -> {
+    });
     sessionClient.session().emit("""
         {
           "header": {
@@ -87,14 +100,37 @@ class KisLiveMarketDataAdapterTest {
         .hasValueSatisfying(context -> assertThat(context.iv()).isEqualTo("1234567890123456"));
   }
 
-  private KisLiveMarketDataAdapter newAdapter(FakeKisWebSocketSessionClient sessionClient) {
+  @Test
+  void shouldPersistRealtimeFrameAndDispatchSink() {
+    FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort);
+    AtomicReference<NormalizedQuoteEvent> sinkEvent = new AtomicReference<>();
+
+    adapter.start(subscription("sub-005930", "005930"), sinkEvent::set);
+    sessionClient.session().emit("0|H0STCNT0|001|" + recordPayload("005930", "093001", "70100", "70200", "70000", "20260319"));
+
+    assertThat(persistencePort.persistedEvents()).hasSize(1);
+    assertThat(persistencePort.persistedEvents().get(0).symbol()).isEqualTo("005930");
+    assertThat(persistencePort.persistedEvents().get(0).quoteAsOf()).isEqualTo(Instant.parse("2026-03-19T00:30:01Z"));
+    assertThat(sinkEvent.get()).isNotNull();
+    assertThat(sinkEvent.get().lastTrade()).isEqualTo(70100L);
+  }
+
+  private KisLiveMarketDataAdapter newAdapter(
+      FakeKisWebSocketSessionClient sessionClient,
+      LiveMarketDataPersistencePort persistencePort
+  ) {
     return new KisLiveMarketDataAdapter(
         liveProperties(),
         new KisApprovalKeyService(new StubKisApprovalClient("approval-key-001")),
         sessionClient,
         new KisWebSocketPayloadFactory(new ObjectMapper()),
         new KisWebSocketControlMessageParser(new ObjectMapper()),
-        new KisDecryptionContextStore()
+        new KisDecryptionContextStore(),
+        new KisH0stcnt0RecordParser(new KisRealtimeFrameParser(), new KisPayloadDecryptor()),
+        new KisH0stcnt0EventMapper(),
+        persistencePort
     );
   }
 
@@ -120,6 +156,28 @@ class KisLiveMarketDataAdapterTest {
         "H0STCNT0",
         symbol
     );
+  }
+
+  private String recordPayload(
+      String symbol,
+      String tradeHour,
+      String lastTrade,
+      String bestAsk,
+      String bestBid,
+      String businessDate
+  ) {
+    String[] fields = new String[KisH0stcnt0Record.RECORD_FIELD_COUNT];
+    Arrays.fill(fields, "");
+    fields[0] = symbol;
+    fields[1] = tradeHour;
+    fields[2] = lastTrade;
+    fields[10] = bestAsk;
+    fields[11] = bestBid;
+    fields[33] = businessDate;
+    fields[34] = "2";
+    fields[35] = "N";
+    fields[45] = "70500";
+    return String.join("^", fields);
   }
 
   private static final class StubKisApprovalClient extends KisApprovalClient {
@@ -196,6 +254,40 @@ class KisLiveMarketDataAdapterTest {
 
     private void emit(String message) {
       inboundTextHandler.accept(message);
+    }
+  }
+
+  private static final class RecordingPersistencePort implements LiveMarketDataPersistencePort {
+
+    private final List<MarketDataSubscriptionSpec> activatedSubscriptions = new ArrayList<>();
+    private final List<MarketDataSubscriptionSpec> deactivatedSubscriptions = new ArrayList<>();
+    private final List<NormalizedQuoteEvent> persistedEvents = new ArrayList<>();
+
+    @Override
+    public void activateSubscription(MarketDataSubscriptionSpec subscriptionSpec) {
+      activatedSubscriptions.add(subscriptionSpec);
+    }
+
+    @Override
+    public void deactivateSubscription(MarketDataSubscriptionSpec subscriptionSpec) {
+      deactivatedSubscriptions.add(subscriptionSpec);
+    }
+
+    @Override
+    public void persistSnapshot(MarketDataSubscriptionSpec subscriptionSpec, NormalizedQuoteEvent event) {
+      persistedEvents.add(event);
+    }
+
+    private List<MarketDataSubscriptionSpec> activatedSubscriptions() {
+      return activatedSubscriptions;
+    }
+
+    private List<MarketDataSubscriptionSpec> deactivatedSubscriptions() {
+      return deactivatedSubscriptions;
+    }
+
+    private List<NormalizedQuoteEvent> persistedEvents() {
+      return persistedEvents;
     }
   }
 }

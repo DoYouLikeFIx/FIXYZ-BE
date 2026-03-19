@@ -2,12 +2,15 @@ package com.fix.fepgateway.dataplane.marketdata.kis;
 
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.fepgateway.config.FepMarketDataProperties;
+import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataEventSink;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSourceAdapter;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
+import com.fix.fepgateway.dataplane.marketdata.NormalizedQuoteEvent;
 import java.net.URI;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,9 +28,13 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
   private final KisWebSocketPayloadFactory payloadFactory;
   private final KisWebSocketControlMessageParser controlMessageParser;
   private final KisDecryptionContextStore decryptionContextStore;
+  private final KisH0stcnt0RecordParser h0stcnt0RecordParser;
+  private final KisH0stcnt0EventMapper h0stcnt0EventMapper;
+  private final LiveMarketDataPersistencePort liveMarketDataPersistencePort;
 
   private final Map<String, ActiveSubscription> activeSubscriptions = new ConcurrentHashMap<>();
   private final Map<RemoteSubscriptionKey, Integer> remoteSubscriptionRefCounts = new ConcurrentHashMap<>();
+  private final AtomicLong streamOffsetSequence = new AtomicLong(0);
 
   private volatile KisWebSocketSession session;
 
@@ -37,7 +44,10 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
       KisWebSocketSessionClient sessionClient,
       KisWebSocketPayloadFactory payloadFactory,
       KisWebSocketControlMessageParser controlMessageParser,
-      KisDecryptionContextStore decryptionContextStore
+      KisDecryptionContextStore decryptionContextStore,
+      KisH0stcnt0RecordParser h0stcnt0RecordParser,
+      KisH0stcnt0EventMapper h0stcnt0EventMapper,
+      LiveMarketDataPersistencePort liveMarketDataPersistencePort
   ) {
     this.properties = properties;
     this.approvalKeyService = approvalKeyService;
@@ -45,6 +55,9 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
     this.payloadFactory = payloadFactory;
     this.controlMessageParser = controlMessageParser;
     this.decryptionContextStore = decryptionContextStore;
+    this.h0stcnt0RecordParser = h0stcnt0RecordParser;
+    this.h0stcnt0EventMapper = h0stcnt0EventMapper;
+    this.liveMarketDataPersistencePort = liveMarketDataPersistencePort;
   }
 
   @Override
@@ -79,6 +92,7 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
 
       if (requiresSubscribe) {
         sendSubscribe(activeSubscription.spec());
+        liveMarketDataPersistencePort.activateSubscription(activeSubscription.spec());
       }
     } catch (RuntimeException exception) {
       activeSubscriptions.remove(subscriptionSpec.subscriptionId());
@@ -98,6 +112,7 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
     boolean requiresUnsubscribe = decrementRemoteSubscription(activeSubscription.remoteKey()) == 0;
     if (requiresUnsubscribe && session != null && session.isOpen()) {
       sendUnsubscribe(activeSubscription.spec());
+      liveMarketDataPersistencePort.deactivateSubscription(activeSubscription.spec());
     }
 
     closeSessionIfIdle();
@@ -119,16 +134,16 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
   }
 
   void handleInboundText(String inboundText) {
-    if (inboundText == null || inboundText.isBlank() || !inboundText.stripLeading().startsWith("{")) {
+    if (inboundText == null || inboundText.isBlank()) {
       return;
     }
 
-    controlMessageParser.parse(inboundText).ifPresent(controlMessage -> {
-      if (controlMessage.isSubscribeSuccess() && controlMessage.hasDecryptionContext()) {
-        decryptionContextStore.put(controlMessage.trId(), controlMessage.decryptionContext());
-        log.debug("Cached KIS websocket decryption context for trId={}", controlMessage.trId());
-      }
-    });
+    if (inboundText.stripLeading().startsWith("{")) {
+      handleControlMessage(inboundText);
+      return;
+    }
+
+    handleRealtimeFrame(inboundText);
   }
 
   private void ensureSession() {
@@ -160,6 +175,72 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
       throw new IllegalStateException("KIS websocket session is not open");
     }
     session.sendText(payload);
+  }
+
+  private void handleControlMessage(String inboundText) {
+    try {
+      controlMessageParser.parse(inboundText).ifPresent(controlMessage -> {
+        if (controlMessage.isSubscribeSuccess() && controlMessage.hasDecryptionContext()) {
+          decryptionContextStore.put(controlMessage.trId(), controlMessage.decryptionContext());
+          log.debug("Cached KIS websocket decryption context for trId={}", controlMessage.trId());
+        }
+      });
+    } catch (RuntimeException exception) {
+      log.warn("Failed to handle KIS websocket control message", exception);
+    }
+  }
+
+  private void handleRealtimeFrame(String inboundText) {
+    try {
+      var records = h0stcnt0RecordParser.parse(
+          inboundText,
+          decryptionContextStore.find(KisH0stcnt0Record.TR_ID).orElse(null)
+      );
+
+      for (KisH0stcnt0Record record : records) {
+        MarketDataSubscriptionSpec persistenceSpec = resolvePersistenceSpec(record.symbol(), KisH0stcnt0Record.TR_ID);
+        NormalizedQuoteEvent event = h0stcnt0EventMapper.toLiveEvent(
+            record,
+            streamOffsetSequence.getAndIncrement()
+        );
+        liveMarketDataPersistencePort.persistSnapshot(persistenceSpec, event);
+        publishToMatchingSinks(record.symbol(), KisH0stcnt0Record.TR_ID, event);
+      }
+    } catch (RuntimeException exception) {
+      log.warn("Failed to handle KIS realtime frame", exception);
+    }
+  }
+
+  private MarketDataSubscriptionSpec resolvePersistenceSpec(String symbol, String trId) {
+    return activeSubscriptions.values().stream()
+        .map(ActiveSubscription::spec)
+        .filter(spec -> trId.equals(spec.trId()) && symbol.equals(spec.trKey()))
+        .findFirst()
+        .orElseGet(() -> new MarketDataSubscriptionSpec(
+            "kis-live-runtime-" + symbol,
+            provider(),
+            symbol,
+            sourceMode(),
+            trId,
+            symbol
+        ));
+  }
+
+  private void publishToMatchingSinks(String symbol, String trId, NormalizedQuoteEvent event) {
+    activeSubscriptions.values().stream()
+        .filter(activeSubscription -> trId.equals(activeSubscription.spec().trId()))
+        .filter(activeSubscription -> symbol.equals(activeSubscription.spec().trKey()))
+        .forEach(activeSubscription -> {
+          try {
+            activeSubscription.eventSink().accept(event);
+          } catch (RuntimeException exception) {
+            log.warn(
+                "Failed to dispatch KIS market-data event to sink. subscriptionId={}",
+                activeSubscription.spec().subscriptionId(),
+                exception
+            );
+          }
+        });
   }
 
   private int decrementRemoteSubscription(RemoteSubscriptionKey remoteKey) {

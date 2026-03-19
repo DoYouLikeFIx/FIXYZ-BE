@@ -139,6 +139,12 @@ public class MarketDataSubscription extends BaseTimeEntity {
     this.lastQuoteAsOf = lastQuoteAsOf;
   }
 
+  public void synchronizeRouting(String subscriptionId, String trId, String trKey) {
+    this.subscriptionId = subscriptionId;
+    this.trId = trId;
+    this.trKey = trKey;
+  }
+
   public void activate() {
     this.active = true;
   }

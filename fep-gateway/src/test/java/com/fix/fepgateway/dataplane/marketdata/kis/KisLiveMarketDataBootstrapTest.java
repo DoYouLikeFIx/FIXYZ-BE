@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.fepgateway.config.FepMarketDataProperties;
+import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataEventSink;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
+import com.fix.fepgateway.dataplane.marketdata.NormalizedQuoteEvent;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -64,7 +66,10 @@ class KisLiveMarketDataBootstrapTest {
           (uri, inboundTextHandler) -> new NoOpSession(),
           new KisWebSocketPayloadFactory(new ObjectMapper()),
           new KisWebSocketControlMessageParser(new ObjectMapper()),
-          new KisDecryptionContextStore()
+          new KisDecryptionContextStore(),
+          new KisH0stcnt0RecordParser(new KisRealtimeFrameParser(), new KisPayloadDecryptor()),
+          new KisH0stcnt0EventMapper(),
+          new NoOpPersistencePort()
       );
     }
 
@@ -105,6 +110,20 @@ class KisLiveMarketDataBootstrapTest {
     @Override
     public KisApprovalKey issueApprovalKey() {
       return new KisApprovalKey("unused", Instant.parse("2026-03-19T00:00:00Z"));
+    }
+  }
+
+  private static final class NoOpPersistencePort implements LiveMarketDataPersistencePort {
+    @Override
+    public void activateSubscription(MarketDataSubscriptionSpec subscriptionSpec) {
+    }
+
+    @Override
+    public void deactivateSubscription(MarketDataSubscriptionSpec subscriptionSpec) {
+    }
+
+    @Override
+    public void persistSnapshot(MarketDataSubscriptionSpec subscriptionSpec, NormalizedQuoteEvent event) {
     }
   }
 }
