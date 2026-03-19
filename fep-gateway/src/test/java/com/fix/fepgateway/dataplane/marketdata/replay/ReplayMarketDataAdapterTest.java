@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.fepgateway.config.FepMarketDataProperties;
 import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataMetrics;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
 import com.fix.fepgateway.dataplane.marketdata.NormalizedQuoteEvent;
 import com.fix.fepgateway.dataplane.marketdata.QuoteSnapshotFactory;
 import com.fix.fepgateway.dataplane.marketdata.QuoteSnapshotIdGenerator;
 import com.fix.fepgateway.dataplane.marketdata.ReplayCursorSpec;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,11 +24,13 @@ class ReplayMarketDataAdapterTest {
   void shouldPersistReplaySnapshotAndAdvanceCursor() {
     RecordingPersistencePort persistencePort = new RecordingPersistencePort();
     FakeReplayCursorPersistencePort cursorPersistencePort = new FakeReplayCursorPersistencePort();
+    SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     ReplayMarketDataAdapter adapter = new ReplayMarketDataAdapter(
         replayProperties(),
         persistencePort,
         cursorPersistencePort,
-        new ReplayQuoteEventGenerator()
+        new ReplayQuoteEventGenerator(),
+        new MarketDataMetrics(meterRegistry)
     );
     AtomicReference<NormalizedQuoteEvent> sinkEvent = new AtomicReference<>();
 
@@ -39,6 +43,8 @@ class ReplayMarketDataAdapterTest {
     assertThat(cursorPersistencePort.findByReplayId(cursorPersistencePort.lastReplayId()).orElseThrow().cursorOffset())
         .isEqualTo(1L);
     assertThat(sinkEvent.get()).isNotNull();
+    assertThat(meterRegistry.get("fep.marketdata.replay.active.subscriptions").gauge().value()).isEqualTo(1.0d);
+    assertThat(meterRegistry.get("fep.marketdata.replay.active.streams").gauge().value()).isEqualTo(1.0d);
   }
 
   @Test

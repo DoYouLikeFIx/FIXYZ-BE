@@ -15,6 +15,7 @@ public class LiveMarketDataPersistenceService implements LiveMarketDataPersisten
   private final MarketDataSubscriptionRepository marketDataSubscriptionRepository;
   private final QuoteSnapshotRepository quoteSnapshotRepository;
   private final QuoteSnapshotFactory quoteSnapshotFactory;
+  private final MarketDataMetrics marketDataMetrics;
 
   @Override
   @Transactional
@@ -48,6 +49,7 @@ public class LiveMarketDataPersistenceService implements LiveMarketDataPersisten
     QuoteSnapshot snapshot = quoteSnapshotFactory.create(event);
     if (quoteSnapshotRepository.findByQuoteSnapshotId(snapshot.getQuoteSnapshotId()).isEmpty()) {
       quoteSnapshotRepository.save(snapshot);
+      marketDataMetrics.recordSnapshotPersisted(event);
     }
 
     MarketDataSubscription subscription = findOrCreateSubscription(subscriptionSpec);

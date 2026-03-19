@@ -6,6 +6,8 @@ import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.fepgateway.entity.MarketDataSubscription;
 import com.fix.fepgateway.repository.MarketDataSubscriptionRepository;
 import com.fix.fepgateway.repository.QuoteSnapshotRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +28,9 @@ class LiveMarketDataPersistenceServiceTest {
   @Autowired
   private QuoteSnapshotRepository quoteSnapshotRepository;
 
+  @Autowired
+  private MeterRegistry meterRegistry;
+
   @AfterEach
   void cleanUp() {
     quoteSnapshotRepository.deleteAll();
@@ -36,6 +41,10 @@ class LiveMarketDataPersistenceServiceTest {
   void shouldPersistLiveSnapshotAndAdvanceSubscriptionProgress() {
     MarketDataSubscriptionSpec subscriptionSpec = liveSubscription("bootstrap-005930", "005930");
     NormalizedQuoteEvent event = liveEvent("005930", 17L, Instant.parse("2026-03-19T00:30:01Z"));
+    Counter counterBefore = meterRegistry.find("fep.marketdata.snapshots.persisted")
+        .tags("provider", "KIS", "source_mode", "LIVE")
+        .counter();
+    double persistedCountBefore = counterBefore == null ? 0.0d : counterBefore.count();
 
     liveMarketDataPersistencePort.activateSubscription(subscriptionSpec);
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
@@ -50,6 +59,11 @@ class LiveMarketDataPersistenceServiceTest {
     assertThat(subscription.getLastEventOffset()).isEqualTo(17L);
     assertThat(subscription.getLastQuoteAsOf()).isEqualTo(Instant.parse("2026-03-19T00:30:01Z"));
     assertThat(subscription.isActive()).isTrue();
+    assertThat(meterRegistry.get("fep.marketdata.snapshots.persisted")
+        .tag("provider", "KIS")
+        .tag("source_mode", "LIVE")
+        .counter()
+        .count()).isEqualTo(persistedCountBefore + 1.0d);
   }
 
   @Test

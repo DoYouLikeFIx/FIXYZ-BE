@@ -3,6 +3,7 @@ package com.fix.fepgateway.dataplane.marketdata.replay;
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.fepgateway.config.FepMarketDataProperties;
 import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataMetrics;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataEventSink;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSourceAdapter;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
@@ -32,6 +33,7 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
   private final LiveMarketDataPersistencePort marketDataPersistencePort;
   private final ReplayCursorPersistencePort replayCursorPersistencePort;
   private final ReplayQuoteEventGenerator replayQuoteEventGenerator;
+  private final MarketDataMetrics marketDataMetrics;
 
   private final Map<String, ActiveReplaySubscription> activeSubscriptions = new ConcurrentHashMap<>();
   private final Map<String, ReplayStreamState> replayStreams = new ConcurrentHashMap<>();
@@ -42,12 +44,30 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
       FepMarketDataProperties properties,
       LiveMarketDataPersistencePort marketDataPersistencePort,
       ReplayCursorPersistencePort replayCursorPersistencePort,
-      ReplayQuoteEventGenerator replayQuoteEventGenerator
+      ReplayQuoteEventGenerator replayQuoteEventGenerator,
+      MarketDataMetrics marketDataMetrics
   ) {
     this.properties = properties;
     this.marketDataPersistencePort = marketDataPersistencePort;
     this.replayCursorPersistencePort = replayCursorPersistencePort;
     this.replayQuoteEventGenerator = replayQuoteEventGenerator;
+    this.marketDataMetrics = marketDataMetrics;
+    refreshMetrics();
+  }
+
+  ReplayMarketDataAdapter(
+      FepMarketDataProperties properties,
+      LiveMarketDataPersistencePort marketDataPersistencePort,
+      ReplayCursorPersistencePort replayCursorPersistencePort,
+      ReplayQuoteEventGenerator replayQuoteEventGenerator
+  ) {
+    this(
+        properties,
+        marketDataPersistencePort,
+        replayCursorPersistencePort,
+        replayQuoteEventGenerator,
+        MarketDataMetrics.noOp()
+    );
   }
 
   @Override
@@ -79,6 +99,7 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
       replayStreams.put(replayId, new ReplayStreamState(subscriptionSpec, activatedCursor));
       marketDataPersistencePort.activateSubscription(subscriptionSpec);
     }
+    refreshMetrics();
   }
 
   @Override
@@ -102,6 +123,7 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
         return streamState;
       });
     }
+    refreshMetrics();
   }
 
   @Scheduled(fixedDelayString = "${fep.marketdata.replay.drain-interval-ms:1000}")
@@ -142,6 +164,7 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
     activeSubscriptions.clear();
     replayStreamRefCounts.clear();
     replayStreams.clear();
+    refreshMetrics();
   }
 
   private void emitNextReplayEvent(String replayId, MarketDataSubscriptionSpec representativeSpec) {
@@ -174,6 +197,7 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
           try {
             activeReplaySubscription.eventSink().accept(event);
           } catch (RuntimeException exception) {
+            marketDataMetrics.recordDispatchFailure(provider(), sourceMode());
             log.warn(
                 "Failed to dispatch replay event to sink. subscriptionId={}",
                 activeReplaySubscription.spec().subscriptionId(),
@@ -219,6 +243,10 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
     if (subscriptionSpec.sourceMode() != FepQuoteSourceMode.REPLAY) {
       throw new IllegalArgumentException("subscriptionSpec.sourceMode must be REPLAY");
     }
+  }
+
+  private void refreshMetrics() {
+    marketDataMetrics.updateReplayState(activeSubscriptions.size(), replayStreams.size());
   }
 
   private static final class ReplayStreamState {

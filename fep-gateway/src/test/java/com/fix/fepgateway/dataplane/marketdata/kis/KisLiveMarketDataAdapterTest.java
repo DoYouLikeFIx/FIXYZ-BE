@@ -6,9 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.fepgateway.config.FepMarketDataProperties;
 import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataMetrics;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataEventSink;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
 import com.fix.fepgateway.dataplane.marketdata.NormalizedQuoteEvent;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -104,7 +106,8 @@ class KisLiveMarketDataAdapterTest {
   void shouldPersistRealtimeFrameAndDispatchSink() {
     FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
     RecordingPersistencePort persistencePort = new RecordingPersistencePort();
-    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort);
+    SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort, meterRegistry);
     AtomicReference<NormalizedQuoteEvent> sinkEvent = new AtomicReference<>();
 
     adapter.start(subscription("sub-005930", "005930"), sinkEvent::set);
@@ -117,9 +120,48 @@ class KisLiveMarketDataAdapterTest {
     assertThat(sinkEvent.get().lastTrade()).isEqualTo(70100L);
   }
 
+  @Test
+  void shouldReconnectAndResubscribeActiveRoutesWhenSessionDrops() throws Exception {
+    FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort, meterRegistry);
+
+    adapter.start(subscription("sub-005930", "005930"), event -> {
+    });
+    adapter.start(subscription("sub-000660", "000660"), event -> {
+    });
+    sessionClient.session().disconnectUnexpectedly();
+
+    assertThat(adapter.reconnectIfNecessary()).isTrue();
+    assertThat(sessionClient.connectedUris()).hasSize(2);
+    assertThat(sessionClient.sessions().get(1).sentPayloads()).hasSize(2);
+    assertThat(new ObjectMapper().readTree(sessionClient.sessions().get(1).sentPayloads().get(0))
+        .path("body").path("input").path("tr_key").asText()).isEqualTo("000660");
+    assertThat(new ObjectMapper().readTree(sessionClient.sessions().get(1).sentPayloads().get(1))
+        .path("body").path("input").path("tr_key").asText()).isEqualTo("005930");
+    assertThat(meterRegistry.get("fep.marketdata.reconnect.attempts")
+        .tag("provider", "KIS")
+        .counter()
+        .count()).isEqualTo(1.0d);
+    assertThat(meterRegistry.get("fep.marketdata.reconnect.success")
+        .tag("provider", "KIS")
+        .counter()
+        .count()).isEqualTo(1.0d);
+    assertThat(meterRegistry.get("fep.marketdata.kis.session.open").gauge().value()).isEqualTo(1.0d);
+  }
+
   private KisLiveMarketDataAdapter newAdapter(
       FakeKisWebSocketSessionClient sessionClient,
       LiveMarketDataPersistencePort persistencePort
+  ) {
+    return newAdapter(sessionClient, persistencePort, new SimpleMeterRegistry());
+  }
+
+  private KisLiveMarketDataAdapter newAdapter(
+      FakeKisWebSocketSessionClient sessionClient,
+      LiveMarketDataPersistencePort persistencePort,
+      SimpleMeterRegistry meterRegistry
   ) {
     return new KisLiveMarketDataAdapter(
         liveProperties(),
@@ -130,7 +172,8 @@ class KisLiveMarketDataAdapterTest {
         new KisDecryptionContextStore(),
         new KisH0stcnt0RecordParser(new KisRealtimeFrameParser(), new KisPayloadDecryptor()),
         new KisH0stcnt0EventMapper(),
-        persistencePort
+        persistencePort,
+        new MarketDataMetrics(meterRegistry)
     );
   }
 
@@ -198,12 +241,14 @@ class KisLiveMarketDataAdapterTest {
   private static final class FakeKisWebSocketSessionClient implements KisWebSocketSessionClient {
 
     private final List<URI> connectedUris = new ArrayList<>();
+    private final List<FakeKisWebSocketSession> sessions = new ArrayList<>();
     private final AtomicReference<FakeKisWebSocketSession> session = new AtomicReference<>();
 
     @Override
     public KisWebSocketSession connect(URI uri, java.util.function.Consumer<String> inboundTextHandler) {
       connectedUris.add(uri);
       FakeKisWebSocketSession fakeSession = new FakeKisWebSocketSession(inboundTextHandler);
+      sessions.add(fakeSession);
       session.set(fakeSession);
       return fakeSession;
     }
@@ -214,6 +259,10 @@ class KisLiveMarketDataAdapterTest {
 
     private FakeKisWebSocketSession session() {
       return session.get();
+    }
+
+    private List<FakeKisWebSocketSession> sessions() {
+      return sessions;
     }
   }
 
@@ -254,6 +303,10 @@ class KisLiveMarketDataAdapterTest {
 
     private void emit(String message) {
       inboundTextHandler.accept(message);
+    }
+
+    private void disconnectUnexpectedly() {
+      open = false;
     }
   }
 
