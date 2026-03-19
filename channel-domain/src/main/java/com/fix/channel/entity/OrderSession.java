@@ -313,10 +313,53 @@ public class OrderSession extends BaseTimeEntity {
   }
 
   public void beginRequerying(String failureReason) {
+    beginRequerying(
+        failureReason,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+    );
+  }
+
+  public void beginRequerying(
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
     transitionTo(OrderSessionStatus.REQUERYING, transitionMessage(OrderSessionStatus.REQUERYING));
     this.status = OrderSessionStatus.REQUERYING;
     this.executingStartedAt = null;
     this.failureReason = requireFailureReason(failureReason);
+    if (hasExecutionSnapshot(
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    )) {
+      applyExecutionOutcome(
+          executionResult,
+          executedQty,
+          leavesQty,
+          executedPrice,
+          externalOrderId,
+          externalSyncStatus,
+          executedAt
+      );
+      return;
+    }
+    clearExecutionOutcome();
   }
 
   public void complete(
@@ -338,6 +381,32 @@ public class OrderSession extends BaseTimeEntity {
         externalOrderId,
         externalSyncStatus,
         executedAt
+    );
+    this.failureReason = null;
+    this.executingStartedAt = null;
+  }
+
+  public void cancel(
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt,
+      Instant canceledAt
+  ) {
+    transitionTo(OrderSessionStatus.CANCELED, transitionMessage(OrderSessionStatus.CANCELED));
+    this.status = OrderSessionStatus.CANCELED;
+    applyExecutionOutcome(
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt,
+        canceledAt
     );
     this.failureReason = null;
     this.executingStartedAt = null;
@@ -418,6 +487,28 @@ public class OrderSession extends BaseTimeEntity {
       String externalSyncStatus,
       Instant executedAt
   ) {
+    applyExecutionOutcome(
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt,
+        null
+    );
+  }
+
+  private void applyExecutionOutcome(
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt,
+      Instant canceledAt
+  ) {
     this.executionResult = executionResult;
     this.executedQty = executedQty;
     this.leavesQty = leavesQty;
@@ -425,7 +516,25 @@ public class OrderSession extends BaseTimeEntity {
     this.externalOrderId = externalOrderId;
     this.externalSyncStatus = externalSyncStatus;
     this.executedAt = executedAt;
-    this.canceledAt = null;
+    this.canceledAt = canceledAt;
+  }
+
+  private boolean hasExecutionSnapshot(
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
+    return executionResult != null
+        || executedQty != null
+        || leavesQty != null
+        || executedPrice != null
+        || externalOrderId != null
+        || externalSyncStatus != null
+        || executedAt != null;
   }
 
   private String requireFailureReason(String failureReason) {
