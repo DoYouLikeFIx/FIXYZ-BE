@@ -37,6 +37,19 @@ class LogPiiMaskingTest {
   }
 
   @Test
+  void shouldPreserveFollowingFieldsWhenMaskingQueryStringStyleAccountAssignments() {
+    String sanitized = LogPiiMasking.sanitizeText("accountNumber=110123456789&otp=654321&token=reset-token-123");
+
+    assertThat(sanitized)
+        .contains("accountNumber=110-****-6789")
+        .contains("&otp=[REDACTED]")
+        .contains("&token=[REDACTED]")
+        .doesNotContain("110123456789")
+        .doesNotContain("654321")
+        .doesNotContain("reset-token-123");
+  }
+
+  @Test
   void shouldRedactStructuredJsonSensitiveFields() {
     String sanitized = LogPiiMasking.sanitizeText(
         """
