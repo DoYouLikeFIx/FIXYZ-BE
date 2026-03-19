@@ -2,26 +2,26 @@
   "primaryName": "Channel Service",
   "specs": [
     {
-      "buildOutput": "BE/channel-service/build/openapi/channel-service.json",
-      "contractSource": "BE/contracts/openapi/channel-service.json",
+      "buildOutput": "channel-service/build/openapi/channel-service.json",
+      "contractSource": "contracts/openapi/channel-service.json",
       "publishedFile": "channel.json",
       "displayName": "Channel Service"
     },
     {
-      "buildOutput": "BE/corebank-service/build/openapi/corebank-service.json",
-      "contractSource": "BE/contracts/openapi/corebank-service.json",
+      "buildOutput": "corebank-service/build/openapi/corebank-service.json",
+      "contractSource": "contracts/openapi/corebank-service.json",
       "publishedFile": "corebank.json",
       "displayName": "CoreBank Service"
     },
     {
-      "buildOutput": "BE/fep-gateway/build/openapi/fep-gateway.json",
-      "contractSource": "BE/contracts/openapi/fep-gateway.json",
+      "buildOutput": "fep-gateway/build/openapi/fep-gateway.json",
+      "contractSource": "contracts/openapi/fep-gateway.json",
       "publishedFile": "fep-gateway.json",
       "displayName": "FEP Gateway"
     },
     {
-      "buildOutput": "BE/fep-simulator/build/openapi/fep-simulator.json",
-      "contractSource": "BE/contracts/openapi/fep-simulator.json",
+      "buildOutput": "fep-simulator/build/openapi/fep-simulator.json",
+      "contractSource": "contracts/openapi/fep-simulator.json",
       "publishedFile": "fep-simulator.json",
       "displayName": "FEP Simulator"
     }

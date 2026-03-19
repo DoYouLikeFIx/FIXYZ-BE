@@ -7,11 +7,10 @@ const os = require("node:os");
 const path = require("node:path");
 const childProcess = require("node:child_process");
 
-const repoRoot = path.resolve(__dirname, "..", "..", "..");
-const contractsDir = path.join(repoRoot, "BE", "contracts", "openapi");
-const workflowPath = path.join(repoRoot, ".github", "workflows", "docs-publish.yml");
-const docsSiteConfigPath = path.join(repoRoot, "BE", "scripts", "openapi-docs-site.config.json");
-const docsSiteAssemblerPath = path.join(repoRoot, "BE", "scripts", "assemble-openapi-docs-site.mjs");
+const repoRoot = path.resolve(__dirname, "..", "..");
+const contractsDir = path.join(repoRoot, "contracts", "openapi");
+const docsSiteConfigPath = path.join(repoRoot, "scripts", "openapi-docs-site.config.json");
+const docsSiteAssemblerPath = path.join(repoRoot, "scripts", "assemble-openapi-docs-site.mjs");
 
 const docsSiteConfig = JSON.parse(fs.readFileSync(docsSiteConfigPath, "utf8"));
 const requiredDocsSpecs = docsSiteConfig.specs.map((spec) => [
@@ -124,15 +123,24 @@ function hasResponseHeader(operation, statusCode, headerName) {
   return Boolean(operation.responses?.[String(statusCode)]?.headers?.[headerName]);
 }
 
-test("docs-publish workflow delegates selector bundle assembly to the checked-in site assembler", () => {
-  const workflow = readText(workflowPath);
+test("checked-in docs site assembler defaults to the BE repo root for the canonical four-service selector bundle", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "fixyz-docs-site-"));
 
-  mustInclude(workflow, "Publish API Docs to GitHub Pages");
-  mustInclude(workflow, "./gradlew :channel-service:refreshOpenApiDocs");
-  mustInclude(workflow, ":corebank-service:refreshOpenApiDocs");
-  mustInclude(workflow, ":fep-gateway:refreshOpenApiDocs");
-  mustInclude(workflow, ":fep-simulator:refreshOpenApiDocs");
-  mustInclude(workflow, "node BE/scripts/assemble-openapi-docs-site.mjs");
+  childProcess.execFileSync(
+    process.execPath,
+    [
+      docsSiteAssemblerPath,
+      "--output-dir",
+      outputDir,
+      "--use-contracts",
+      "true",
+    ],
+    { cwd: repoRoot, stdio: "pipe" },
+  );
+
+  for (const [, publishedSpec] of requiredDocsSpecs) {
+    assert.ok(fs.existsSync(path.join(outputDir, publishedSpec)), `${publishedSpec} was not assembled`);
+  }
 });
 
 test("checked-in docs site assembler produces the canonical four-service selector bundle", () => {
