@@ -7,8 +7,10 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,6 +18,10 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
   Optional<OrderSession> findByOrderSessionId(String orderSessionId);
 
   Optional<OrderSession> findByClOrdId(String clOrdId);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select os from OrderSession os where os.clOrdId = :clOrdId")
+  Optional<OrderSession> findByClOrdIdForUpdate(@Param("clOrdId") String clOrdId);
 
   long deleteByOrderSessionId(String orderSessionId);
 
