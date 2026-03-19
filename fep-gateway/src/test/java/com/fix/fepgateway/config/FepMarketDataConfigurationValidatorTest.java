@@ -59,6 +59,22 @@ class FepMarketDataConfigurationValidatorTest {
         });
   }
 
+  @Test
+  void shouldAllowDemoAliasForPaperEnvironment() {
+    contextRunner
+        .withPropertyValues(
+            "fep.marketdata.provider=KIS",
+            "fep.marketdata.source-mode=LIVE",
+            "fep.marketdata.kis.env=demo",
+            "fep.marketdata.kis.app-key=test-app-key",
+            "fep.marketdata.kis.app-secret=test-app-secret",
+            "fep.marketdata.kis.ws.tr-id=H0STCNT0",
+            "fep.marketdata.kis.ws.custtype=P",
+            "fep.marketdata.kis.ws.symbols[0]=005930"
+        )
+        .run(context -> assertThat(context).hasNotFailed());
+  }
+
   @Configuration
   @EnableConfigurationProperties(FepMarketDataProperties.class)
   static class TestConfig {

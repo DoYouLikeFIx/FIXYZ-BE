@@ -20,8 +20,8 @@ public class FepMarketDataConfigurationValidator {
 
     require(!isBlank(properties.getKis().getAppKey()), "FEP_MARKETDATA_KIS_APP_KEY is required for KIS LIVE mode");
     require(!isBlank(properties.getKis().getAppSecret()), "FEP_MARKETDATA_KIS_APP_SECRET is required for KIS LIVE mode");
-    require(isAllowed(properties.getKis().getEnv(), List.of("paper", "real")),
-        "FEP_MARKETDATA_KIS_ENV must be one of: paper, real");
+    require(isAllowed(properties.getKis().getEnv(), List.of("paper", "demo", "real")),
+        "FEP_MARKETDATA_KIS_ENV must be one of: paper, demo, real");
     require("H0STCNT0".equals(properties.getKis().getWs().getTrId()),
         "FEP_MARKETDATA_KIS_WS_TR_ID must be H0STCNT0 for the current project scope");
     require(isAllowed(properties.getKis().getWs().getCusttype(), List.of("P", "B")),
