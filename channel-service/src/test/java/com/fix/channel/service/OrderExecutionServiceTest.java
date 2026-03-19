@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.never;
 import org.mockito.Mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -107,6 +108,66 @@ class OrderExecutionServiceTest {
         eq("ORDER"),
         startsWith("orderSessionId=" + authedSession.getOrderSessionId() + " status=FAILED")
     );
+  }
+
+  @Test
+  void shouldRouteUnknownExecutionOutcomeIntoRequeryingState() {
+    OrderSession authedSession = createAuthedSession();
+    OrderSession requeryingSession = createAuthedSession();
+    requeryingSession.startExecuting();
+    requeryingSession.beginRequerying(
+        "UNKNOWN_EXECUTION_OUTCOME",
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "EXT-REQUERY",
+        "FAILED",
+        Instant.parse("2026-03-18T00:00:00Z")
+    );
+    when(orderSessionService.requireOwnedSession(1L, authedSession.getOrderSessionId())).thenReturn(authedSession);
+    when(orderSessionService.beginExecution(authedSession)).thenReturn(authedSession);
+    corebankClient.willReturn(OrderExecuteResult.of(
+        1002L,
+        authedSession.getClOrdId(),
+        "PENDING",
+        false,
+        BigDecimal.TEN,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "EXT-REQUERY",
+        "FAILED",
+        Instant.parse("2026-03-18T00:00:00Z")
+    ));
+    when(orderSessionService.beginRequerying(
+        eq(authedSession),
+        eq("UNKNOWN_EXECUTION_OUTCOME"),
+        eq("FILLED"),
+        eq(BigDecimal.TEN),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("EXT-REQUERY"),
+        eq("FAILED"),
+        eq(Instant.parse("2026-03-18T00:00:00Z"))
+    )).thenReturn(requeryingSession);
+    when(orderSessionService.toResult(requeryingSession, false, false)).thenReturn(mockResult());
+
+    orderExecutionService.execute(1L, authedSession.getOrderSessionId());
+
+    verify(orderSessionService).beginRequerying(
+        eq(authedSession),
+        eq("UNKNOWN_EXECUTION_OUTCOME"),
+        eq("FILLED"),
+        eq(BigDecimal.TEN),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("EXT-REQUERY"),
+        eq("FAILED"),
+        eq(Instant.parse("2026-03-18T00:00:00Z"))
+    );
+    verify(channelScaffoldService, never()).bootstrapNotification(any(), any(), any());
   }
 
   private OrderSession createAuthedSession() {

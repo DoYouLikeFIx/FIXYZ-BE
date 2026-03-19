@@ -51,6 +51,10 @@ management:
       probes:
         enabled: true
 
+channel:
+  audit-security-retention:
+    enabled: ${CHANNEL_AUDIT_SECURITY_RETENTION_ENABLED:true}
+
 auth:
   login-token:
     ttl: ${AUTH_LOGIN_TOKEN_TTL:5m}
@@ -125,6 +129,7 @@ auth:
         floor-ms: ${AUTH_PASSWORD_RECOVERY_TIMING_RESET_FLOOR_MS:120}
         jitter-max-ms: ${AUTH_PASSWORD_RECOVERY_TIMING_RESET_JITTER_MAX_MS:20}
     cleanup:
+      enabled: ${AUTH_PASSWORD_RECOVERY_CLEANUP_ENABLED:true}
       cadence: ${AUTH_PASSWORD_RECOVERY_CLEANUP_CADENCE:15m}
       retention: ${AUTH_PASSWORD_RECOVERY_CLEANUP_RETENTION:30d}
       batch-size: ${AUTH_PASSWORD_RECOVERY_CLEANUP_BATCH_SIZE:500}
@@ -136,3 +141,18 @@ corebank:
   internal:
     base-url: ${COREBANK_INTERNAL_BASE_URL:http://localhost:8081}
     secret: ${COREBANK_INTERNAL_SECRET:${INTERNAL_SECRET:local-internal-secret}}
+
+order:
+  session:
+    recovery:
+      enabled: ${ORDER_SESSION_RECOVERY_ENABLED:true}
+      fixed-delay-ms: ${ORDER_SESSION_RECOVERY_FIXED_DELAY_MS:60000}
+      batch-size: ${ORDER_SESSION_RECOVERY_BATCH_SIZE:100}
+      executing-timeout: ${ORDER_SESSION_RECOVERY_EXECUTING_TIMEOUT:30s}
+      max-retry-count: ${ORDER_SESSION_RECOVERY_MAX_RETRY_COUNT:5}
+      backoff:
+        initial: ${ORDER_SESSION_RECOVERY_BACKOFF_INITIAL:60s}
+        max: ${ORDER_SESSION_RECOVERY_BACKOFF_MAX:15m}
+      manual-queue:
+        publish-batch-size: ${ORDER_SESSION_RECOVERY_MANUAL_QUEUE_PUBLISH_BATCH_SIZE:100}
+        claim-timeout: ${ORDER_SESSION_RECOVERY_MANUAL_QUEUE_CLAIM_TIMEOUT:5m}

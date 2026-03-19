@@ -19,11 +19,13 @@ import lombok.RequiredArgsConstructor;
 public class OrderExecutionService {
 
   private static final String NOTIFICATION_CHANNEL_ORDER = "ORDER";
+  private static final String EXTERNAL_SYNC_CONFIRMED = "CONFIRMED";
+  private static final String EXTERNAL_SYNC_FAILED = "FAILED";
+  private static final String REQUERY_REQUIRED_REASON = "UNKNOWN_EXECUTION_OUTCOME";
   private final CorebankClient corebankClient;
   private final OrderSessionService orderSessionService;
   private final OrderSessionExecutionLockService orderSessionExecutionLockService;
   private final ChannelScaffoldService channelScaffoldService;
-  private static final String EXTERNAL_SYNC_CONFIRMED = "CONFIRMED";
 
   public OrderSessionResult execute(Long memberId, String orderSessionId) {
     OrderSession session = orderSessionService.requireOwnedSession(memberId, orderSessionId);
@@ -70,6 +72,21 @@ public class OrderExecutionService {
         );
         persistTerminalNotification(escalatedSession, "ESCALATED");
         return orderSessionService.toResult(escalatedSession, false, result.isIdempotent());
+      }
+
+      if (requiresRequery(result)) {
+        OrderSession requeryingSession = orderSessionService.beginRequerying(
+            executingSession,
+            REQUERY_REQUIRED_REASON,
+            result.getExecutionResult(),
+            result.getExecutedQty(),
+            result.getLeavesQty(),
+            result.getExecutedPrice(),
+            result.getExternalOrderId(),
+            result.getExternalSyncStatus(),
+            result.getExecutedAt()
+        );
+        return orderSessionService.toResult(requeryingSession, false, result.isIdempotent());
       }
 
       OrderSession completedSession = orderSessionService.completeExecution(
@@ -131,7 +148,13 @@ public class OrderExecutionService {
 
   private boolean requiresEscalation(OrderExecuteResult result) {
     String externalSyncStatus = result.getExternalSyncStatus();
-    return externalSyncStatus != null && !EXTERNAL_SYNC_CONFIRMED.equalsIgnoreCase(externalSyncStatus);
+    return externalSyncStatus != null
+        && !EXTERNAL_SYNC_CONFIRMED.equalsIgnoreCase(externalSyncStatus)
+        && !EXTERNAL_SYNC_FAILED.equalsIgnoreCase(externalSyncStatus);
+  }
+
+  private boolean requiresRequery(OrderExecuteResult result) {
+    return EXTERNAL_SYNC_FAILED.equalsIgnoreCase(result.getExternalSyncStatus());
   }
 
   private boolean requiresEscalation(RuntimeException exception) {

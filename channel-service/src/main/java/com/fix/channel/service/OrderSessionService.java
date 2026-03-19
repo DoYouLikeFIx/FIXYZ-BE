@@ -17,6 +17,7 @@ import com.fix.channel.vo.OrderSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
+import com.fix.common.logging.LogPiiMasking;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -236,6 +237,34 @@ public class OrderSessionService {
     return orderSessionPersistenceService.markExecuting(session);
   }
 
+  public OrderSession beginRequerying(OrderSession session, String failureReason) {
+    return orderSessionPersistenceService.markRequerying(session, failureReason);
+  }
+
+  public OrderSession beginRequerying(
+      OrderSession session,
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt
+  ) {
+    return orderSessionPersistenceService.markRequerying(
+        session,
+        failureReason,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt
+    );
+  }
+
   public OrderSession completeExecution(
       OrderSession session,
       String executionResult,
@@ -286,6 +315,56 @@ public class OrderSessionService {
     );
   }
 
+  public OrderSession markEscalatedAndEnqueueManualRecovery(
+      OrderSession session,
+      String failureReason,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt,
+      int attemptCount
+  ) {
+    return orderSessionPersistenceService.markEscalatedAndEnqueueManualRecovery(
+        session,
+        failureReason,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt,
+        attemptCount
+    );
+  }
+
+  public OrderSession cancelExecution(
+      OrderSession session,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt,
+      Instant canceledAt
+  ) {
+    return orderSessionPersistenceService.markCanceled(
+        session,
+        executionResult,
+        executedQty,
+        leavesQty,
+        executedPrice,
+        externalOrderId,
+        externalSyncStatus,
+        executedAt,
+        canceledAt
+    );
+  }
+
   public OrderSession markFailed(OrderSession session, String failureReason) {
     return orderSessionPersistenceService.markFailed(session, failureReason);
   }
@@ -296,6 +375,28 @@ public class OrderSessionService {
 
   public java.util.List<String> expireOverdueSessionBatch(Instant referenceTime, int batchSize) {
     return orderSessionPersistenceService.expireOverdueSessionBatch(referenceTime, batchSize);
+  }
+
+  public java.util.List<OrderSession> findTimedOutExecutingSessions(Instant cutoffTime, int batchSize) {
+    return orderSessionPersistenceService.findTimedOutExecutingSessions(cutoffTime, batchSize);
+  }
+
+  public java.util.List<OrderSession> findRequeryingSessions(int batchSize) {
+    return findRequeryingSessionsAfter(Instant.now(clock), null, null, batchSize);
+  }
+
+  public java.util.List<OrderSession> findRequeryingSessionsAfter(
+      Instant eligibleAt,
+      Instant updatedAtCursor,
+      String orderSessionIdCursor,
+      int batchSize
+  ) {
+    return orderSessionPersistenceService.findRequeryingSessionsAfter(
+        eligibleAt,
+        updatedAtCursor,
+        orderSessionIdCursor,
+        batchSize
+    );
   }
 
   OrderSession requireOwnedSession(Long memberId, String orderSessionId) {
@@ -600,8 +701,11 @@ public class OrderSessionService {
     try {
       orderSessionPersistenceService.deleteCreatedSession(orderSessionId);
     } catch (RuntimeException cleanupFailure) {
-      log.error("Failed to delete partially-created order session during activation rollback: orderSessionId={}",
-          orderSessionId, cleanupFailure);
+      log.error(
+          "Failed to delete partially-created order session during activation rollback: orderSessionId={}, failure={}",
+          LogPiiMasking.sanitizeText(orderSessionId),
+          LogPiiMasking.sanitizeExceptionSummary(cleanupFailure)
+      );
       original.addSuppressed(cleanupFailure);
     }
     safelyRefundCreateRateLimit(memberId, orderSessionId, "activation rollback", original);
@@ -611,7 +715,12 @@ public class OrderSessionService {
     try {
       orderSessionTtlStore.clear(orderSessionId);
     } catch (RuntimeException cleanupFailure) {
-      log.warn("Failed to clear order session TTL during {}: orderSessionId={}", context, orderSessionId, cleanupFailure);
+      log.warn(
+          "Failed to clear order session TTL during {}: orderSessionId={}, failure={}",
+          LogPiiMasking.sanitizeText(context),
+          LogPiiMasking.sanitizeText(orderSessionId),
+          LogPiiMasking.sanitizeExceptionSummary(cleanupFailure)
+      );
       if (primaryFailure != null) {
         primaryFailure.addSuppressed(cleanupFailure);
       }
@@ -627,8 +736,13 @@ public class OrderSessionService {
     try {
       orderSessionRateLimitService.refundCreateRateLimit(memberId);
     } catch (RuntimeException refundFailure) {
-      log.warn("Failed to refund order session rate limit during {}: orderSessionId={}, memberId={}",
-          context, orderSessionId, memberId, refundFailure);
+      log.warn(
+          "Failed to refund order session rate limit during {}: orderSessionId={}, memberId={}, failure={}",
+          LogPiiMasking.sanitizeText(context),
+          LogPiiMasking.sanitizeText(orderSessionId),
+          memberId,
+          LogPiiMasking.sanitizeExceptionSummary(refundFailure)
+      );
       if (primaryFailure != null) {
         primaryFailure.addSuppressed(refundFailure);
       }
