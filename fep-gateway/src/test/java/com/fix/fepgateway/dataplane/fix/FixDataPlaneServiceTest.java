@@ -92,6 +92,17 @@ class FixDataPlaneServiceTest {
     assertThat(outcome.executedPrice()).isEqualTo(70_100L);
   }
 
+  @Test
+  void shouldFallBackToNormalSubmitWhenChaosProbeAmountOverflows() {
+    FixDataPlaneService service = new FixDataPlaneService(restClient(), true);
+
+    GatewayExecutionOutcome outcome = service.sendNewOrder(limitOrderSubmit(Long.MAX_VALUE, 2L));
+
+    assertThat(outcome.ordStatus()).isEqualTo(com.fix.common.fep.FepOrdStatus.FILLED);
+    assertThat(outcome.executedPrice()).isEqualTo(2L);
+    wireMockServer.verify(0, getRequestedFor(urlPathMatching("/api/v1/ping.*")));
+  }
+
   private RestClient restClient() {
     return RestClient.builder()
         .baseUrl(wireMockServer.baseUrl())
@@ -99,6 +110,10 @@ class FixDataPlaneServiceTest {
   }
 
   private GatewayOrderSubmitCommand limitOrderSubmit() {
+    return limitOrderSubmit(2L, 70_100L);
+  }
+
+  private GatewayOrderSubmitCommand limitOrderSubmit(long qty, long price) {
     return new GatewayOrderSubmitCommand(
         CL_ORD_ID,
         "ACC-001",
@@ -106,8 +121,8 @@ class FixDataPlaneServiceTest {
         FepSecurityExchange.KRX,
         FepSide.BUY,
         FepOrderType.LIMIT,
-        2L,
-        70_100L,
+        qty,
+        price,
         null,
         null,
         null,

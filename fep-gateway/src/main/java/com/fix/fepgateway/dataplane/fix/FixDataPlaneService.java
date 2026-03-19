@@ -104,8 +104,8 @@ public class FixDataPlaneService {
       return CHAOS_ACTION_NONE;
     }
 
-    long amount = Math.multiplyExact(command.qty(), executedPrice);
     try {
+      long amount = Math.multiplyExact(command.qty(), executedPrice);
       SimulatorPingResponse response = simulatorRestClient.get()
           .uri(uriBuilder -> uriBuilder.path("/api/v1/ping")
               .queryParam("symbol", command.symbol())
@@ -119,7 +119,7 @@ public class FixDataPlaneService {
         return CHAOS_ACTION_NONE;
       }
       return response.chaosAction().trim().toUpperCase(Locale.ROOT);
-    } catch (RestClientException ex) {
+    } catch (ArithmeticException | RestClientException ex) {
       return CHAOS_ACTION_NONE;
     }
   }
