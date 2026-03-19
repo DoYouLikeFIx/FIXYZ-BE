@@ -1,0 +1,158 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
+if (!project.ext.has('openapiDefaultPort')) {
+  throw new GradleException("openapiDefaultPort must be configured before applying gradle/openapi-contract.gradle")
+}
+
+def defaultSpringdocPort = project.ext.openapiDefaultPort as int
+def requestedSpringdocPort = providers.gradleProperty('openapiPort')
+    .orElse(providers.environmentVariable('OPENAPI_SERVER_PORT'))
+    .orNull
+def springdocPort = requestedSpringdocPort != null ? requestedSpringdocPort.toInteger() : defaultSpringdocPort
+def openapiDocsUrl = "http://localhost:${springdocPort}/v3/api-docs"
+def openapiReadyUrl = project.ext.has('openapiReadyUrl')
+    ? project.ext.openapiReadyUrl as String
+    : "http://localhost:${springdocPort}/actuator/health"
+def openapiWaitTimeInSeconds = project.findProperty('openapiWaitTimeInSeconds')?.toString()?.toInteger() ?: 60
+def openapiBootRunArgs = ["--spring.profiles.active=openapi", "--server.port=${springdocPort}"]
+if (project.ext.has('openapiManagementPort')) {
+  openapiBootRunArgs.add("--management.server.port=${project.ext.openapiManagementPort}")
+}
+
+def generatedOpenApiFile = layout.buildDirectory.file("openapi/${project.name}.json")
+def committedOpenApiFile = rootProject.layout.projectDirectory.file("contracts/openapi/${project.name}.json")
+
+Closure<String> normalizeOpenApiText = { String text ->
+  def parsed = new JsonSlurper().parseText(text.replace("\r\n", "\n"))
+  if (parsed instanceof Map && parsed.servers instanceof List) {
+    parsed.servers.each { server ->
+      if (server instanceof Map && server.url instanceof String && (server.url ==~ /http:\/\/localhost:\d+/)) {
+        server.url = "http://localhost:${defaultSpringdocPort}"
+      }
+    }
+  }
+  JsonOutput.prettyPrint(JsonOutput.toJson(parsed)).replaceFirst(/\n\z/, '')
+}
+
+openApi {
+  apiDocsUrl = openapiDocsUrl
+  outputDir = file("$buildDir/openapi")
+  outputFileName = "${project.name}.json"
+  waitTimeInSeconds = openapiWaitTimeInSeconds
+  customBootRun {
+    args = openapiBootRunArgs
+  }
+}
+
+tasks.register('deleteGeneratedOpenApi', Delete) {
+  delete generatedOpenApiFile
+}
+
+tasks.register('normalizeGeneratedOpenApi') {
+  doLast {
+    File generated = generatedOpenApiFile.get().asFile
+    if (!generated.exists()) {
+      throw new GradleException("Generated OpenAPI file is missing: ${generated}")
+    }
+
+    generated.setText(normalizeOpenApiText(generated.getText('UTF-8')) + "\n", 'UTF-8')
+  }
+}
+
+if (project.ext.has('openapiBootRunDependencies')) {
+  tasks.named('forkedSpringBootRun') {
+    dependsOn project.ext.openapiBootRunDependencies
+  }
+}
+
+Closure<String> httpGet = { String urlString ->
+  HttpURLConnection connection = (HttpURLConnection) new URL(urlString).openConnection()
+  connection.setConnectTimeout(2_000)
+  connection.setReadTimeout(5_000)
+  connection.setRequestProperty('Accept', 'application/json')
+  connection.connect()
+  try {
+    int status = connection.getResponseCode()
+    InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream()
+    String body = stream != null ? stream.getText('UTF-8') : ''
+    if (status < 200 || status >= 300) {
+      throw new GradleException("HTTP ${status} from ${urlString}: ${body}")
+    }
+    return body
+  } finally {
+    connection.disconnect()
+  }
+}
+
+Closure<Void> waitForOpenApiReady = {
+  long deadline = System.currentTimeMillis() + (openapiWaitTimeInSeconds * 1_000L)
+  Throwable lastError = null
+  while (System.currentTimeMillis() < deadline) {
+    try {
+      String body = httpGet(openapiReadyUrl)
+      if (!openapiReadyUrl.contains('/actuator/health')) {
+        return
+      }
+      def parsed = new JsonSlurper().parseText(body)
+      if (parsed instanceof Map && parsed.status == 'UP') {
+        return
+      }
+      lastError = new GradleException("Ready endpoint is not UP yet: ${body}")
+    } catch (Throwable throwable) {
+      lastError = throwable
+    }
+    sleep(1_000L)
+  }
+  throw new GradleException(
+      "Timed out waiting for ${openapiReadyUrl} before fetching ${openapiDocsUrl}",
+      lastError
+  )
+}
+
+tasks.register('captureOpenApiDocs') {
+  dependsOn tasks.named('forkedSpringBootRun')
+  mustRunAfter tasks.named('deleteGeneratedOpenApi')
+  finalizedBy tasks.named('normalizeGeneratedOpenApi'), tasks.named('forkedSpringBootStop')
+
+  doLast {
+    waitForOpenApiReady()
+    File generated = generatedOpenApiFile.get().asFile
+    generated.parentFile.mkdirs()
+    generated.setText(httpGet(openapiDocsUrl) + "\n", 'UTF-8')
+  }
+}
+
+tasks.register('refreshOpenApiDocs') {
+  dependsOn tasks.named('deleteGeneratedOpenApi')
+  dependsOn tasks.named('captureOpenApiDocs')
+}
+
+tasks.register('verifyCommittedOpenApi') {
+  dependsOn tasks.named('refreshOpenApiDocs')
+
+  doLast {
+    File generated = generatedOpenApiFile.get().asFile
+    File committed = committedOpenApiFile.asFile
+
+    if (!generated.exists()) {
+      throw new GradleException("Generated OpenAPI file is missing: ${generated}")
+    }
+    if (!committed.exists()) {
+      throw new GradleException("Committed OpenAPI file is missing: ${committed}")
+    }
+
+    String generatedText = normalizeOpenApiText(generated.getText('UTF-8'))
+    String committedText = normalizeOpenApiText(committed.getText('UTF-8'))
+    def jsonSlurper = new JsonSlurper()
+    if (jsonSlurper.parseText(generatedText) != jsonSlurper.parseText(committedText)) {
+      throw new GradleException(
+          "Committed OpenAPI snapshot is out of date. Regenerate :${project.name}:refreshOpenApiDocs and sync contracts/openapi/${project.name}.json."
+      )
+    }
+  }
+}
+
+tasks.named('check') {
+  dependsOn tasks.named('verifyCommittedOpenApi')
+}
