@@ -1,6 +1,7 @@
 package com.fix.channel.entity;
 
 import com.fix.common.entity.BaseTimeEntity;
+import com.fix.common.logging.LogPiiMasking;
 import com.fix.common.web.CorrelationIdSupport;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,6 +16,10 @@ import java.util.UUID;
 @Entity
 @Table(name = "security_events")
 public class SecurityEvent extends BaseTimeEntity {
+
+  private static final int IP_ADDRESS_MAX_LENGTH = 45;
+  private static final int USER_AGENT_MAX_LENGTH = 255;
+  private static final int DETAIL_MAX_LENGTH = 2000;
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -80,10 +85,10 @@ public class SecurityEvent extends BaseTimeEntity {
     this.adminMemberId = adminMemberId;
     this.orderSessionId = orderSessionId;
     this.eventType = eventType;
-    this.ipAddress = ipAddress;
-    this.userAgent = userAgent;
+    this.ipAddress = truncate(LogPiiMasking.sanitizeIpAddress(ipAddress), IP_ADDRESS_MAX_LENGTH);
+    this.userAgent = truncate(LogPiiMasking.sanitizeText(userAgent), USER_AGENT_MAX_LENGTH);
     this.severity = severity;
-    this.detail = detail;
+    this.detail = truncate(LogPiiMasking.sanitizeText(detail), DETAIL_MAX_LENGTH);
     this.correlationUuid = normalizeCorrelationId(correlationUuid);
     this.occurredAt = occurredAt;
     this.status = status;
@@ -132,7 +137,7 @@ public class SecurityEvent extends BaseTimeEntity {
   }
 
   public SecurityEvent withDetail(String detail) {
-    this.detail = detail;
+    this.detail = truncate(LogPiiMasking.sanitizeText(detail), DETAIL_MAX_LENGTH);
     return this;
   }
 
@@ -221,5 +226,12 @@ public class SecurityEvent extends BaseTimeEntity {
 
   private static String normalizeCorrelationId(String correlationId) {
     return CorrelationIdSupport.normalize(correlationId, 36);
+  }
+
+  private static String truncate(String value, int maxLength) {
+    if (value == null || value.length() <= maxLength) {
+      return value;
+    }
+    return value.substring(0, maxLength);
   }
 }

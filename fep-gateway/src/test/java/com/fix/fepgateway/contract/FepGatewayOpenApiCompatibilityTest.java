@@ -85,9 +85,11 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(schemaRef(submitOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
     assertThat(schemaRef(submitOperation, "401")).isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(schemaRef(submitOperation, "422")).isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(submitOperation, "504")).isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(schemaRef(cancelOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderCancelResponse");
     assertThat(schemaRef(replayOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderReplayResponse");
     assertThat(schemaRef(internalStatusOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
+    assertThat(submitOperation.path("responses").path("504").path("description").asText()).contains("9004");
     assertThat(cancelOperation.path("responses").path("504").path("description").asText()).contains("9004");
     assertThat(replayOperation.path("responses").path("409").path("description").asText()).contains("9009");
     assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();

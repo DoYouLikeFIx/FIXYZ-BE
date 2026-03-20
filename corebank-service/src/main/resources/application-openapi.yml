@@ -1,5 +1,5 @@
 server:
-  port: 18081
+  port: ${OPENAPI_SERVER_PORT:18081}
 
 internal:
   secret: local-internal-secret

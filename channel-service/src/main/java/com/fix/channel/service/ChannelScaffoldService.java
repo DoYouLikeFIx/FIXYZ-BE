@@ -91,18 +91,21 @@ public class ChannelScaffoldService {
 
   @Transactional
   public void bootstrapNotification(Long memberId, String channel, String message) {
-    Notification notification = Objects.requireNonNull(
-        notificationRepository.save(Notification.pending(memberId, channel, message))
-    );
-
-    NotificationItemVo item = NotificationItemVo.of(
-        notification.getId(),
-        notification.getChannel(),
-        notification.getMessage(),
-        notification.isDelivered(),
-        notification.getReadAt()
-    );
+    Notification notification = saveNotification(memberId, channel, message);
+    NotificationItemVo item = toItem(notification);
     publishNotification(memberId, item);
+  }
+
+  @Transactional
+  public void bootstrapTypedNotification(
+      Long memberId,
+      String channel,
+      String message,
+      String eventName,
+      Object payload
+  ) {
+    Notification notification = saveNotification(memberId, channel, message);
+    publishTypedNotification(memberId, notification.getId(), eventName, payload);
   }
 
   @Transactional(readOnly = true)
@@ -126,13 +129,7 @@ public class ChannelScaffoldService {
     Notification notification = notificationRepository.findByIdAndMemberId(notificationId, memberId)
         .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_OWNERSHIP_MISMATCH, "access denied"));
     notification.markRead(Instant.now(clock));
-    return NotificationItemVo.of(
-        notification.getId(),
-        notification.getChannel(),
-        notification.getMessage(),
-        notification.isDelivered(),
-        notification.getReadAt()
-    );
+    return toItem(notification);
   }
 
   private int resolvePageSize(Integer requestedLimit) {
@@ -146,6 +143,20 @@ public class ChannelScaffoldService {
     return PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "id"));
   }
 
+  private Notification saveNotification(Long memberId, String channel, String message) {
+    return Objects.requireNonNull(notificationRepository.save(Notification.pending(memberId, channel, message)));
+  }
+
+  private NotificationItemVo toItem(Notification notification) {
+    return NotificationItemVo.of(
+        notification.getId(),
+        notification.getChannel(),
+        notification.getMessage(),
+        notification.isDelivered(),
+        notification.getReadAt()
+    );
+  }
+
   private void publishNotification(Long memberId, NotificationItemVo item) {
     Set<SseEmitter> emitters = notificationEmitters.get(memberId);
     if (emitters == null || emitters.isEmpty()) {
@@ -154,7 +165,23 @@ public class ChannelScaffoldService {
 
     for (SseEmitter emitter : emitters) {
       try {
-        emitter.send(SseEmitter.event().name("notification").data(item));
+        emitter.send(SseEmitter.event().id(String.valueOf(item.getNotificationId())).name("notification").data(item));
+      } catch (Exception ex) {
+        unregisterEmitter(memberId, emitter);
+        emitter.completeWithError(ex);
+      }
+    }
+  }
+
+  private void publishTypedNotification(Long memberId, Long notificationId, String eventName, Object payload) {
+    Set<SseEmitter> emitters = notificationEmitters.get(memberId);
+    if (emitters == null || emitters.isEmpty()) {
+      return;
+    }
+
+    for (SseEmitter emitter : emitters) {
+      try {
+        emitter.send(SseEmitter.event().id(String.valueOf(notificationId)).name(eventName).data(payload));
       } catch (Exception ex) {
         unregisterEmitter(memberId, emitter);
         emitter.completeWithError(ex);

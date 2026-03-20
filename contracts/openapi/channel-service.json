@@ -513,6 +513,125 @@
         }
       }
     },
+    "/api/v1/admin/orders/{clOrdId}/replay": {
+      "post": {
+        "tags": [
+          "admin-controller"
+        ],
+        "operationId": "replayOrder",
+        "parameters": [
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOrderReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminOrderReplayResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the rate-limit window resets",
+                "style": "simple",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Corebank unavailable",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/notifications/{notificationId}/read": {
       "patch": {
         "tags": [
@@ -1933,6 +2052,80 @@
             "type": "boolean"
           },
           "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AdminOrderReplayRequest": {
+        "type": "object",
+        "properties": {
+          "manualDecision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ]
+          },
+          "approvedBy": {
+            "type": "string"
+          },
+          "evidenceRef": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "executionPrice": {
+            "type": "integer",
+            "description": "Manual execution price for MARKET virtual fills",
+            "format": "int64"
+          }
+        }
+      },
+      "AdminOrderReplayResponse": {
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "type": "string"
+          },
+          "finalStatus": {
+            "type": "string"
+          },
+          "executionResult": {
+            "type": "string"
+          },
+          "executionSource": {
+            "type": "string"
+          },
+          "executedQty": {
+            "type": "number"
+          },
+          "executedPrice": {
+            "type": "number"
+          },
+          "processedBy": {
+            "type": "string"
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAdminOrderReplayResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminOrderReplayResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
             "type": "string",
             "format": "date-time"
           }
