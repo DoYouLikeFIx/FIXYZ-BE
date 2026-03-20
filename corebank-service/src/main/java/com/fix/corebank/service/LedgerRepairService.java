@@ -47,6 +47,7 @@ public class LedgerRepairService {
   private final ExecutionRepository executionRepository;
   private final LedgerIntegrityService ledgerIntegrityService;
   private final LedgerIntegrityAnomalyRecordRepository anomalyRecordRepository;
+  private final LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService;
 
   public LedgerRepairService(
       LedgerReconciliationCaseRepository caseRepository,
@@ -56,7 +57,8 @@ public class LedgerRepairService {
       PositionRepository positionRepository,
       ExecutionRepository executionRepository,
       LedgerIntegrityService ledgerIntegrityService,
-      LedgerIntegrityAnomalyRecordRepository anomalyRecordRepository
+      LedgerIntegrityAnomalyRecordRepository anomalyRecordRepository,
+      LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService
   ) {
     this.caseRepository = caseRepository;
     this.eventRepository = eventRepository;
@@ -66,6 +68,7 @@ public class LedgerRepairService {
     this.executionRepository = executionRepository;
     this.ledgerIntegrityService = ledgerIntegrityService;
     this.anomalyRecordRepository = anomalyRecordRepository;
+    this.ledgerIntegrityObservabilityService = ledgerIntegrityObservabilityService;
   }
 
   @Transactional
@@ -109,7 +112,9 @@ public class LedgerRepairService {
               mutation.summaryMessage()
           )
       );
-      return toRepairResult(savedRepair, reconciliationCase.getStatus().name(), false);
+      LedgerReconciliationRepairResult result = toRepairResult(savedRepair, reconciliationCase.getStatus().name(), false);
+      ledgerIntegrityObservabilityService.refreshMetricsAndEvaluateAlertsAfterCommit();
+      return result;
     } catch (DataIntegrityViolationException ex) {
       LedgerReconciliationRepair concurrent = repairRepository.findByCaseIdAndRepairKey(
               command.getCaseId(),
@@ -135,7 +140,7 @@ public class LedgerRepairService {
       );
     }
 
-    LedgerIntegrityCheckResult rerunCheck = ledgerIntegrityService.runCheckAndStore();
+    LedgerIntegrityCheckResult rerunCheck = ledgerIntegrityService.runCheckAndStore(false);
     Long rerunRunId = rerunCheck.getRunId();
     if (rerunRunId == null) {
       throw new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "integrity run not found");
@@ -166,7 +171,7 @@ public class LedgerRepairService {
       repairRepository.saveAndFlush(repair);
     });
 
-    return LedgerReconciliationRerunResult.of(
+    LedgerReconciliationRerunResult result = LedgerReconciliationRerunResult.of(
         savedCase.getId(),
         previousStatus.name(),
         savedCase.getStatus().name(),
@@ -179,6 +184,8 @@ public class LedgerRepairService {
         command.getContext(),
         savedEvent.getCreatedAt()
     );
+    ledgerIntegrityObservabilityService.refreshMetricsAndEvaluateAlertsAfterCommit();
+    return result;
   }
 
   private RepairMutation rebuildPositionFromExecutions(LedgerReconciliationCase reconciliationCase) {

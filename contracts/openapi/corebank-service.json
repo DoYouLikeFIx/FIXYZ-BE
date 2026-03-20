@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:18081",
+      "url": "http://localhost:28081",
       "description": "Generated server url"
     }
   ],
@@ -16,6 +16,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Portfolio",
         "operationId": "portfolio",
         "parameters": [
           {
@@ -24,6 +25,15 @@
             "required": true,
             "schema": {
               "$ref": "#/components/schemas/InternalPortfolioRequest"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -37,6 +47,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -44,11 +98,21 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Provision Portfolio",
         "operationId": "provisionPortfolio",
         "parameters": [
           {
             "name": "X-Correlation-Id",
             "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
             "required": true,
             "schema": {
               "type": "string"
@@ -75,6 +139,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -84,6 +192,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Create Order",
         "operationId": "createOrder",
         "parameters": [
           {
@@ -92,6 +201,15 @@
             "required": true,
             "schema": {
               "$ref": "#/components/schemas/InternalOrderCreateRequest"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -105,6 +223,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -114,6 +276,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Replay Order",
         "operationId": "replayOrder",
         "parameters": [
           {
@@ -128,6 +291,15 @@
           {
             "name": "X-Correlation-Id",
             "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
             "required": true,
             "schema": {
               "type": "string"
@@ -154,6 +326,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -163,6 +379,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Rerun Ledger Reconciliation Case",
         "operationId": "rerunLedgerReconciliationCase",
         "parameters": [
           {
@@ -177,6 +394,15 @@
           {
             "name": "X-Correlation-Id",
             "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
             "required": true,
             "schema": {
               "type": "string"
@@ -203,6 +429,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -212,6 +482,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Apply Ledger Repair",
         "operationId": "applyLedgerRepair",
         "parameters": [
           {
@@ -226,6 +497,15 @@
           {
             "name": "X-Correlation-Id",
             "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
             "required": true,
             "schema": {
               "type": "string"
@@ -252,6 +532,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -261,6 +585,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Create Ledger Reconciliation Case",
         "operationId": "createLedgerReconciliationCase",
         "parameters": [
           {
@@ -275,6 +600,15 @@
           {
             "name": "X-Correlation-Id",
             "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
             "required": true,
             "schema": {
               "type": "string"
@@ -301,6 +635,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -310,6 +688,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Transition Ledger Reconciliation Case",
         "operationId": "transitionLedgerReconciliationCase",
         "parameters": [
           {
@@ -324,6 +703,15 @@
           {
             "name": "X-Correlation-Id",
             "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
             "required": true,
             "schema": {
               "type": "string"
@@ -350,6 +738,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -359,6 +791,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Account Status",
         "operationId": "accountStatus",
         "parameters": [
           {
@@ -377,6 +810,15 @@
             "schema": {
               "$ref": "#/components/schemas/InternalAccountStatusRequest"
             }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -389,6 +831,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -396,6 +882,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Transition Account Status",
         "operationId": "transitionAccountStatus",
         "parameters": [
           {
@@ -410,6 +897,15 @@
           {
             "name": "X-Correlation-Id",
             "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
             "required": true,
             "schema": {
               "type": "string"
@@ -436,6 +932,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -445,7 +985,19 @@
         "tags": [
           "corebank-controller"
         ],
+        "summary": "Internal Ping",
         "operationId": "internalPing",
+        "parameters": [
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -459,6 +1011,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -468,6 +1064,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Requery Order",
         "operationId": "requeryOrder",
         "parameters": [
           {
@@ -491,6 +1088,15 @@
               "format": "int32",
               "default": 1
             }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -503,6 +1109,126 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/ledger-integrity/summary": {
+      "get": {
+        "tags": [
+          "internal-corebank-controller"
+        ],
+        "summary": "Ledger Integrity Summary",
+        "operationId": "ledgerIntegritySummary",
+        "parameters": [
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseInternalLedgerIntegritySummaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -512,6 +1238,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Account Summary",
         "operationId": "accountSummary",
         "parameters": [
           {
@@ -530,6 +1257,15 @@
             "schema": {
               "$ref": "#/components/schemas/InternalAccountSummaryRequest"
             }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -542,6 +1278,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -551,6 +1331,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Account Position",
         "operationId": "accountPosition",
         "parameters": [
           {
@@ -569,6 +1350,15 @@
             "schema": {
               "$ref": "#/components/schemas/InternalAccountPositionRequest"
             }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -581,6 +1371,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -590,6 +1424,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Account Positions",
         "operationId": "accountPositions",
         "parameters": [
           {
@@ -608,6 +1443,15 @@
             "schema": {
               "$ref": "#/components/schemas/InternalAccountPositionsRequest"
             }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -620,6 +1464,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -629,6 +1517,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Account Order History",
         "operationId": "accountOrderHistory",
         "parameters": [
           {
@@ -647,6 +1536,15 @@
             "schema": {
               "$ref": "#/components/schemas/InternalAccountOrderHistoryRequest"
             }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -659,6 +1557,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -668,6 +1610,7 @@
         "tags": [
           "internal-corebank-controller"
         ],
+        "summary": "Default Account Status",
         "operationId": "defaultAccountStatus",
         "parameters": [
           {
@@ -676,6 +1619,15 @@
             "required": true,
             "schema": {
               "$ref": "#/components/schemas/InternalAccountStatusRequest"
+            }
+          },
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "description": "Shared secret required for internal service-to-service requests",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -689,6 +1641,50 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "traceparent": {
+                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -698,6 +1694,7 @@
         "tags": [
           "corebank-controller"
         ],
+        "summary": "Ping",
         "operationId": "ping",
         "responses": {
           "200": {
@@ -712,6 +1709,26 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -721,10 +1738,28 @@
         "tags": [
           "corebank-controller"
         ],
+        "summary": "Boom",
         "operationId": "boom",
         "responses": {
-          "200": {
-            "description": "OK"
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1521,6 +2556,114 @@
           },
           "todaySellQuantity": {
             "type": "number"
+          }
+        }
+      },
+      "ApiResponseInternalLedgerIntegritySummaryResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/InternalLedgerIntegritySummaryResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FailedIdentifierResponse": {
+        "type": "object",
+        "properties": {
+          "anomalyId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "anomalyType": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "positionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "orderId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "clOrdId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ledgerEntryId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "InternalLedgerIntegritySummaryResponse": {
+        "type": "object",
+        "properties": {
+          "latestRunId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestRunCheckedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "latestRunPassed": {
+            "type": "boolean"
+          },
+          "latestRunAnomalyCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "latestRunSummaryMessage": {
+            "type": "string"
+          },
+          "unresolvedAnomalyCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repairPendingCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "criticalAnomalyCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "staleLastRun": {
+            "type": "boolean"
+          },
+          "latestFailedRunId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "latestFailedIdentifiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FailedIdentifierResponse"
+            }
           }
         }
       },

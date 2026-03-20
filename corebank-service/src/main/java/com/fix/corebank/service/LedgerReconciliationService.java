@@ -23,15 +23,18 @@ public class LedgerReconciliationService {
   private final LedgerIntegrityAnomalyRecordRepository anomalyRecordRepository;
   private final LedgerReconciliationCaseRepository caseRepository;
   private final LedgerReconciliationCaseEventRepository eventRepository;
+  private final LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService;
 
   public LedgerReconciliationService(
       LedgerIntegrityAnomalyRecordRepository anomalyRecordRepository,
       LedgerReconciliationCaseRepository caseRepository,
-      LedgerReconciliationCaseEventRepository eventRepository
+      LedgerReconciliationCaseEventRepository eventRepository,
+      LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService
   ) {
     this.anomalyRecordRepository = anomalyRecordRepository;
     this.caseRepository = caseRepository;
     this.eventRepository = eventRepository;
+    this.ledgerIntegrityObservabilityService = ledgerIntegrityObservabilityService;
   }
 
   @Transactional
@@ -63,7 +66,9 @@ public class LedgerReconciliationService {
           )
       );
 
-      return toResult(savedCase, null, true, true, savedEvent.getId(), savedEvent.getCreatedAt());
+      LedgerReconciliationCaseResult result = toResult(savedCase, null, true, true, savedEvent.getId(), savedEvent.getCreatedAt());
+      ledgerIntegrityObservabilityService.refreshMetricsAndEvaluateAlertsAfterCommit();
+      return result;
     } catch (DataIntegrityViolationException ex) {
       LedgerReconciliationCase concurrentExisting = caseRepository.findFirstByAnomalyIdOrderByIdDesc(command.getAnomalyId())
           .orElseThrow(() -> ex);
@@ -116,7 +121,16 @@ public class LedgerReconciliationService {
         )
     );
 
-    return toResult(savedCase, previousStatus.name(), true, false, savedEvent.getId(), savedEvent.getCreatedAt());
+    LedgerReconciliationCaseResult result = toResult(
+        savedCase,
+        previousStatus.name(),
+        true,
+        false,
+        savedEvent.getId(),
+        savedEvent.getCreatedAt()
+    );
+    ledgerIntegrityObservabilityService.refreshMetricsAndEvaluateAlertsAfterCommit();
+    return result;
   }
 
   private LedgerReconciliationCaseResult toResult(

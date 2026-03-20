@@ -4,50 +4,13 @@ plugins {
   id 'org.springdoc.openapi-gradle-plugin'
 }
 
-def springdocPort = 18082
+ext.openapiDefaultPort = 28082
+ext.openapiManagementPort = 29082
+ext.openapiReadyUrl = 'http://localhost:29082/actuator/health'
+ext.openapiBootRunDependencies = [':core-common:jar']
+ext.openapiWaitTimeInSeconds = 30
 
-openApi {
-  apiDocsUrl = "http://localhost:${springdocPort}/v3/api-docs"
-  outputDir = file("$buildDir/openapi")
-  outputFileName = "${project.name}.json"
-  waitTimeInSeconds = 30
-  customBootRun {
-    args = ["--spring.profiles.active=openapi"]
-  }
-}
-
-tasks.named('forkedSpringBootRun') {
-  dependsOn(':core-common:jar')
-}
-
-tasks.register('verifyCommittedOpenApi') {
-  dependsOn tasks.named('generateOpenApiDocs')
-
-  doLast {
-    File generated = file("$buildDir/openapi/${project.name}.json")
-    File committed = rootProject.file("contracts/openapi/${project.name}.json")
-
-    if (!generated.exists()) {
-      throw new GradleException("Generated OpenAPI file is missing: ${generated}")
-    }
-    if (!committed.exists()) {
-      throw new GradleException("Committed OpenAPI file is missing: ${committed}")
-    }
-
-    String generatedText = generated.getText('UTF-8').replace("\r\n", "\n")
-    String committedText = committed.getText('UTF-8').replace("\r\n", "\n")
-    def jsonSlurper = new groovy.json.JsonSlurper()
-    if (jsonSlurper.parseText(generatedText) != jsonSlurper.parseText(committedText)) {
-      throw new GradleException(
-          "Committed OpenAPI snapshot is out of date. Regenerate :fep-gateway:generateOpenApiDocs and sync contracts/openapi/${project.name}.json."
-      )
-    }
-  }
-}
-
-tasks.named('check') {
-  dependsOn tasks.named('verifyCommittedOpenApi')
-}
+apply from: rootProject.file('gradle/openapi-contract.gradle')
 
 tasks.register('correlationPropagationTests', Test) {
   description = 'Runs fep-gateway correlation propagation regressions.'

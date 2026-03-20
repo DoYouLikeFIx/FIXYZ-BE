@@ -1,5 +1,10 @@
 server:
-  port: ${OPENAPI_SERVER_PORT:18081}
+  port: ${OPENAPI_SERVER_PORT:28081}
+
+management:
+  server:
+    port: 29081
+    address: 127.0.0.1
 
 internal:
   secret: local-internal-secret
@@ -36,6 +41,12 @@ springdoc:
 corebank:
   ledger-integrity:
     enabled: false
+    observability:
+      stale-after: PT5M
+      alert:
+        unresolved-backlog-threshold: 10
+        repair-pending-threshold: 5
+        critical-anomaly-threshold: 1
   provisioning:
     # Local live QA/openapi sessions need immediately orderable accounts without
     # borrowing the static seed account; keep this profile-specific and verified

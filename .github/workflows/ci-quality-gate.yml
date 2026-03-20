@@ -43,17 +43,10 @@ jobs:
             :fep-gateway:test \
             :fep-simulator:test
 
-      - name: Generate OpenAPI docs
-        run: |
-          ./gradlew --no-daemon --stacktrace \
-            :channel-service:generateOpenApiDocs \
-            :corebank-service:generateOpenApiDocs \
-            :fep-gateway:generateOpenApiDocs \
-            :fep-simulator:generateOpenApiDocs
-
       - name: Verify OpenAPI snapshots
         run: |
-          git diff --no-index --ignore-cr-at-eol --exit-code contracts/openapi/channel-service.json channel-service/build/openapi/channel-service.json
-          git diff --no-index --ignore-cr-at-eol --exit-code contracts/openapi/corebank-service.json corebank-service/build/openapi/corebank-service.json
-          git diff --no-index --ignore-cr-at-eol --exit-code contracts/openapi/fep-gateway.json fep-gateway/build/openapi/fep-gateway.json
-          git diff --no-index --ignore-cr-at-eol --exit-code contracts/openapi/fep-simulator.json fep-simulator/build/openapi/fep-simulator.json
+          ./gradlew --no-daemon --stacktrace \
+            :channel-service:verifyCommittedOpenApi \
+            :corebank-service:verifyCommittedOpenApi \
+            :fep-gateway:verifyCommittedOpenApi \
+            :fep-simulator:verifyCommittedOpenApi

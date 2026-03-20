@@ -75,6 +75,12 @@ corebank:
   ledger-integrity:
     enabled: ${COREBANK_LEDGER_INTEGRITY_ENABLED:true}
     fixed-delay-ms: ${COREBANK_LEDGER_INTEGRITY_FIXED_DELAY_MS:60000}
+    observability:
+      stale-after: ${COREBANK_LEDGER_INTEGRITY_OBSERVABILITY_STALE_AFTER:PT5M}
+      alert:
+        unresolved-backlog-threshold: ${COREBANK_LEDGER_INTEGRITY_UNRESOLVED_BACKLOG_ALERT_THRESHOLD:10}
+        repair-pending-threshold: ${COREBANK_LEDGER_INTEGRITY_REPAIR_PENDING_ALERT_THRESHOLD:5}
+        critical-anomaly-threshold: ${COREBANK_LEDGER_INTEGRITY_CRITICAL_ANOMALY_ALERT_THRESHOLD:1}
   provisioning:
     # Safe default for shared or misconfigured environments. Local/openapi
     # profiles and explicit env overrides can opt into funded demo balances.
