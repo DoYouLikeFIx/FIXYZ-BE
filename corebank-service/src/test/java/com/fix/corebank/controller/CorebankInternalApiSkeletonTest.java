@@ -852,6 +852,7 @@ class CorebankInternalApiSkeletonTest {
           null,
           null,
           null,
+          null,
           new PositionLockMetrics(new SimpleMeterRegistry())
       );
     }

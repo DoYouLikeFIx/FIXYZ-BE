@@ -102,6 +102,58 @@ class FepGatewayQuoteSnapshotContractTest {
   }
 
   @Test
+  void shouldReturnLatestSnapshotsForRequestedSymbolsInRequestOrder() throws Exception {
+    Instant quoteAsOf = Instant.parse("2026-03-20T09:10:00Z");
+    quoteSnapshotRepository.save(QuoteSnapshot.recorded(
+        "qsnap-samsung-old",
+        "005930",
+        FepQuoteSourceMode.LIVE,
+        quoteAsOf.minusSeconds(10),
+        70000L,
+        70100L,
+        70050L,
+        10L,
+        false
+    ));
+    quoteSnapshotRepository.save(QuoteSnapshot.recorded(
+        "qsnap-samsung-new",
+        "005930",
+        FepQuoteSourceMode.LIVE,
+        quoteAsOf,
+        70200L,
+        70300L,
+        70250L,
+        11L,
+        false
+    ));
+    quoteSnapshotRepository.save(QuoteSnapshot.recorded(
+        "qsnap-hynix-new",
+        "000660",
+        FepQuoteSourceMode.LIVE,
+        quoteAsOf.plusSeconds(1),
+        120000L,
+        120500L,
+        120250L,
+        12L,
+        false
+    ));
+
+    mockMvc.perform(get("/fep-internal/v1/quotes/snapshots/latest/batch")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "corr-quote-batch")
+            .queryParam("symbol", "000660", "005930")
+            .queryParam("quoteSourceMode", "LIVE"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "corr-quote-batch"))
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.length()").value(2))
+        .andExpect(jsonPath("$.data[0].symbol").value("000660"))
+        .andExpect(jsonPath("$.data[0].quoteSnapshotId").value("qsnap-hynix-new"))
+        .andExpect(jsonPath("$.data[1].symbol").value("005930"))
+        .andExpect(jsonPath("$.data[1].quoteSnapshotId").value("qsnap-samsung-new"));
+  }
+
+  @Test
   void shouldReturnNotFoundWhenSnapshotDoesNotExist() throws Exception {
     mockMvc.perform(get("/fep-internal/v1/quotes/snapshots/latest")
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")

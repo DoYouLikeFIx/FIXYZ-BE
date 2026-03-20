@@ -115,6 +115,7 @@ class CorebankOrderServiceTest {
   private StubFepClient fepClient;
   private StubFepQuoteSnapshotClient fepQuoteSnapshotClient;
   private CorebankOrderPersistenceService corebankOrderPersistenceService;
+  private CorebankAccountPositionQueryService corebankAccountPositionQueryService;
   private CorebankOrderService corebankOrderService;
   private PositionLockMetrics positionLockMetrics;
 
@@ -138,6 +139,7 @@ class CorebankOrderServiceTest {
         (order, account, position) -> {
         }
     );
+    corebankAccountPositionQueryService = new CorebankAccountPositionQueryService(accountRepository, positionRepository);
     CorebankMarketDataProperties marketDataProperties = new CorebankMarketDataProperties();
     marketDataProperties.setMaxQuoteAgeMs(5_000L);
     marketDataProperties.setQuoteSourceMode(FepQuoteSourceMode.LIVE);
@@ -152,6 +154,7 @@ class CorebankOrderServiceTest {
         corebankOrderPersistenceService,
         fepClient,
         fepQuoteSnapshotClient,
+        corebankAccountPositionQueryService,
         new QuoteFreshnessPolicy(
             marketDataProperties,
             Clock.fixed(Instant.parse("2026-03-01T10:02:00Z"), ZoneId.of("UTC"))
@@ -228,7 +231,10 @@ class CorebankOrderServiceTest {
 
   @Test
   void shouldUseRepeatableReadForAccountPositionConsistency() throws NoSuchMethodException {
-    Method method = CorebankOrderService.class.getDeclaredMethod("getAccountPosition", AccountPositionQueryCommand.class);
+    Method method = CorebankAccountPositionQueryService.class.getDeclaredMethod(
+        "getOwnedAccountPosition",
+        AccountPositionQueryCommand.class
+    );
     Transactional transactional = method.getAnnotation(Transactional.class);
 
     assertThat(transactional).isNotNull();
@@ -326,6 +332,8 @@ class CorebankOrderServiceTest {
     assertThat(result.get(1).getAsOf()).isEqualTo(samsungUpdatedAt);
     assertThat(result.get(1).getMarketPrice()).isEqualByComparingTo("72050.0000");
     assertThat(result.get(1).getQuoteSnapshotId()).isEqualTo("qsnap-005930-1");
+    assertThat(fepQuoteSnapshotClient.singleQueryCalls()).isZero();
+    assertThat(fepQuoteSnapshotClient.batchQueryCalls()).isEqualTo(1);
   }
 
   @Test
@@ -2219,6 +2227,8 @@ class CorebankOrderServiceTest {
 
     private final Map<String, FepQuoteSnapshotResult> quoteResults = new HashMap<>();
     private final Map<String, RuntimeException> quoteFailures = new HashMap<>();
+    private int singleQueryCalls;
+    private int batchQueryCalls;
 
     private StubFepQuoteSnapshotClient() {
       super(RestClient.builder().baseUrl("http://localhost").build(), "test-secret");
@@ -2230,6 +2240,7 @@ class CorebankOrderServiceTest {
         FepQuoteSourceMode quoteSourceMode,
         String correlationId
     ) {
+      singleQueryCalls++;
       RuntimeException failure = quoteFailures.get(symbol);
       if (failure != null) {
         throw failure;
@@ -2241,6 +2252,27 @@ class CorebankOrderServiceTest {
       return result;
     }
 
+    @Override
+    public Map<String, FepQuoteSnapshotResult> queryLatestQuoteSnapshots(
+        List<String> symbols,
+        FepQuoteSourceMode quoteSourceMode,
+        String correlationId
+    ) {
+      batchQueryCalls++;
+      Map<String, FepQuoteSnapshotResult> snapshots = new HashMap<>();
+      for (String symbol : symbols) {
+        RuntimeException failure = quoteFailures.get(symbol);
+        if (failure != null) {
+          throw failure;
+        }
+        FepQuoteSnapshotResult result = quoteResults.get(symbol);
+        if (result != null) {
+          snapshots.put(symbol, result);
+        }
+      }
+      return snapshots;
+    }
+
     private void setQuoteResult(String symbol, FepQuoteSnapshotResult result) {
       quoteFailures.remove(symbol);
       quoteResults.put(symbol, result);
@@ -2249,6 +2281,14 @@ class CorebankOrderServiceTest {
     private void setQuoteFailure(String symbol, RuntimeException failure) {
       quoteResults.remove(symbol);
       quoteFailures.put(symbol, failure);
+    }
+
+    private int singleQueryCalls() {
+      return singleQueryCalls;
+    }
+
+    private int batchQueryCalls() {
+      return batchQueryCalls;
     }
   }
 }
