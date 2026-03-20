@@ -263,6 +263,10 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
     if (streamState == null) {
       return;
     }
+    if (replayCursorPersistencePort.find(replayId).isEmpty()) {
+      removeOrphanedReplayStream(replayId, representativeSpec);
+      return;
+    }
 
     try {
       ReplayCursorSpec currentCursor = streamState.cursorSpec();
@@ -278,9 +282,22 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
           state.cursorSpec = advancedCursor;
         }
       }
+    } catch (IllegalStateException exception) {
+      removeOrphanedReplayStream(replayId, representativeSpec);
+      log.info("Dropped replay market-data timeline after cursor disappeared. replayId={}", replayId);
     } catch (RuntimeException exception) {
       log.warn("Failed to emit replay market-data event. replayId={}", replayId, exception);
     }
+  }
+
+  private void removeOrphanedReplayStream(String replayId, MarketDataSubscriptionSpec representativeSpec) {
+    synchronized (this) {
+      replayStreams.remove(replayId);
+      replayStreamRefCounts.remove(replayId);
+      activeSubscriptions.entrySet().removeIf(entry -> replayId.equals(entry.getValue().replayId()));
+      refreshMetrics();
+    }
+    marketDataPersistencePort.deactivateSubscription(representativeSpec);
   }
 
   private void dispatchToSinks(String replayId, NormalizedQuoteEvent event) {
