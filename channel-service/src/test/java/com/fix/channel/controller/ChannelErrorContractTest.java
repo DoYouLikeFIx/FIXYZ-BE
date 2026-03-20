@@ -9,6 +9,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doNothing;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -20,9 +22,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fix.channel.entity.Member;
-import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.service.OrderSessionRateLimitService;
+import com.fix.channel.service.SessionOwnershipValidator;
 import com.fix.channel.testsupport.OrderSessionTestFixture;
 import com.fix.channel.service.OrderSessionTtlStore;
 import com.fix.common.web.CommonHeaders;
@@ -34,16 +35,17 @@ import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -81,11 +83,11 @@ class ChannelErrorContractTest {
   @Autowired
   private ObjectMapper objectMapper;
 
-  @Autowired
-  private MemberRepository memberRepository;
-
-  @MockBean
+  @MockitoBean
   private OrderSessionRateLimitService orderSessionRateLimitService;
+
+  @MockitoBean
+  private SessionOwnershipValidator sessionOwnershipValidator;
 
   @Autowired
   private OrderSessionTestFixture orderSessionTestFixture;
@@ -98,6 +100,11 @@ class ChannelErrorContractTest {
   @AfterAll
   static void stopWireMock() {
     WIRE_MOCK_SERVER.stop();
+  }
+
+  @BeforeEach
+  void setUp() {
+    doNothing().when(sessionOwnershipValidator).validateLinkedAccount(anyLong(), anyLong());
   }
 
   @TestConfiguration
@@ -165,17 +172,9 @@ class ChannelErrorContractTest {
   @Test
   @WithMockUser(username = "qa-user")
   void shouldExposeStaleQuoteErrorForMarketPrepareBoundary() throws Exception {
-    Member member = saveLinkedMember(
-        "M-ERR-STALE-001",
-        "channel.stale.quote@fix.local",
-        "Channel Stale Quote",
-        1L,
-        "11000000000301"
-    );
-
     WIRE_MOCK_SERVER.resetAll();
     WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
-        .withQueryParam("memberId", equalTo(member.getId().toString()))
+        .withQueryParam("memberId", equalTo("301"))
         .withQueryParam("symbol", equalTo("005930"))
         .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
             .withStatus(422)
@@ -200,7 +199,7 @@ class ChannelErrorContractTest {
 
     mockMvc.perform(post("/api/v1/orders/sessions")
             .with(csrf())
-            .sessionAttr("AUTH_MEMBER_ID", member.getId())
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
             .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-stale-quote")
             .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174281")
             .contentType(MediaType.APPLICATION_JSON)
@@ -227,7 +226,7 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.correlationId").value("trace-channel-stale-quote"));
 
     WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions"))
-        .withQueryParam("memberId", equalTo(member.getId().toString()))
+        .withQueryParam("memberId", equalTo("301"))
         .withQueryParam("symbol", equalTo("005930"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-stale-quote")));
@@ -998,17 +997,5 @@ class ChannelErrorContractTest {
             .param("size", "0"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("VALIDATION_001"));
-  }
-
-  private Member saveLinkedMember(
-      String memberNo,
-      String email,
-      String name,
-      Long accountId,
-      String accountNumber
-  ) {
-    Member member = Member.registerUser(memberNo, email, "test-password", name);
-    member.updateLinkedAccount(accountId, accountNumber);
-    return memberRepository.saveAndFlush(member);
   }
 }
