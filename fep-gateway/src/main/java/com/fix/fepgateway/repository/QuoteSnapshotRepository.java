@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface QuoteSnapshotRepository extends JpaRepository<QuoteSnapshot, Long> {
   Optional<QuoteSnapshot> findByQuoteSnapshotId(String quoteSnapshotId);
 
-  Optional<QuoteSnapshot> findTopBySymbolAndSourceModeOrderByQuoteAsOfDesc(
+  Optional<QuoteSnapshot> findTopBySymbolAndSourceModeOrderByQuoteAsOfDescStreamOffsetDesc(
       String symbol,
       FepQuoteSourceMode sourceMode
   );
