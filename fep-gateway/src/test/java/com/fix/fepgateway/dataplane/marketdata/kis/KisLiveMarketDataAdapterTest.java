@@ -9,14 +9,19 @@ import com.fix.fepgateway.config.FepMarketDataProperties;
 import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataMetrics;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataEventSink;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionProgress;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionProgressPort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
 import com.fix.fepgateway.dataplane.marketdata.NormalizedQuoteEvent;
+import com.fix.fepgateway.dataplane.marketdata.replay.ReplayQuoteEventGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
@@ -125,8 +130,11 @@ class KisLiveMarketDataAdapterTest {
   void shouldReconnectAndResubscribeActiveRoutesWhenSessionDrops() throws Exception {
     FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
     RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    FixedMarketDataSubscriptionProgressPort progressPort = new FixedMarketDataSubscriptionProgressPort();
+    progressPort.put("000660", new MarketDataSubscriptionProgress(40L, Instant.parse("2026-03-19T00:30:00Z")));
+    progressPort.put("005930", new MarketDataSubscriptionProgress(10L, Instant.parse("2026-03-19T00:31:00Z")));
     SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort, meterRegistry);
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort, progressPort, meterRegistry);
 
     adapter.start(subscription("sub-005930", "005930"), event -> {
     });
@@ -141,6 +149,17 @@ class KisLiveMarketDataAdapterTest {
         .path("body").path("input").path("tr_key").asText()).isEqualTo("000660");
     assertThat(new ObjectMapper().readTree(sessionClient.sessions().get(1).sentPayloads().get(1))
         .path("body").path("input").path("tr_key").asText()).isEqualTo("005930");
+    assertThat(persistencePort.persistedEvents()).hasSize(4);
+    assertThat(persistencePort.persistedEvents()).extracting(NormalizedQuoteEvent::symbol)
+        .containsExactly("000660", "000660", "005930", "005930");
+    assertThat(persistencePort.persistedEvents()).extracting(NormalizedQuoteEvent::sourceMode)
+        .containsOnly(FepQuoteSourceMode.REPLAY);
+
+    sessionClient.session().emit("0|H0STCNT0|001|" + recordPayload("005930", "093500", "70200", "70300", "70100", "20260319"));
+
+    assertThat(persistencePort.persistedEvents()).hasSize(5);
+    assertThat(persistencePort.persistedEvents().get(4).sourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(persistencePort.persistedEvents().get(4).streamOffset()).isEqualTo(43L);
     assertThat(meterRegistry.get("fep.marketdata.reconnect.attempts")
         .tag("provider", "KIS")
         .counter()
@@ -169,12 +188,31 @@ class KisLiveMarketDataAdapterTest {
       FakeKisWebSocketSessionClient sessionClient,
       LiveMarketDataPersistencePort persistencePort
   ) {
-    return newAdapter(sessionClient, persistencePort, new SimpleMeterRegistry());
+    return newAdapter(
+        sessionClient,
+        persistencePort,
+        (provider, symbol, sourceMode) -> java.util.Optional.empty(),
+        new SimpleMeterRegistry()
+    );
   }
 
   private KisLiveMarketDataAdapter newAdapter(
       FakeKisWebSocketSessionClient sessionClient,
       LiveMarketDataPersistencePort persistencePort,
+      SimpleMeterRegistry meterRegistry
+  ) {
+    return newAdapter(
+        sessionClient,
+        persistencePort,
+        (provider, symbol, sourceMode) -> java.util.Optional.empty(),
+        meterRegistry
+    );
+  }
+
+  private KisLiveMarketDataAdapter newAdapter(
+      FakeKisWebSocketSessionClient sessionClient,
+      LiveMarketDataPersistencePort persistencePort,
+      MarketDataSubscriptionProgressPort progressPort,
       SimpleMeterRegistry meterRegistry
   ) {
     return new KisLiveMarketDataAdapter(
@@ -187,6 +225,8 @@ class KisLiveMarketDataAdapterTest {
         new KisH0stcnt0RecordParser(new KisRealtimeFrameParser(), new KisPayloadDecryptor()),
         new KisH0stcnt0EventMapper(),
         persistencePort,
+        progressPort,
+        new ReplayQuoteEventGenerator(),
         new MarketDataMetrics(meterRegistry)
     );
   }
@@ -363,6 +403,20 @@ class KisLiveMarketDataAdapterTest {
 
     private List<NormalizedQuoteEvent> persistedEvents() {
       return persistedEvents;
+    }
+  }
+
+  private static final class FixedMarketDataSubscriptionProgressPort implements MarketDataSubscriptionProgressPort {
+
+    private final Map<String, MarketDataSubscriptionProgress> progressBySymbol = new LinkedHashMap<>();
+
+    @Override
+    public java.util.Optional<MarketDataSubscriptionProgress> findProgress(String provider, String symbol, FepQuoteSourceMode sourceMode) {
+      return java.util.Optional.ofNullable(progressBySymbol.get(symbol));
+    }
+
+    private void put(String symbol, MarketDataSubscriptionProgress progress) {
+      progressBySymbol.put(symbol, progress);
     }
   }
 }

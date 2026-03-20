@@ -5,10 +5,15 @@ import com.fix.fepgateway.config.FepMarketDataProperties;
 import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataMetrics;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataEventSink;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionProgress;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionProgressPort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSourceAdapter;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
 import com.fix.fepgateway.dataplane.marketdata.NormalizedQuoteEvent;
+import com.fix.fepgateway.dataplane.marketdata.ReplayCursorSpec;
+import com.fix.fepgateway.dataplane.marketdata.replay.ReplayQuoteEventGenerator;
 import java.net.URI;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Map;
@@ -35,6 +40,8 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
   private final KisH0stcnt0RecordParser h0stcnt0RecordParser;
   private final KisH0stcnt0EventMapper h0stcnt0EventMapper;
   private final LiveMarketDataPersistencePort liveMarketDataPersistencePort;
+  private final MarketDataSubscriptionProgressPort marketDataSubscriptionProgressPort;
+  private final ReplayQuoteEventGenerator replayQuoteEventGenerator;
   private final MarketDataMetrics marketDataMetrics;
 
   private final Map<String, ActiveSubscription> activeSubscriptions = new ConcurrentHashMap<>();
@@ -54,6 +61,8 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
       KisH0stcnt0RecordParser h0stcnt0RecordParser,
       KisH0stcnt0EventMapper h0stcnt0EventMapper,
       LiveMarketDataPersistencePort liveMarketDataPersistencePort,
+      MarketDataSubscriptionProgressPort marketDataSubscriptionProgressPort,
+      ReplayQuoteEventGenerator replayQuoteEventGenerator,
       MarketDataMetrics marketDataMetrics
   ) {
     this.properties = properties;
@@ -65,6 +74,8 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
     this.h0stcnt0RecordParser = h0stcnt0RecordParser;
     this.h0stcnt0EventMapper = h0stcnt0EventMapper;
     this.liveMarketDataPersistencePort = liveMarketDataPersistencePort;
+    this.marketDataSubscriptionProgressPort = marketDataSubscriptionProgressPort;
+    this.replayQuoteEventGenerator = replayQuoteEventGenerator;
     this.marketDataMetrics = marketDataMetrics;
     refreshMetrics();
   }
@@ -90,6 +101,8 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
         h0stcnt0RecordParser,
         h0stcnt0EventMapper,
         liveMarketDataPersistencePort,
+        (provider, symbol, sourceMode) -> Optional.empty(),
+        new ReplayQuoteEventGenerator(),
         MarketDataMetrics.noOp()
     );
   }
@@ -221,7 +234,8 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
       URI websocketUri = URI.create(KisApiEndpointResolver.resolveWebSocketBaseUrl(properties.getKis().getEnv()));
       session = sessionClient.connect(websocketUri, this::handleInboundText);
       if (recovery) {
-        resubscribeActiveRemoteSubscriptions();
+        ArrayList<MarketDataSubscriptionSpec> recoveredSubscriptions = resubscribeActiveRemoteSubscriptions();
+        backfillRecoveredSubscriptions(recoveredSubscriptions);
         marketDataMetrics.recordReconnectSuccess(provider());
       }
     } catch (RuntimeException exception) {
@@ -348,7 +362,7 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
     refreshMetrics();
   }
 
-  private void resubscribeActiveRemoteSubscriptions() {
+  private ArrayList<MarketDataSubscriptionSpec> resubscribeActiveRemoteSubscriptions() {
     ArrayList<MarketDataSubscriptionSpec> uniqueSubscriptions = new ArrayList<>();
     ArrayList<RemoteSubscriptionKey> registeredKeys = new ArrayList<>();
 
@@ -364,6 +378,72 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
         });
 
     uniqueSubscriptions.forEach(this::sendSubscribe);
+    return uniqueSubscriptions;
+  }
+
+  private void backfillRecoveredSubscriptions(ArrayList<MarketDataSubscriptionSpec> uniqueSubscriptions) {
+    int gapFillCount = properties.getKis().getWs().getReconnectGapFillCount();
+    if (gapFillCount <= 0) {
+      return;
+    }
+
+    long maxRecoveredOffset = Long.MIN_VALUE;
+    for (MarketDataSubscriptionSpec subscriptionSpec : uniqueSubscriptions) {
+      Optional<MarketDataSubscriptionProgress> progress = marketDataSubscriptionProgressPort.findProgress(
+          provider(),
+          subscriptionSpec.symbol(),
+          sourceMode()
+      );
+      if (progress.isEmpty()
+          || progress.get().lastEventOffset() == null
+          || progress.get().lastQuoteAsOf() == null) {
+        continue;
+      }
+
+      long baseOffset = progress.get().lastEventOffset();
+      for (int gapIndex = 1; gapIndex <= gapFillCount; gapIndex++) {
+        long recoveredOffset = baseOffset + gapIndex;
+        NormalizedQuoteEvent replayGapFillEvent = replayGapFillEvent(
+            subscriptionSpec.symbol(),
+            progress.get().lastQuoteAsOf().plusSeconds(gapIndex),
+            recoveredOffset
+        );
+        liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, replayGapFillEvent);
+        publishToMatchingSinks(subscriptionSpec.symbol(), subscriptionSpec.trId(), replayGapFillEvent);
+        maxRecoveredOffset = Math.max(maxRecoveredOffset, recoveredOffset);
+      }
+    }
+
+    if (maxRecoveredOffset >= 0) {
+      long nextStreamOffset = maxRecoveredOffset + 1;
+      streamOffsetSequence.updateAndGet(current -> Math.max(current, nextStreamOffset));
+    }
+  }
+
+  private NormalizedQuoteEvent replayGapFillEvent(String symbol, java.time.Instant quoteAsOf, long recoveredOffset) {
+    ReplayCursorSpec replayCursorSpec = new ReplayCursorSpec(
+        reconnectReplayId(symbol),
+        properties.getReplay().getSeed(),
+        symbol,
+        recoveredOffset,
+        BigDecimal.ONE
+    );
+    NormalizedQuoteEvent baseEvent = replayQuoteEventGenerator.generate(replayCursorSpec);
+    return new NormalizedQuoteEvent(
+        baseEvent.provider(),
+        baseEvent.symbol(),
+        baseEvent.sourceMode(),
+        quoteAsOf,
+        baseEvent.bestBid(),
+        baseEvent.bestAsk(),
+        baseEvent.lastTrade(),
+        recoveredOffset,
+        false
+    );
+  }
+
+  private String reconnectReplayId(String symbol) {
+    return "recovery-" + symbol;
   }
 
   private void closeCurrentSession() {

@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-public class LiveMarketDataPersistenceService implements LiveMarketDataPersistencePort {
+public class LiveMarketDataPersistenceService implements LiveMarketDataPersistencePort, MarketDataSubscriptionProgressPort {
 
   private final MarketDataSubscriptionRepository marketDataSubscriptionRepository;
   private final QuoteSnapshotJdbcWriter quoteSnapshotJdbcWriter;
@@ -59,6 +59,20 @@ public class LiveMarketDataPersistenceService implements LiveMarketDataPersisten
     subscription.activate();
     subscription.updateProgress(event.streamOffset(), event.quoteAsOf());
     marketDataSubscriptionRepository.save(subscription);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public java.util.Optional<MarketDataSubscriptionProgress> findProgress(
+      String provider,
+      String symbol,
+      com.fix.common.fep.FepQuoteSourceMode sourceMode
+  ) {
+    return marketDataSubscriptionRepository.findByProviderAndSymbolAndSourceMode(provider, symbol, sourceMode)
+        .map(subscription -> new MarketDataSubscriptionProgress(
+            subscription.getLastEventOffset(),
+            subscription.getLastQuoteAsOf()
+        ));
   }
 
   private MarketDataSubscription findOrCreateSubscription(MarketDataSubscriptionSpec subscriptionSpec) {
