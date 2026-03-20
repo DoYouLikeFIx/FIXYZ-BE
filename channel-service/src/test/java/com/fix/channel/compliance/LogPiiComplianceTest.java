@@ -36,7 +36,9 @@ import com.fix.channel.service.OrderSessionRateLimitService;
 import com.fix.channel.service.OrderSessionService;
 import com.fix.channel.service.OrderSessionTtlStore;
 import com.fix.channel.service.OtpVerifyRateLimitService;
+import com.fix.channel.service.PasswordRecoveryChallengeProvider;
 import com.fix.channel.service.PasswordRecoveryChallengeService;
+import com.fix.channel.service.PasswordRecoveryChallengeTelemetryService;
 import com.fix.channel.service.PasswordRecoveryMailDispatcher;
 import com.fix.channel.service.PasswordRecoveryRateLimitService;
 import com.fix.channel.service.PasswordRecoveryService;
@@ -56,6 +58,7 @@ import com.fix.channel.vo.PasswordForgotCommand;
 import com.fix.channel.vo.PasswordResetCommand;
 import com.fix.channel.vo.PasswordResetContinuationResult;
 import com.fix.channel.vo.TotpRebindBootstrapResult;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -418,13 +421,15 @@ class LogPiiComplianceTest {
   private String exercisePasswordRecoveryForgotPath(AuditLogService capturingAuditLogService) {
     PasswordRecoveryRateLimitService rateLimitService =
         org.mockito.Mockito.mock(PasswordRecoveryRateLimitService.class);
-    PasswordRecoveryChallengeService challengeService =
+    PasswordRecoveryChallengeProvider challengeProvider =
         org.mockito.Mockito.mock(PasswordRecoveryChallengeService.class);
     PasswordRecoveryTokenService tokenService = org.mockito.Mockito.mock(PasswordRecoveryTokenService.class);
     PasswordRecoveryTimingEqualizer timingEqualizer = org.mockito.Mockito.mock(PasswordRecoveryTimingEqualizer.class);
     MemberRepository memberRepository = org.mockito.Mockito.mock(MemberRepository.class);
     PasswordResetTokenRepository passwordResetTokenRepository =
         org.mockito.Mockito.mock(PasswordResetTokenRepository.class);
+    PasswordRecoveryChallengeTelemetryService challengeTelemetryService =
+        new PasswordRecoveryChallengeTelemetryService(new SimpleMeterRegistry());
     PasswordRecoveryMailDispatcher mailDispatcher = new LoggingPasswordRecoveryMailDispatcher();
     Member member = member(601L, "M-PII-PR-601", "recover.user@fixyz.com", false);
     String rawResetToken = "raw-reset-token-123";
@@ -442,7 +447,8 @@ class LogPiiComplianceTest {
         new PasswordRecoveryProperties(),
         rateLimitService,
         tokenService,
-        challengeService,
+        List.of(challengeProvider),
+        challengeTelemetryService,
         timingEqualizer,
         mailDispatcher,
         Runnable::run,
@@ -464,7 +470,7 @@ class LogPiiComplianceTest {
   private PasswordResetContinuationResult exercisePasswordRecoveryResetPath(AuditLogService capturingAuditLogService) {
     PasswordRecoveryRateLimitService rateLimitService =
         org.mockito.Mockito.mock(PasswordRecoveryRateLimitService.class);
-    PasswordRecoveryChallengeService challengeService =
+    PasswordRecoveryChallengeProvider challengeProvider =
         org.mockito.Mockito.mock(PasswordRecoveryChallengeService.class);
     PasswordRecoveryTokenService tokenService = org.mockito.Mockito.mock(PasswordRecoveryTokenService.class);
     PasswordRecoveryTimingEqualizer timingEqualizer = org.mockito.Mockito.mock(PasswordRecoveryTimingEqualizer.class);
@@ -475,6 +481,8 @@ class LogPiiComplianceTest {
     ChannelSessionInvalidationService invalidationService =
         org.mockito.Mockito.mock(ChannelSessionInvalidationService.class);
     MfaRecoveryService mfaRecoveryService = org.mockito.Mockito.mock(MfaRecoveryService.class);
+    PasswordRecoveryChallengeTelemetryService challengeTelemetryService =
+        new PasswordRecoveryChallengeTelemetryService(new SimpleMeterRegistry());
     Member member = member(602L, "M-PII-PR-602", "reset.user@fixyz.com", true);
     String rawResetToken = "raw-reset-token-456";
     PasswordResetToken resetToken = PasswordResetToken.issueActive(
@@ -503,7 +511,8 @@ class LogPiiComplianceTest {
         new PasswordRecoveryProperties(),
         rateLimitService,
         tokenService,
-        challengeService,
+        List.of(challengeProvider),
+        challengeTelemetryService,
         timingEqualizer,
         org.mockito.Mockito.mock(PasswordRecoveryMailDispatcher.class),
         Runnable::run,

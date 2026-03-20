@@ -457,7 +457,7 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
                 }
                 """.formatted(challengeToken)))
         .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.code").value("AUTH-012"));
+        .andExpect(jsonPath("$.code").value("AUTH-022"));
   }
 
   @Test
