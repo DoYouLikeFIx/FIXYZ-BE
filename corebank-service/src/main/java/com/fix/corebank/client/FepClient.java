@@ -38,7 +38,7 @@ public class FepClient {
   public FepClient(
       RestClient.Builder restClientBuilder,
       @Value("${fep.gateway.base-url:http://localhost:8083}") String fepGatewayBaseUrl,
-      @Value("${internal.secret:local-internal-secret}") String internalSecret
+      @Value("${internal.secret}") String internalSecret
   ) {
     this(restClientBuilder
         .requestFactory(new SimpleClientHttpRequestFactory())
