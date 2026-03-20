@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -16,8 +17,8 @@ public class QuoteFreshnessPolicy {
   private final Clock clock;
 
   @Autowired
-  public QuoteFreshnessPolicy(CorebankMarketDataProperties properties) {
-    this(properties, Clock.systemUTC());
+  public QuoteFreshnessPolicy(CorebankMarketDataProperties properties, ObjectProvider<Clock> clockProvider) {
+    this(properties, clockProvider.getIfAvailable(Clock::systemUTC));
   }
 
   QuoteFreshnessPolicy(CorebankMarketDataProperties properties, Clock clock) {

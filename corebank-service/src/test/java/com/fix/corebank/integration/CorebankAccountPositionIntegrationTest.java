@@ -15,18 +15,24 @@ import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.web.CommonHeaders;
 import com.fix.corebank.client.FepQuoteSnapshotClient;
 import com.fix.corebank.client.FepQuoteSnapshotResult;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(CorebankAccountPositionIntegrationTest.FixedClockConfig.class)
 @TestPropertySource(properties = {
     "spring.datasource.url=jdbc:h2:mem:core_account_position_flow;MODE=MySQL;DB_CLOSE_DELAY=-1",
     "spring.datasource.driver-class-name=org.h2.Driver",
@@ -37,6 +43,10 @@ import org.springframework.test.web.servlet.MockMvc;
     "internal.secret=test-secret"
 })
 class CorebankAccountPositionIntegrationTest {
+
+  private static final Instant FIXED_NOW = Instant.parse("2026-03-20T00:00:06Z");
+  private static final Instant FIXED_FRESH_QUOTE_AS_OF = FIXED_NOW.minusSeconds(1);
+  private static final Instant FIXED_STALE_QUOTE_AS_OF = FIXED_NOW.minusMillis(6_000L);
 
   @Autowired
   private MockMvc mockMvc;
@@ -51,7 +61,7 @@ class CorebankAccountPositionIntegrationTest {
         .thenReturn(quoteSnapshot(
             "qsnap-005930-live-001",
             "005930",
-            Instant.now().minusSeconds(1),
+            FIXED_FRESH_QUOTE_AS_OF,
             72000L,
             72100L,
             72050L
@@ -60,7 +70,7 @@ class CorebankAccountPositionIntegrationTest {
         .thenReturn(quoteSnapshot(
             "qsnap-000660-live-001",
             "000660",
-            Instant.now().minusSeconds(1),
+            FIXED_FRESH_QUOTE_AS_OF,
             120000L,
             120500L,
             120250L
@@ -159,7 +169,7 @@ class CorebankAccountPositionIntegrationTest {
         .thenReturn(quoteSnapshot(
             "qsnap-005930-stale-001",
             "005930",
-            Instant.now().minusMillis(6_000L),
+            FIXED_STALE_QUOTE_AS_OF,
             72000L,
             72100L,
             72050L
@@ -226,5 +236,14 @@ class CorebankAccountPositionIntegrationTest {
         42L,
         false
     );
+  }
+
+  @TestConfiguration
+  static class FixedClockConfig {
+
+    @Bean
+    Clock quoteFreshnessClock() {
+      return Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
+    }
   }
 }
