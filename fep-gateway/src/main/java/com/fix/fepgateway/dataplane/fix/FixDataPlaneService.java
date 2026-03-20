@@ -16,25 +16,60 @@ import com.fix.fepgateway.vo.GatewayOrderReplayCommand;
 import com.fix.fepgateway.vo.GatewayOrderSubmitCommand;
 import com.fix.fepgateway.vo.FepReplayDecision;
 import java.time.Instant;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 @Service
 public class FixDataPlaneService {
 
   private static final Logger log = LoggerFactory.getLogger(FixDataPlaneService.class);
+  private static final String CHAOS_ACTION_NONE = "NONE";
 
   private final FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient;
+  private final RestClient simulatorRestClient;
+  private final boolean chaosProbeEnabled;
 
   @Autowired
-  public FixDataPlaneService(FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient) {
-    this.fepSimulatorTraceBridgeClient = fepSimulatorTraceBridgeClient;
+  public FixDataPlaneService(
+      FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient,
+      RestClient.Builder restClientBuilder,
+      @Value("${fep.simulator.base-url:http://localhost:8082}") String simulatorBaseUrl,
+      @Value("${fep.simulator.chaos-probe-enabled:false}") boolean chaosProbeEnabled
+  ) {
+    this(
+        fepSimulatorTraceBridgeClient,
+        restClientBuilder.baseUrl(simulatorBaseUrl).build(),
+        chaosProbeEnabled
+    );
   }
 
   protected FixDataPlaneService() {
-    this.fepSimulatorTraceBridgeClient = null;
+    this(null, null, false);
+  }
+
+  protected FixDataPlaneService(FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient) {
+    this(fepSimulatorTraceBridgeClient, null, false);
+  }
+
+  protected FixDataPlaneService(RestClient simulatorRestClient, boolean chaosProbeEnabled) {
+    this(null, simulatorRestClient, chaosProbeEnabled);
+  }
+
+  protected FixDataPlaneService(
+      FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient,
+      RestClient simulatorRestClient,
+      boolean chaosProbeEnabled
+  ) {
+    this.fepSimulatorTraceBridgeClient = fepSimulatorTraceBridgeClient;
+    this.simulatorRestClient = simulatorRestClient;
+    this.chaosProbeEnabled = chaosProbeEnabled;
   }
 
   public GatewayOrderResult sendOrderStatusRequest(String clOrdId, GatewayOrder order) {
@@ -61,7 +96,15 @@ public class FixDataPlaneService {
 
   public GatewayExecutionOutcome sendNewOrder(GatewayOrderSubmitCommand command) {
     bridgeTraceToSimulator(command.clOrdId());
-    long executedPrice = command.orderType().name().equals("LIMIT") ? command.price() : command.preTradePrice();
+    long executedPrice = resolveSubmitPrice(command);
+    String chaosAction = resolveSubmitChaosAction(command, executedPrice);
+    if ("TIMEOUT".equals(chaosAction)) {
+      throw new BusinessException(
+          ErrorCode.FEP_ACK_TIMEOUT,
+          "submit acknowledgement timed out",
+          new com.fix.common.error.ErrorMetadata("error.fep.timeout", "TIMEOUT")
+      );
+    }
     return new GatewayExecutionOutcome(
         "FEP-%s-%s".formatted(command.securityExchange().name(), command.clOrdId()),
         FepExecType.FILL,
@@ -76,10 +119,39 @@ public class FixDataPlaneService {
     );
   }
 
+  private long resolveSubmitPrice(GatewayOrderSubmitCommand command) {
+    return command.orderType().name().equals("LIMIT") ? command.price() : command.preTradePrice();
+  }
+
+  private String resolveSubmitChaosAction(GatewayOrderSubmitCommand command, long executedPrice) {
+    if (!chaosProbeEnabled || simulatorRestClient == null) {
+      return CHAOS_ACTION_NONE;
+    }
+
+    try {
+      long amount = Math.multiplyExact(command.qty(), executedPrice);
+      SimulatorPingResponse response = simulatorRestClient.get()
+          .uri(uriBuilder -> uriBuilder.path("/api/v1/ping")
+              .queryParam("symbol", command.symbol())
+              .queryParam("exchange", command.securityExchange().name())
+              .queryParam("amount", amount)
+              .build())
+          .retrieve()
+          .body(new ParameterizedTypeReference<SimulatorPingResponse>() {
+          });
+      if (response == null || response.chaosAction() == null || response.chaosAction().isBlank()) {
+        return CHAOS_ACTION_NONE;
+      }
+      return response.chaosAction().trim().toUpperCase(Locale.ROOT);
+    } catch (ArithmeticException | RestClientException ex) {
+      return CHAOS_ACTION_NONE;
+    }
+  }
+
   public GatewayExecutionOutcome sendCancel(GatewayOrderCancelCommand command, GatewayOrder order) {
     bridgeTraceToSimulator(command.getClOrdId());
     if ("TIMEOUT".equals(order.getCancelFailureMode())) {
-      throw new BusinessException(ErrorCode.CANCEL_TIMEOUT, "cancel acknowledgement timed out");
+      throw new BusinessException(ErrorCode.FEP_ACK_TIMEOUT, "cancel acknowledgement timed out");
     }
     if ("REJECT".equals(order.getCancelFailureMode())) {
       throw new BusinessException(ErrorCode.CANCEL_REJECTED, "exchange rejected cancel request");
@@ -377,5 +449,8 @@ public class FixDataPlaneService {
       );
     }
     return referencePrice;
+  }
+
+  private record SimulatorPingResponse(String chaosAction) {
   }
 }

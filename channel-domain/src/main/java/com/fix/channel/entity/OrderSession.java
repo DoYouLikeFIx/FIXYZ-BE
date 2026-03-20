@@ -106,6 +106,18 @@ public class OrderSession extends BaseTimeEntity {
   @Column(name = "recovery_next_attempt_at")
   private Instant recoveryNextAttemptAt;
 
+  @Column(name = "manual_replay_fingerprint", length = 64)
+  private String manualReplayFingerprint;
+
+  @Column(name = "manual_replay_processed_by", length = 36, columnDefinition = "CHAR(36)")
+  private String manualReplayProcessedBy;
+
+  @Column(name = "manual_replay_execution_source", length = 32)
+  private String manualReplayExecutionSource;
+
+  @Column(name = "manual_replay_processed_at")
+  private Instant manualReplayProcessedAt;
+
   protected OrderSession() {
   }
 
@@ -279,12 +291,32 @@ public class OrderSession extends BaseTimeEntity {
     return recoveryNextAttemptAt;
   }
 
+  public String getManualReplayFingerprint() {
+    return manualReplayFingerprint;
+  }
+
+  public String getManualReplayProcessedBy() {
+    return manualReplayProcessedBy;
+  }
+
+  public String getManualReplayExecutionSource() {
+    return manualReplayExecutionSource;
+  }
+
+  public Instant getManualReplayProcessedAt() {
+    return manualReplayProcessedAt;
+  }
+
   public boolean ownedBy(Long memberId) {
     return Objects.equals(this.memberId, memberId);
   }
 
   public boolean matchesReplayFingerprint(String candidateFingerprint) {
     return Objects.equals(this.replayFingerprint, candidateFingerprint);
+  }
+
+  public boolean matchesManualReplayFingerprint(String candidateFingerprint) {
+    return Objects.equals(this.manualReplayFingerprint, candidateFingerprint);
   }
 
   public boolean hasActiveWindow() {
@@ -504,6 +536,18 @@ public class OrderSession extends BaseTimeEntity {
   public void clearRecoveryAttemptState() {
     this.recoveryAttemptCount = null;
     this.recoveryNextAttemptAt = null;
+  }
+
+  public void recordManualReplayOutcome(
+      String fingerprint,
+      String processedBy,
+      String executionSource,
+      Instant processedAt
+  ) {
+    this.manualReplayFingerprint = fingerprint;
+    this.manualReplayProcessedBy = processedBy;
+    this.manualReplayExecutionSource = executionSource;
+    this.manualReplayProcessedAt = processedAt;
   }
 
   private void transitionTo(OrderSessionStatus nextStatus, String message) {

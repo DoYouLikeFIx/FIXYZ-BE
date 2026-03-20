@@ -2,6 +2,7 @@ package com.fix.channel.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.support.ChannelCorrelationIdSupport;
+import com.fix.channel.service.AdminReplaySecurityEventRecorder;
 import com.fix.channel.service.ChannelSessionInvalidationService;
 import com.fix.common.error.ApiErrorResponse;
 import com.fix.common.error.ErrorCode;
@@ -44,7 +45,8 @@ public class ChannelSecurityConfig {
       HttpSessionCsrfTokenRepository tokenRepository,
       ObjectMapper objectMapper,
       @Value("${server.servlet.session.cookie.name:SESSION}") String sessionCookieName,
-      ChannelSessionInvalidationService channelSessionInvalidationService
+      ChannelSessionInvalidationService channelSessionInvalidationService,
+      AdminReplaySecurityEventRecorder adminReplaySecurityEventRecorder
   )
       throws Exception {
     http
@@ -82,6 +84,7 @@ public class ChannelSecurityConfig {
               }
 
               String correlationId = ChannelCorrelationIdSupport.ensureCorrelationId(request);
+              adminReplaySecurityEventRecorder.recordIfApplicable(request, correlationId);
               ErrorCode errorCode = ErrorCode.AUTH_ACCESS_DENIED;
 
               response.setStatus(errorCode.httpStatus());

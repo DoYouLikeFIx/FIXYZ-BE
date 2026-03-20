@@ -7,6 +7,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fix.common.error.BusinessException;
@@ -19,6 +22,7 @@ import com.fix.corebank.repository.ExecutionRepository;
 import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderPersistenceService;
+import com.fix.corebank.service.CorebankOrderReplayService;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.LedgerIntegrityObservabilityService;
 import com.fix.corebank.service.LedgerReconciliationService;
@@ -40,6 +44,8 @@ import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.AccountOrderHistoryItemResult;
 import com.fix.corebank.vo.InternalOrderResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
+import com.fix.corebank.vo.InternalOrderReplayCommand;
+import com.fix.corebank.vo.InternalOrderReplayResult;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.LedgerIntegrityFailedIdentifier;
 import com.fix.corebank.vo.LedgerIntegrityObservabilitySummary;
@@ -66,11 +72,14 @@ class CorebankInternalApiSkeletonTest {
   private StubCorebankOrderService corebankOrderService;
   private StubAccountProvisioningService accountProvisioningService;
   private LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService;
+  private CorebankOrderReplayService corebankOrderReplayService;
 
   @BeforeEach
   void setUp() {
     corebankOrderService = new StubCorebankOrderService();
     accountProvisioningService = new StubAccountProvisioningService();
+    ledgerIntegrityObservabilityService = mock(LedgerIntegrityObservabilityService.class);
+    corebankOrderReplayService = mock(CorebankOrderReplayService.class);
     ledgerIntegrityObservabilityService = mock(LedgerIntegrityObservabilityService.class);
     mockMvc = CorebankStandaloneMvcSupport.build(
         List.of(
@@ -82,6 +91,7 @@ class CorebankInternalApiSkeletonTest {
         ),
         new InternalCorebankController(
             corebankOrderService,
+            corebankOrderReplayService,
             accountProvisioningService,
             ledgerIntegrityObservabilityService,
             mock(LedgerReconciliationService.class),
@@ -377,6 +387,42 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
         .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-" + CORE_CL_ORD_ID_1))
         .andExpect(jsonPath("$.data.message").value("exchange confirmed"));
+
+    when(corebankOrderReplayService.replay(any(InternalOrderReplayCommand.class))).thenReturn(InternalOrderReplayResult.of(
+        CORE_CL_ORD_ID_1,
+        "COMPLETED",
+        "FILLED",
+        "VIRTUAL_FILL",
+        new BigDecimal("2.0000"),
+        BigDecimal.ZERO,
+        new BigDecimal("70100.0000"),
+        "FEP-KRX-" + CORE_CL_ORD_ID_1,
+        "CONFIRMED",
+        Instant.parse("2026-03-01T10:02:30Z"),
+        null,
+        "123e4567-e89b-42d3-a456-426614174299",
+        Instant.parse("2026-03-01T10:05:00Z")
+    ));
+
+    mockMvc.perform(post("/internal/v1/orders/{clOrdId}/replay", CORE_CL_ORD_ID_1)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "manualDecision": "APPROVE",
+                  "operatorId": "123e4567-e89b-42d3-a456-426614174299",
+                  "approvedBy": "123e4567-e89b-42d3-a456-426614174298",
+                  "evidenceRef": "OPS-INC-42",
+                  "reason": "KRX outage resolved after manual exchange confirmation",
+                  "executionPrice": 70100
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(CORE_CL_ORD_ID_1))
+        .andExpect(jsonPath("$.data.finalStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.executionSource").value("VIRTUAL_FILL"))
+        .andExpect(jsonPath("$.data.processedBy").value("123e4567-e89b-42d3-a456-426614174299"));
 
     mockMvc.perform(patch("/internal/v1/accounts/{accountId}/status", 1L)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")

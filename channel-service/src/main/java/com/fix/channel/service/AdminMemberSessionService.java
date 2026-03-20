@@ -4,6 +4,7 @@ import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.Member;
 import com.fix.channel.repository.MemberRepository;
+import com.fix.channel.support.ManualReplayIdentitySupport;
 import com.fix.channel.vo.AdminActorContext;
 import com.fix.channel.vo.AdminSessionInvalidationResult;
 import com.fix.common.error.BusinessException;
@@ -52,5 +53,11 @@ public class AdminMemberSessionService {
         : "모든 세션이 강제 종료되었습니다.";
 
     return AdminSessionInvalidationResult.of(targetMember.getMemberNo(), invalidatedCount, message);
+  }
+
+  public String resolveOperatorId(Long memberId) {
+    return memberRepository.findById(memberId)
+        .map(member -> ManualReplayIdentitySupport.operatorIdFor(member.getMemberNo()))
+        .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required"));
   }
 }

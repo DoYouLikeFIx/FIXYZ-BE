@@ -1,1205 +1,903 @@
 {
-    "openapi": "3.0.1",
-    "info": {
-        "title": "OpenAPI definition",
-        "version": "v0"
-    },
-    "servers": [
-        {
-            "url": "http://localhost:28082",
-            "description": "Generated server url"
-        }
-    ],
-    "paths": {
-        "/fep/v1/orders": {
-            "post": {
-                "tags": [
-                    "fep-gateway-order-controller"
-                ],
-                "summary": "Submit an order",
-                "operationId": "submit",
-                "parameters": [
-                    {
-                        "name": "X-Internal-Secret",
-                        "in": "header",
-                        "description": "Shared secret required for internal service-to-service requests",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "X-Correlation-Id",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "X-ClOrdID",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                            "type": "string"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/FepOrderSubmitRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "Submit accepted",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "AUTH_001 referenceId ownership violation; Missing or invalid X-Internal-Secret rejected before controller execution",
-                        "headers": {
-                            "X-Correlation-Id": {
-                                "description": "Correlation identifier echoed by the server for support and trace lookup",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            },
-                            "traceparent": {
-                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "422": {
-                        "description": "VALIDATION-001 request contract or idempotency policy violation",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/fep/v1/orders/{clOrdId}/replay": {
-            "post": {
-                "tags": [
-                    "fep-gateway-order-controller"
-                ],
-                "summary": "Replay an escalated order",
-                "operationId": "replay",
-                "parameters": [
-                    {
-                        "name": "X-Internal-Secret",
-                        "in": "header",
-                        "description": "Shared secret required for internal service-to-service requests",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "X-Correlation-Id",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "clOrdId",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                            "type": "string"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/FepOrderReplayRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "Replay processed",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiResponseFepOrderReplayResponse"
-                                }
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "9009 INVALID_SESSION_STATUS - replay target must be ESCALATED",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
-                        "headers": {
-                            "X-Correlation-Id": {
-                                "description": "Correlation identifier echoed by the server for support and trace lookup",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            },
-                            "traceparent": {
-                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/fep/v1/orders/{clOrdId}/cancel": {
-            "post": {
-                "tags": [
-                    "fep-gateway-order-controller"
-                ],
-                "summary": "Cancel an order",
-                "operationId": "cancel",
-                "parameters": [
-                    {
-                        "name": "X-Internal-Secret",
-                        "in": "header",
-                        "description": "Shared secret required for internal service-to-service requests",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "X-Correlation-Id",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "clOrdId",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                            "type": "string"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/FepOrderCancelRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "Cancel accepted",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiResponseFepOrderCancelResponse"
-                                }
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "9006 CANCEL_REJECTED",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "504": {
-                        "description": "9004 TIMEOUT",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
-                        "headers": {
-                            "X-Correlation-Id": {
-                                "description": "Correlation identifier echoed by the server for support and trace lookup",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            },
-                            "traceparent": {
-                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/fep-internal/v1/orders/{clOrdId}/status": {
-            "post": {
-                "tags": [
-                    "fep-gateway-internal-controller"
-                ],
-                "summary": "Update Status",
-                "operationId": "updateStatus",
-                "parameters": [
-                    {
-                        "name": "X-Internal-Secret",
-                        "in": "header",
-                        "description": "Shared secret required for internal service-to-service requests",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "X-Correlation-Id",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "X-ClOrdID",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "clOrdId",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                            "type": "string"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/FepInternalOrderStatusRequest"
-                            }
-                        }
-                    },
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
-                        "headers": {
-                            "X-Correlation-Id": {
-                                "description": "Correlation identifier echoed by the server for support and trace lookup",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            },
-                            "traceparent": {
-                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/fep/v1/orders/{clOrdId}/status": {
-            "get": {
-                "tags": [
-                    "fep-gateway-order-controller"
-                ],
-                "summary": "Status",
-                "operationId": "status",
-                "parameters": [
-                    {
-                        "name": "X-Internal-Secret",
-                        "in": "header",
-                        "description": "Shared secret required for internal service-to-service requests",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "X-Correlation-Id",
-                        "in": "header",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "clOrdId",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
-                        "headers": {
-                            "X-Correlation-Id": {
-                                "description": "Correlation identifier echoed by the server for support and trace lookup",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            },
-                            "traceparent": {
-                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/fep-internal/v1/ping": {
-            "get": {
-                "tags": [
-                    "fep-gateway-controller"
-                ],
-                "summary": "Internal Ping",
-                "operationId": "internalPing",
-                "parameters": [
-                    {
-                        "name": "X-Internal-Secret",
-                        "in": "header",
-                        "description": "Shared secret required for internal service-to-service requests",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": {
-                                        "type": "string"
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
-                        "headers": {
-                            "X-Correlation-Id": {
-                                "description": "Correlation identifier echoed by the server for support and trace lookup",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            },
-                            "traceparent": {
-                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
-                                "schema": {
-                                    "type": "string"
-                                }
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/ping": {
-            "get": {
-                "tags": [
-                    "fep-gateway-controller"
-                ],
-                "summary": "Ping",
-                "operationId": "ping",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "content": {
-                            "*/*": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": {
-                                        "type": "string"
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/errors/boom": {
-            "get": {
-                "tags": [
-                    "fep-gateway-controller"
-                ],
-                "summary": "Boom",
-                "operationId": "boom",
-                "responses": {
-                    "400": {
-                        "description": "Bad Request",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ApiErrorResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    },
-    "components": {
-        "schemas": {
-            "FepOrderSubmitRequest": {
-                "required": [
-                    "accountId",
-                    "clOrdId",
-                    "currency",
-                    "orderType",
-                    "qty",
-                    "referenceId",
-                    "securityExchange",
-                    "side",
-                    "symbol"
-                ],
-                "type": "object",
-                "properties": {
-                    "clOrdId": {
-                        "minLength": 1,
-                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                        "type": "string"
-                    },
-                    "accountId": {
-                        "maxLength": 64,
-                        "minLength": 1,
-                        "type": "string"
-                    },
-                    "symbol": {
-                        "minLength": 1,
-                        "pattern": "^\\d{6}$",
-                        "type": "string"
-                    },
-                    "securityExchange": {
-                        "type": "string",
-                        "enum": [
-                            "KRX",
-                            "KOSDAQ"
-                        ]
-                    },
-                    "side": {
-                        "type": "string",
-                        "enum": [
-                            "BUY",
-                            "SELL"
-                        ]
-                    },
-                    "orderType": {
-                        "type": "string",
-                        "enum": [
-                            "LIMIT",
-                            "MARKET"
-                        ]
-                    },
-                    "qty": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "price": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "quoteSnapshotId": {
-                        "type": "string"
-                    },
-                    "quoteAsOf": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "quoteSourceMode": {
-                        "type": "string",
-                        "enum": [
-                            "LIVE",
-                            "DELAYED",
-                            "REPLAY"
-                        ]
-                    },
-                    "preTradePrice": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "currency": {
-                        "minLength": 1,
-                        "type": "string"
-                    },
-                    "referenceId": {
-                        "maxLength": 128,
-                        "minLength": 1,
-                        "type": "string"
-                    }
-                }
-            },
-            "ApiErrorResponse": {
-                "type": "object",
-                "properties": {
-                    "code": {
-                        "type": "string"
-                    },
-                    "message": {
-                        "type": "string"
-                    },
-                    "path": {
-                        "type": "string"
-                    },
-                    "correlationId": {
-                        "type": "string"
-                    },
-                    "userMessageKey": {
-                        "type": "string"
-                    },
-                    "operatorCode": {
-                        "type": "string"
-                    },
-                    "details": {
-                        "type": "object",
-                        "additionalProperties": true
-                    },
-                    "timestamp": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                },
-                "additionalProperties": true
-            },
-            "ApiResponseFepOrderResponse": {
-                "type": "object",
-                "properties": {
-                    "success": {
-                        "type": "boolean"
-                    },
-                    "data": {
-                        "$ref": "#/components/schemas/FepOrderResponse"
-                    },
-                    "error": {
-                        "$ref": "#/components/schemas/ApiErrorResponse"
-                    },
-                    "timestamp": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                }
-            },
-            "FepOrderResponse": {
-                "type": "object",
-                "properties": {
-                    "clOrdId": {
-                        "type": "string"
-                    },
-                    "fepOrderId": {
-                        "type": "string"
-                    },
-                    "execType": {
-                        "type": "string",
-                        "enum": [
-                            "FILL",
-                            "PARTIAL_FILL",
-                            "PENDING_NEW",
-                            "REJECTED",
-                            "CANCELED"
-                        ]
-                    },
-                    "ordStatus": {
-                        "type": "string",
-                        "enum": [
-                            "FILLED",
-                            "PARTIALLY_FILLED",
-                            "PENDING",
-                            "UNKNOWN",
-                            "MALFORMED",
-                            "REJECTED",
-                            "CANCELED"
-                        ]
-                    },
-                    "executedQty": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "executedPrice": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "leavesQty": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "transactTime": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "queryTime": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "message": {
-                        "type": "string"
-                    },
-                    "rejectReason": {
-                        "type": "string"
-                    },
-                    "canceledQty": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "parseError": {
-                        "type": "string"
-                    }
-                }
-            },
-            "FepOrderReplayRequest": {
-                "required": [
-                    "approvedBy",
-                    "evidenceRef",
-                    "manualDecision",
-                    "operatorId",
-                    "reason"
-                ],
-                "type": "object",
-                "properties": {
-                    "manualDecision": {
-                        "type": "string",
-                        "enum": [
-                            "APPROVE",
-                            "REJECT"
-                        ]
-                    },
-                    "operatorId": {
-                        "minLength": 1,
-                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                        "type": "string"
-                    },
-                    "approvedBy": {
-                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                        "type": "string"
-                    },
-                    "evidenceRef": {
-                        "type": "string"
-                    },
-                    "reason": {
-                        "minLength": 30,
-                        "type": "string"
-                    },
-                    "executionPrice": {
-                        "type": "integer",
-                        "description": "Required for unresolved MARKET replay approval. Values outside maxVirtualFillDeviationBps fail with VALIDATION-002.",
-                        "format": "int64"
-                    }
-                }
-            },
-            "ApiResponseFepOrderReplayResponse": {
-                "type": "object",
-                "properties": {
-                    "success": {
-                        "type": "boolean"
-                    },
-                    "data": {
-                        "$ref": "#/components/schemas/FepOrderReplayResponse"
-                    },
-                    "error": {
-                        "$ref": "#/components/schemas/ApiErrorResponse"
-                    },
-                    "timestamp": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                }
-            },
-            "FepOrderReplayResponse": {
-                "type": "object",
-                "properties": {
-                    "clOrdId": {
-                        "type": "string"
-                    },
-                    "finalStatus": {
-                        "type": "string",
-                        "enum": [
-                            "COMPLETED",
-                            "FAILED",
-                            "CANCELED"
-                        ]
-                    },
-                    "executionResult": {
-                        "type": "string",
-                        "enum": [
-                            "PARTIAL_FILL_CANCEL"
-                        ]
-                    },
-                    "executionSource": {
-                        "type": "string",
-                        "enum": [
-                            "FILLED",
-                            "VIRTUAL_FILL"
-                        ]
-                    },
-                    "executedQty": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "executedPrice": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "processedBy": {
-                        "type": "string"
-                    },
-                    "processedAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                }
-            },
-            "FepOrderCancelRequest": {
-                "required": [
-                    "cancelQty",
-                    "origClOrdId",
-                    "reason",
-                    "side",
-                    "symbol"
-                ],
-                "type": "object",
-                "properties": {
-                    "origClOrdId": {
-                        "minLength": 1,
-                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                        "type": "string"
-                    },
-                    "symbol": {
-                        "minLength": 1,
-                        "pattern": "^\\d{6}$",
-                        "type": "string"
-                    },
-                    "side": {
-                        "type": "string",
-                        "enum": [
-                            "BUY",
-                            "SELL"
-                        ]
-                    },
-                    "cancelQty": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "reason": {
-                        "type": "string",
-                        "enum": [
-                            "RECOVERY",
-                            "EXPIRED",
-                            "ADMIN"
-                        ]
-                    }
-                }
-            },
-            "ApiResponseFepOrderCancelResponse": {
-                "type": "object",
-                "properties": {
-                    "success": {
-                        "type": "boolean"
-                    },
-                    "data": {
-                        "$ref": "#/components/schemas/FepOrderCancelResponse"
-                    },
-                    "error": {
-                        "$ref": "#/components/schemas/ApiErrorResponse"
-                    },
-                    "timestamp": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                }
-            },
-            "FepOrderCancelResponse": {
-                "type": "object",
-                "properties": {
-                    "origClOrdId": {
-                        "type": "string"
-                    },
-                    "cancelClOrdId": {
-                        "type": "string"
-                    },
-                    "status": {
-                        "type": "string",
-                        "enum": [
-                            "CANCELED",
-                            "PARTIAL_FILL_CANCEL"
-                        ]
-                    },
-                    "executedQty": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "canceledQty": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "executedPrice": {
-                        "type": "integer",
-                        "format": "int64"
-                    },
-                    "executedAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "canceledAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                }
-            },
-            "FepInternalOrderStatusRequest": {
-                "required": [
-                    "status"
-                ],
-                "type": "object",
-                "properties": {
-                    "status": {
-                        "minLength": 1,
-                        "type": "string"
-                    },
-                    "message": {
-                        "type": "string",
-                        "description": "Optional unresolved-status detail shown for UNKNOWN/PENDING/MALFORMED responses."
-                    },
-                    "rejectReason": {
-                        "type": "string",
-                        "description": "Optional exchange rejection reason surfaced on REJECTED responses."
-                    },
-                    "parseError": {
-                        "type": "string",
-                        "description": "Optional FIX parser diagnostic surfaced on MALFORMED responses."
-                    },
-                    "executedQty": {
-                        "type": "integer",
-                        "description": "Optional executed quantity for status correction paths such as PARTIALLY_FILLED.",
-                        "format": "int64"
-                    },
-                    "executedPrice": {
-                        "type": "integer",
-                        "description": "Optional executed price for MARKET FILLED or partial execution correction paths.",
-                        "format": "int64"
-                    },
-                    "recoveryStatus": {
-                        "type": "string",
-                        "description": "Optional recovery state override. Use ESCALATED before manual replay."
-                    },
-                    "requeryStatus": {
-                        "type": "string",
-                        "description": "Optional simulated requery outcome for replay paths.",
-                        "enum": [
-                            "FILLED",
-                            "PARTIALLY_FILLED",
-                            "CANCELED",
-                            "UNKNOWN",
-                            "PENDING",
-                            "MALFORMED",
-                            "REJECTED"
-                        ]
-                    },
-                    "requeryExecutedQty": {
-                        "type": "integer",
-                        "description": "Optional executed quantity to pair with a simulated requery outcome.",
-                        "format": "int64"
-                    },
-                    "requeryExecutedPrice": {
-                        "type": "integer",
-                        "description": "Optional executed price to pair with a simulated requery outcome.",
-                        "format": "int64"
-                    },
-                    "cancelFailureMode": {
-                        "type": "string",
-                        "description": "Optional cancel transport simulation mode.",
-                        "enum": [
-                            "NONE",
-                            "TIMEOUT",
-                            "REJECT"
-                        ]
-                    },
-                    "referencePrice": {
-                        "type": "integer",
-                        "description": "Optional reference price override for legacy MARKET recovery rows.",
-                        "format": "int64"
-                    }
-                }
-            }
-        }
+  "openapi": "3.0.1",
+  "info": {
+    "title": "OpenAPI definition",
+    "version": "v0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:18082",
+      "description": "Generated server url"
     }
+  ],
+  "paths": {
+    "/fep/v1/orders": {
+      "post": {
+        "tags": [
+          "fep-gateway-order-controller"
+        ],
+        "summary": "Submit an order",
+        "operationId": "submit",
+        "parameters": [
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-ClOrdID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FepOrderSubmitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Submit accepted",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "AUTH_001 referenceId ownership violation",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION-001 request contract or idempotency policy violation",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "9004 TIMEOUT",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep/v1/orders/{clOrdId}/replay": {
+      "post": {
+        "tags": [
+          "fep-gateway-order-controller"
+        ],
+        "summary": "Replay an escalated order",
+        "operationId": "replay",
+        "parameters": [
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FepOrderReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Replay processed",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderReplayResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "9009 INVALID_SESSION_STATUS - replay target must be ESCALATED",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep/v1/orders/{clOrdId}/cancel": {
+      "post": {
+        "tags": [
+          "fep-gateway-order-controller"
+        ],
+        "summary": "Cancel an order",
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FepOrderCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Cancel accepted",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderCancelResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "9006 CANCEL_REJECTED",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "9004 TIMEOUT",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep-internal/v1/orders/{clOrdId}/status": {
+      "post": {
+        "tags": [
+          "fep-gateway-internal-controller"
+        ],
+        "operationId": "updateStatus",
+        "parameters": [
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-ClOrdID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FepInternalOrderStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep/v1/orders/{clOrdId}/status": {
+      "get": {
+        "tags": [
+          "fep-gateway-order-controller"
+        ],
+        "operationId": "status",
+        "parameters": [
+          {
+            "name": "X-Internal-Secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Correlation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "clOrdId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseFepOrderResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fep-internal/v1/ping": {
+      "get": {
+        "tags": [
+          "fep-gateway-controller"
+        ],
+        "operationId": "internalPing",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ping": {
+      "get": {
+        "tags": [
+          "fep-gateway-controller"
+        ],
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/errors/boom": {
+      "get": {
+        "tags": [
+          "fep-gateway-controller"
+        ],
+        "operationId": "boom",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "FepOrderSubmitRequest": {
+        "required": [
+          "accountId",
+          "clOrdId",
+          "currency",
+          "orderType",
+          "qty",
+          "referenceId",
+          "securityExchange",
+          "side",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "accountId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "securityExchange": {
+            "type": "string",
+            "enum": [
+              "KRX",
+              "KOSDAQ"
+            ]
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ]
+          },
+          "orderType": {
+            "type": "string",
+            "enum": [
+              "LIMIT",
+              "MARKET"
+            ]
+          },
+          "qty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quoteSnapshotId": {
+            "type": "string"
+          },
+          "quoteAsOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quoteSourceMode": {
+            "type": "string",
+            "enum": [
+              "LIVE",
+              "DELAYED",
+              "REPLAY"
+            ]
+          },
+          "preTradePrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "currency": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "referenceId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "userMessageKey": {
+            "type": "string"
+          },
+          "operatorCode": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      },
+      "ApiResponseFepOrderResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FepOrderResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FepOrderResponse": {
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "type": "string"
+          },
+          "fepOrderId": {
+            "type": "string"
+          },
+          "execType": {
+            "type": "string",
+            "enum": [
+              "FILL",
+              "PARTIAL_FILL",
+              "PENDING_NEW",
+              "REJECTED",
+              "CANCELED"
+            ]
+          },
+          "ordStatus": {
+            "type": "string",
+            "enum": [
+              "FILLED",
+              "PARTIALLY_FILLED",
+              "PENDING",
+              "UNKNOWN",
+              "MALFORMED",
+              "REJECTED",
+              "CANCELED"
+            ]
+          },
+          "executedQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executedPrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "leavesQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "transactTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "queryTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          },
+          "rejectReason": {
+            "type": "string"
+          },
+          "canceledQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "parseError": {
+            "type": "string"
+          }
+        }
+      },
+      "FepOrderReplayRequest": {
+        "required": [
+          "approvedBy",
+          "evidenceRef",
+          "manualDecision",
+          "operatorId",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "manualDecision": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ]
+          },
+          "operatorId": {
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "approvedBy": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "evidenceRef": {
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 30,
+            "type": "string"
+          },
+          "executionPrice": {
+            "type": "integer",
+            "description": "Required for unresolved MARKET replay approval. Values outside maxVirtualFillDeviationBps fail with VALIDATION-002.",
+            "format": "int64"
+          }
+        }
+      },
+      "ApiResponseFepOrderReplayResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FepOrderReplayResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FepOrderReplayResponse": {
+        "type": "object",
+        "properties": {
+          "clOrdId": {
+            "type": "string"
+          },
+          "finalStatus": {
+            "type": "string",
+            "enum": [
+              "COMPLETED",
+              "FAILED",
+              "CANCELED"
+            ]
+          },
+          "executionResult": {
+            "type": "string",
+            "enum": [
+              "PARTIAL_FILL_CANCEL"
+            ]
+          },
+          "executionSource": {
+            "type": "string",
+            "enum": [
+              "FILLED",
+              "VIRTUAL_FILL"
+            ]
+          },
+          "executedQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executedPrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "processedBy": {
+            "type": "string"
+          },
+          "processedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FepOrderCancelRequest": {
+        "required": [
+          "cancelQty",
+          "origClOrdId",
+          "reason",
+          "side",
+          "symbol"
+        ],
+        "type": "object",
+        "properties": {
+          "origClOrdId": {
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            "type": "string"
+          },
+          "symbol": {
+            "minLength": 1,
+            "pattern": "^\\d{6}$",
+            "type": "string"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ]
+          },
+          "cancelQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "RECOVERY",
+              "EXPIRED",
+              "ADMIN"
+            ]
+          }
+        }
+      },
+      "ApiResponseFepOrderCancelResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/FepOrderCancelResponse"
+          },
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FepOrderCancelResponse": {
+        "type": "object",
+        "properties": {
+          "origClOrdId": {
+            "type": "string"
+          },
+          "cancelClOrdId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CANCELED",
+              "PARTIAL_FILL_CANCEL"
+            ]
+          },
+          "executedQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "canceledQty": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executedPrice": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "executedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canceledAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FepInternalOrderStatusRequest": {
+        "required": [
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional unresolved-status detail shown for UNKNOWN/PENDING/MALFORMED responses."
+          },
+          "rejectReason": {
+            "type": "string",
+            "description": "Optional exchange rejection reason surfaced on REJECTED responses."
+          },
+          "parseError": {
+            "type": "string",
+            "description": "Optional FIX parser diagnostic surfaced on MALFORMED responses."
+          },
+          "executedQty": {
+            "type": "integer",
+            "description": "Optional executed quantity for status correction paths such as PARTIALLY_FILLED.",
+            "format": "int64"
+          },
+          "executedPrice": {
+            "type": "integer",
+            "description": "Optional executed price for MARKET FILLED or partial execution correction paths.",
+            "format": "int64"
+          },
+          "recoveryStatus": {
+            "type": "string",
+            "description": "Optional recovery state override. Use ESCALATED before manual replay."
+          },
+          "requeryStatus": {
+            "type": "string",
+            "description": "Optional simulated requery outcome for replay paths.",
+            "enum": [
+              "FILLED",
+              "PARTIALLY_FILLED",
+              "CANCELED",
+              "UNKNOWN",
+              "PENDING",
+              "MALFORMED",
+              "REJECTED"
+            ]
+          },
+          "requeryExecutedQty": {
+            "type": "integer",
+            "description": "Optional executed quantity to pair with a simulated requery outcome.",
+            "format": "int64"
+          },
+          "requeryExecutedPrice": {
+            "type": "integer",
+            "description": "Optional executed price to pair with a simulated requery outcome.",
+            "format": "int64"
+          },
+          "cancelFailureMode": {
+            "type": "string",
+            "description": "Optional cancel transport simulation mode.",
+            "enum": [
+              "NONE",
+              "TIMEOUT",
+              "REJECT"
+            ]
+          },
+          "referencePrice": {
+            "type": "integer",
+            "description": "Optional reference price override for legacy MARKET recovery rows.",
+            "format": "int64"
+          }
+        }
+      }
+    }
+  }
 }
