@@ -7,6 +7,7 @@ import com.fix.channel.dto.request.MfaRecoveryRebindConfirmRequest;
 import com.fix.channel.dto.request.MfaRecoveryRebindRequest;
 import com.fix.channel.dto.request.OtpVerifyRequest;
 import com.fix.channel.dto.request.PasswordForgotChallengeRequest;
+import com.fix.channel.dto.request.PasswordRecoveryChallengeFailClosedTelemetryRequest;
 import com.fix.channel.dto.request.PasswordForgotRequest;
 import com.fix.channel.dto.request.PasswordResetRequest;
 import com.fix.channel.dto.response.AuthLoginResponse;
@@ -140,6 +141,20 @@ public class AuthController {
     return ApiResponse.success(PasswordForgotChallengeResponse.from(
         passwordRecoveryService.bootstrapChallenge(request.toVo(), httpServletRequest)
     ));
+  }
+
+  @PostMapping("/password/forgot/challenge/fail-closed")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void recordForgotPasswordChallengeFailClosed(
+      @Valid @ModelAttribute PasswordRecoveryChallengeFailClosedTelemetryRequest request,
+      HttpServletRequest httpServletRequest
+  ) {
+    passwordRecoveryService.recordClientFailClosed(
+        request.reason(),
+        request.surface(),
+        request.challengeIssuedAtEpochMs(),
+        httpServletRequest
+    );
   }
 
   @PostMapping("/password/reset")
