@@ -2,7 +2,6 @@ package db.migration;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -131,17 +130,13 @@ public class V22__ensure_audit_security_uuid_insert_defaults extends BaseJavaMig
         return true;
       }
     }
-    try (PreparedStatement statement = connection.prepareStatement("""
-        SELECT COUNT(*)
-          FROM INFORMATION_SCHEMA.COLUMNS
-         WHERE UPPER(TABLE_NAME) = UPPER(?)
-           AND UPPER(COLUMN_NAME) = UPPER(?)
-        """)) {
-      statement.setString(1, tableName);
-      statement.setString(2, columnName);
-      try (ResultSet resultSet = statement.executeQuery()) {
-        return resultSet.next() && resultSet.getInt(1) > 0;
-      }
+    try (ResultSet resultSet = metadata.getColumns(
+        connection.getCatalog(),
+        null,
+        tableName.toUpperCase(Locale.ROOT),
+        columnName.toUpperCase(Locale.ROOT)
+    )) {
+      return resultSet.next();
     }
   }
 }
