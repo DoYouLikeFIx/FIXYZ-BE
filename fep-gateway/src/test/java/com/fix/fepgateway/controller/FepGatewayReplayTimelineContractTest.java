@@ -98,6 +98,37 @@ class FepGatewayReplayTimelineContractTest {
         .andExpect(jsonPath("$.data.emittedCount").value(0));
   }
 
+  @Test
+  void shouldPauseAndResumeReplayTimeline() throws Exception {
+    String replayId = replayIdFor("timeline-seed-003", "005930");
+
+    mockMvc.perform(post("/fep-internal/v1/market-data/replay/timelines")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "corr-replay-start-3")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "symbol": "005930",
+                  "seed": "timeline-seed-003",
+                  "startOffset": 1,
+                  "speedFactor": 1.0
+                }
+                """))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post("/fep-internal/v1/market-data/replay/timelines/{replayId}/pause", replayId)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "corr-replay-pause"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("PAUSED"));
+
+    mockMvc.perform(post("/fep-internal/v1/market-data/replay/timelines/{replayId}/resume", replayId)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "corr-replay-resume"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.status").value("RUNNING"));
+  }
+
   private String replayIdFor(String seed, String symbol) {
     return UUID.nameUUIDFromBytes((seed + "|" + symbol).getBytes(StandardCharsets.UTF_8)).toString();
   }

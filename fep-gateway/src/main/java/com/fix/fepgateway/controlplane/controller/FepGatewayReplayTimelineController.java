@@ -47,4 +47,26 @@ public class FepGatewayReplayTimelineController {
         FepReplayTimelineResponse.from(fepGatewayReplayTimelineService.getTimeline(replayId))
     );
   }
+
+  @PostMapping("/{replayId}/pause")
+  public ApiResponse<FepReplayTimelineResponse> pauseTimeline(
+      @RequestHeader(CommonHeaders.X_INTERNAL_SECRET) String internalSecret,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @PathVariable String replayId
+  ) {
+    return ApiResponse.success(
+        FepReplayTimelineResponse.from(fepGatewayReplayTimelineService.pauseTimeline(replayId))
+    );
+  }
+
+  @PostMapping("/{replayId}/resume")
+  public ApiResponse<FepReplayTimelineResponse> resumeTimeline(
+      @RequestHeader(CommonHeaders.X_INTERNAL_SECRET) String internalSecret,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @PathVariable String replayId
+  ) {
+    return ApiResponse.success(
+        FepReplayTimelineResponse.from(fepGatewayReplayTimelineService.resumeTimeline(replayId))
+    );
+  }
 }

@@ -62,4 +62,56 @@ class ReplayCursorPersistenceServiceTest {
     assertThat(replayCursor.getCursorOffset()).isEqualTo(3L);
     assertThat(replayCursor.getStatus()).isEqualTo("STOPPED");
   }
+
+  @Test
+  void shouldResetCursorToRequestedOffsetWhenTimelineRestarts() {
+    ReplayCursorSpec initial = new ReplayCursorSpec(
+        "replay-005930",
+        "seed-1",
+        "005930",
+        0L,
+        new BigDecimal("1.0000")
+    );
+
+    replayCursorPersistencePort.activate(initial);
+    replayCursorPersistencePort.advance("replay-005930", 7L);
+
+    ReplayCursorSpec reset = replayCursorPersistencePort.reset(new ReplayCursorSpec(
+        "replay-005930",
+        "seed-1",
+        "005930",
+        2L,
+        new BigDecimal("1.5000")
+    ));
+
+    assertThat(reset.cursorOffset()).isEqualTo(2L);
+    ReplayCursor replayCursor = replayCursorRepository.findByReplayId("replay-005930").orElseThrow();
+    assertThat(replayCursor.getCursorOffset()).isEqualTo(2L);
+    assertThat(replayCursor.getSpeedFactor()).isEqualByComparingTo("1.5000");
+    assertThat(replayCursor.getStatus()).isEqualTo("RUNNING");
+  }
+
+  @Test
+  void shouldPauseAndResumeCursorStatusWithoutChangingOffset() {
+    ReplayCursorSpec initial = new ReplayCursorSpec(
+        "replay-005930",
+        "seed-1",
+        "005930",
+        4L,
+        new BigDecimal("1.0000")
+    );
+
+    replayCursorPersistencePort.activate(initial);
+    replayCursorPersistencePort.pause("replay-005930");
+
+    ReplayCursor paused = replayCursorRepository.findByReplayId("replay-005930").orElseThrow();
+    assertThat(paused.getStatus()).isEqualTo("PAUSED");
+    assertThat(paused.getCursorOffset()).isEqualTo(4L);
+
+    replayCursorPersistencePort.resume("replay-005930");
+
+    ReplayCursor resumed = replayCursorRepository.findByReplayId("replay-005930").orElseThrow();
+    assertThat(resumed.getStatus()).isEqualTo("RUNNING");
+    assertThat(resumed.getCursorOffset()).isEqualTo(4L);
+  }
 }

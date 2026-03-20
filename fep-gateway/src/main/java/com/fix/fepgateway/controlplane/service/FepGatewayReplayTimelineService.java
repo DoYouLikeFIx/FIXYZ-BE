@@ -56,6 +56,22 @@ public class FepGatewayReplayTimelineService {
     );
   }
 
+  public GatewayReplayTimelineResult pauseTimeline(String replayId) {
+    ReplayTimelineStatus status = replayMarketDataAdapter.pauseTimeline(replayId);
+    if (status == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "active replay timeline not found");
+    }
+    return toResult(status);
+  }
+
+  public GatewayReplayTimelineResult resumeTimeline(String replayId) {
+    ReplayTimelineStatus status = replayMarketDataAdapter.resumeTimeline(replayId);
+    if (status == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "active replay timeline not found");
+    }
+    return toResult(status);
+  }
+
   private GatewayReplayTimelineResult toResult(ReplayTimelineStatus status) {
     return new GatewayReplayTimelineResult(
         status.replayId(),
