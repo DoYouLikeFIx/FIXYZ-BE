@@ -29,9 +29,12 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
@@ -59,14 +62,16 @@ public class CorebankClient {
   public CorebankClient(
       RestClient.Builder restClientBuilder,
       @Value("${corebank.internal.base-url:${corebank.base-url:http://localhost:8081}}") String corebankBaseUrl,
-      @Value("${corebank.internal.secret:${internal.secret:${INTERNAL_SECRET:local-internal-secret}}}") String internalSecret
+      @Value("${corebank.internal.secret:}") String corebankInternalSecret,
+      @Value("${internal.secret:}") String internalSecret,
+      Environment environment
   ) {
     this(
         restClientBuilder
             .requestFactory(new HttpComponentsClientHttpRequestFactory())
             .baseUrl(corebankBaseUrl)
             .build(),
-        internalSecret
+        resolveInternalSecret(corebankInternalSecret, internalSecret, environment)
     );
   }
 
@@ -74,6 +79,29 @@ public class CorebankClient {
     this.restClient = restClient;
     this.internalSecret = internalSecret;
     this.objectMapper = new ObjectMapper();
+  }
+
+  private static String resolveInternalSecret(String corebankInternalSecret, String internalSecret, Environment environment) {
+    if (StringUtils.hasText(corebankInternalSecret)) {
+      return corebankInternalSecret;
+    }
+    if (StringUtils.hasText(internalSecret)) {
+      return internalSecret;
+    }
+    if (environment != null && environment.acceptsProfiles(Profiles.of("prod", "staging"))) {
+      throw new IllegalStateException("corebank.internal.secret or internal.secret must be configured");
+    }
+    return "local-internal-secret";
+  }
+
+  private static String resolveInternalSecret(String corebankInternalSecret, String internalSecret) {
+    if (StringUtils.hasText(corebankInternalSecret)) {
+      return corebankInternalSecret;
+    }
+    if (StringUtils.hasText(internalSecret)) {
+      return internalSecret;
+    }
+    throw new IllegalStateException("corebank.internal.secret or internal.secret must be configured");
   }
 
   public OrderExecuteResult executeOrder(OrderExecuteCommand command, String correlationId) {
