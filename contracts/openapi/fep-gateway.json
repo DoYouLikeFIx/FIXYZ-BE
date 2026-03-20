@@ -667,6 +667,98 @@
                 }
             }
         },
+        "/fep-internal/v1/quotes/snapshots/latest/batch": {
+            "get": {
+                "tags": [
+                    "fep-gateway-quote-snapshot-controller"
+                ],
+                "summary": "Latest Snapshots",
+                "operationId": "latestSnapshots",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/FepQuoteSnapshotBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseListFepQuoteSnapshotResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/fep-internal/v1/ping": {
             "get": {
                 "tags": [
@@ -1385,6 +1477,58 @@
                     },
                     "stale": {
                         "type": "boolean"
+                    }
+                }
+            },
+            "FepQuoteSnapshotBatchRequest": {
+                "required": [
+                    "quoteSourceMode",
+                    "symbol"
+                ],
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "minItems": 1,
+                        "type": "array",
+                        "description": "KRX symbol codes used to query the latest stored quote snapshots.",
+                        "items": {
+                            "minLength": 1,
+                            "type": "string",
+                            "description": "KRX symbol codes used to query the latest stored quote snapshots."
+                        }
+                    },
+                    "quoteSourceMode": {
+                        "type": "string",
+                        "description": "Quote source mode to query.",
+                        "enum": [
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY",
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY"
+                        ]
+                    }
+                }
+            },
+            "ApiResponseListFepQuoteSnapshotResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FepQuoteSnapshotResponse"
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
                     }
                 }
             }
