@@ -12,6 +12,10 @@ auth:
   totp:
     vault:
       base-url: ${AUTH_TOTP_VAULT_BASE_URL:${VAULT_ADDR:http://vault:8200}}
+      token: ${AUTH_TOTP_VAULT_TOKEN:${VAULT_TOKEN:root-token}}
+      trust-store-path: ${AUTH_TOTP_VAULT_TRUST_STORE_PATH:}
+      trust-store-password: ${AUTH_TOTP_VAULT_TRUST_STORE_PASSWORD:}
+      trust-store-type: ${AUTH_TOTP_VAULT_TRUST_STORE_TYPE:PKCS12}
 
 corebank:
   internal:
