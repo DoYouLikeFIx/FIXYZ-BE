@@ -65,6 +65,7 @@ public class CorebankOrderService {
   private final CorebankOrderPersistenceService orderPersistenceService;
   private final FepClient fepClient;
   private final FepQuoteSnapshotClient fepQuoteSnapshotClient;
+  private final CorebankAccountPositionQueryService accountPositionQueryService;
   private final QuoteFreshnessPolicy quoteFreshnessPolicy;
   private final CorebankMarketDataProperties corebankMarketDataProperties;
   private final PositionLockMetrics positionLockMetrics;
@@ -118,27 +119,23 @@ public class CorebankOrderService {
     );
   }
 
-  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command) {
-    Account account = getOwnedAccount(command.getAccountId(), command.getMemberId());
+    CorebankAccountPositionQueryService.AccountPositionSnapshot snapshot =
+        accountPositionQueryService.getOwnedAccountPosition(command);
     QuoteValuation quoteValuation = loadFreshQuoteValuation(command.getSymbol());
-
-    Optional<Position> positionOptional = positionRepository.findByAccountIdAndSymbol(
-        command.getAccountId(),
-        command.getSymbol()
-    );
+    Optional<Position> positionOptional = snapshot.position();
     BigDecimal quantity = positionOptional.map(Position::getQty).orElse(BigDecimal.ZERO);
     BigDecimal availableQuantity = quantity;
 
     return AccountPositionResult.of(
-        account.getId(),
+        snapshot.account().getId(),
         command.getMemberId(),
         command.getSymbol(),
         quantity,
         availableQuantity,
-        account.getCashBalance(),
-        account.getCurrency(),
-        resolveAsOf(account, positionOptional),
+        snapshot.account().getCashBalance(),
+        snapshot.account().getCurrency(),
+        resolveAsOf(snapshot.account(), positionOptional),
         quoteValuation.marketPrice(),
         quoteValuation.quoteSnapshotId(),
         quoteValuation.quoteAsOf(),
@@ -146,30 +143,27 @@ public class CorebankOrderService {
     );
   }
 
-  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public List<AccountPositionResult> getAccountPositions(AccountPositionsQueryCommand command) {
-    Account account = accountRepository.findById(command.getAccountId())
-        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+    CorebankAccountPositionQueryService.AccountPositionsSnapshot snapshot =
+        accountPositionQueryService.getOwnedPositiveAccountPositions(command);
+    Map<String, QuoteValuation> quoteValuations = loadFreshQuoteValuations(
+        snapshot.positions().stream()
+            .map(Position::getSymbol)
+            .toList()
+    );
 
-    if (!account.getMemberId().equals(command.getMemberId())) {
-      throw new BusinessException(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP, "forbidden account ownership");
-    }
-
-    return positionRepository.findAllByAccountIdAndQtyGreaterThanOrderBySymbolAsc(
-            command.getAccountId(),
-            BigDecimal.ZERO
-        ).stream()
+    return snapshot.positions().stream()
         .map(position -> {
-          QuoteValuation quoteValuation = loadFreshQuoteValuation(position.getSymbol());
+          QuoteValuation quoteValuation = quoteValuations.get(position.getSymbol());
           return AccountPositionResult.of(
-              account.getId(),
+              snapshot.account().getId(),
               command.getMemberId(),
               position.getSymbol(),
               position.getQty(),
               position.getQty(),
-              account.getCashBalance(),
-              account.getCurrency(),
-              resolveAsOf(account, Optional.of(position)),
+              snapshot.account().getCashBalance(),
+              snapshot.account().getCurrency(),
+              resolveAsOf(snapshot.account(), Optional.of(position)),
               quoteValuation.marketPrice(),
               quoteValuation.quoteSnapshotId(),
               quoteValuation.quoteAsOf(),
@@ -215,21 +209,27 @@ public class CorebankOrderService {
     );
   }
 
-  @Transactional(readOnly = true)
   public List<AccountPositionResult> getAccountPositions(AccountStatusQueryCommand command) {
-    Account account = getOwnedAccount(command.getAccountId(), command.getMemberId());
-    return positionRepository.findAllByAccountIdOrderBySymbolAsc(command.getAccountId()).stream()
+    CorebankAccountPositionQueryService.AccountPositionsSnapshot snapshot =
+        accountPositionQueryService.getOwnedAccountPositions(command);
+    Map<String, QuoteValuation> quoteValuations = loadFreshQuoteValuations(
+        snapshot.positions().stream()
+            .map(Position::getSymbol)
+            .toList()
+    );
+
+    return snapshot.positions().stream()
         .map(position -> {
-          QuoteValuation quoteValuation = loadFreshQuoteValuation(position.getSymbol());
+          QuoteValuation quoteValuation = quoteValuations.get(position.getSymbol());
           return AccountPositionResult.of(
-              account.getId(),
-              account.getMemberId(),
+              snapshot.account().getId(),
+              snapshot.account().getMemberId(),
               position.getSymbol(),
               position.getQty(),
               position.getQty(),
-              account.getCashBalance(),
-              account.getCurrency(),
-              resolveAsOf(account, Optional.of(position)),
+              snapshot.account().getCashBalance(),
+              snapshot.account().getCurrency(),
+              resolveAsOf(snapshot.account(), Optional.of(position)),
               quoteValuation.marketPrice(),
               quoteValuation.quoteSnapshotId(),
               quoteValuation.quoteAsOf(),
@@ -770,6 +770,27 @@ public class CorebankOrderService {
 
   private QuoteValuation loadFreshQuoteValuation(String symbol) {
     FepQuoteSnapshotResult snapshot = queryLatestQuoteSnapshot(symbol);
+    return toFreshQuoteValuation(symbol, snapshot);
+  }
+
+  private Map<String, QuoteValuation> loadFreshQuoteValuations(List<String> symbols) {
+    if (symbols.isEmpty()) {
+      return Map.of();
+    }
+
+    Map<String, FepQuoteSnapshotResult> snapshots = queryLatestQuoteSnapshots(symbols);
+    Map<String, QuoteValuation> quoteValuations = new java.util.LinkedHashMap<>();
+    for (String symbol : symbols) {
+      FepQuoteSnapshotResult snapshot = snapshots.get(symbol);
+      if (snapshot == null) {
+        throw missingQuoteSnapshot(symbol);
+      }
+      quoteValuations.put(symbol, toFreshQuoteValuation(symbol, snapshot));
+    }
+    return quoteValuations;
+  }
+
+  private QuoteValuation toFreshQuoteValuation(String symbol, FepQuoteSnapshotResult snapshot) {
     QuoteFreshnessDecision decision = quoteFreshnessPolicy.evaluate(snapshot.quoteAsOf());
     if (decision.stale()) {
       throw staleQuote(symbol, snapshot, decision.snapshotAgeMs());
@@ -790,17 +811,39 @@ public class CorebankOrderService {
           correlationId("quote", symbol)
       );
     } catch (BusinessException ex) {
-      if (ex.getErrorCode() == ErrorCode.NOT_FOUND) {
-        throw new BusinessException(
-            ErrorCode.STALE_QUOTE,
-            ErrorCode.STALE_QUOTE.defaultMessage(),
-            ex,
-            new ErrorMetadata("error.quote.stale", "STALE_QUOTE"),
-            Map.of("symbol", symbol, "reason", "QUOTE_SNAPSHOT_NOT_FOUND")
-        );
+      throw translateQuoteSnapshotFailure(symbol, ex);
+    }
+  }
+
+  private Map<String, FepQuoteSnapshotResult> queryLatestQuoteSnapshots(List<String> symbols) {
+    try {
+      return fepQuoteSnapshotClient.queryLatestQuoteSnapshots(
+          symbols,
+          corebankMarketDataProperties.getQuoteSourceMode(),
+          correlationId("quote-batch", String.join(",", symbols))
+      );
+    } catch (BusinessException ex) {
+      if (ex.getErrorCode() == ErrorCode.NOT_FOUND && !symbols.isEmpty()) {
+        throw missingQuoteSnapshot(symbols.get(0));
       }
       throw ex;
     }
+  }
+
+  private BusinessException translateQuoteSnapshotFailure(String symbol, BusinessException ex) {
+    if (ex.getErrorCode() == ErrorCode.NOT_FOUND) {
+      return missingQuoteSnapshot(symbol);
+    }
+    return ex;
+  }
+
+  private BusinessException missingQuoteSnapshot(String symbol) {
+    return new BusinessException(
+        ErrorCode.STALE_QUOTE,
+        ErrorCode.STALE_QUOTE.defaultMessage(),
+        new ErrorMetadata("error.quote.stale", "STALE_QUOTE"),
+        Map.of("symbol", symbol, "reason", "QUOTE_SNAPSHOT_NOT_FOUND")
+    );
   }
 
   private BusinessException staleQuote(String symbol, FepQuoteSnapshotResult snapshot, long snapshotAgeMs) {

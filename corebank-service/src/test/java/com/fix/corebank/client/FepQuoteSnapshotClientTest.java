@@ -16,6 +16,8 @@ import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -140,8 +142,49 @@ class FepQuoteSnapshotClientTest {
   }
 
   @Test
+  void shouldQueryLatestQuoteSnapshotBatchAndForwardHeaders() {
+    WIRE_MOCK_SERVER.stubFor(get(urlPathEqualTo("/fep-internal/v1/quotes/snapshots/latest/batch"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .withQueryParam("symbol", equalTo("000660"))
+        .withQueryParam("quoteSourceMode", equalTo("LIVE"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody(successBatchBody())));
+
+    TraceparentSupport.putInMdc(TRACEPARENT);
+
+    Map<String, FepQuoteSnapshotResult> result = client.queryLatestQuoteSnapshots(
+        List.of("005930", "000660"),
+        FepQuoteSourceMode.LIVE,
+        "trace-core-quote-batch-001"
+    );
+
+    assertThat(result).containsOnlyKeys("005930", "000660");
+    assertThat(result.get("005930").quoteSnapshotId()).isEqualTo("qsnap-005930-live-001");
+    assertThat(result.get("000660").quoteSnapshotId()).isEqualTo("qsnap-000660-live-001");
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/fep-internal/v1/quotes/snapshots/latest/batch"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .withQueryParam("symbol", equalTo("000660"))
+        .withQueryParam("quoteSourceMode", equalTo("LIVE"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-internal-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-quote-batch-001"))
+        .withHeader(CommonHeaders.TRACEPARENT, equalTo(TRACEPARENT)));
+  }
+
+  @Test
   void shouldRejectBlankSymbolBeforeSendingRequest() {
     assertThatThrownBy(() -> client.queryLatestQuoteSnapshot(" ", FepQuoteSourceMode.LIVE, "trace-core-invalid"))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
+          assertThat(ex.getMessage()).isEqualTo("symbol is required");
+        });
+  }
+
+  @Test
+  void shouldRejectEmptyBatchSymbolsBeforeSendingRequest() {
+    assertThatThrownBy(() -> client.queryLatestQuoteSnapshots(List.of(), FepQuoteSourceMode.LIVE, "trace-core-invalid-batch"))
         .isInstanceOfSatisfying(BusinessException.class, ex -> {
           assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
           assertThat(ex.getMessage()).isEqualTo("symbol is required");
@@ -163,6 +206,39 @@ class FepQuoteSnapshotClientTest {
             "streamOffset": 42,
             "stale": false
           },
+          "error": null
+        }
+        """;
+  }
+
+  private String successBatchBody() {
+    return """
+        {
+          "success": true,
+          "data": [
+            {
+              "quoteSnapshotId": "qsnap-005930-live-001",
+              "symbol": "005930",
+              "quoteSourceMode": "LIVE",
+              "quoteAsOf": "2026-03-20T00:00:05Z",
+              "bestBid": 72000,
+              "bestAsk": 72100,
+              "lastTrade": 72050,
+              "streamOffset": 42,
+              "stale": false
+            },
+            {
+              "quoteSnapshotId": "qsnap-000660-live-001",
+              "symbol": "000660",
+              "quoteSourceMode": "LIVE",
+              "quoteAsOf": "2026-03-20T00:00:05Z",
+              "bestBid": 120000,
+              "bestAsk": 120500,
+              "lastTrade": 120250,
+              "streamOffset": 43,
+              "stale": false
+            }
+          ],
           "error": null
         }
         """;

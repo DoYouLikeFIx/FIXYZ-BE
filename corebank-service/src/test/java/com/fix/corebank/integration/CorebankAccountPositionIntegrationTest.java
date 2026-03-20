@@ -1,6 +1,7 @@
 package com.fix.corebank.integration;
 
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
@@ -18,6 +19,7 @@ import com.fix.corebank.client.FepQuoteSnapshotResult;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,22 +60,13 @@ class CorebankAccountPositionIntegrationTest {
   void setUpQuoteSnapshots() {
     reset(fepQuoteSnapshotClient);
     when(fepQuoteSnapshotClient.queryLatestQuoteSnapshot(eq("005930"), eq(FepQuoteSourceMode.LIVE), anyString()))
-        .thenReturn(quoteSnapshot(
-            "qsnap-005930-live-001",
-            "005930",
-            FIXED_FRESH_QUOTE_AS_OF,
-            72000L,
-            72100L,
-            72050L
-        ));
+        .thenReturn(samsungSnapshot());
     when(fepQuoteSnapshotClient.queryLatestQuoteSnapshot(eq("000660"), eq(FepQuoteSourceMode.LIVE), anyString()))
-        .thenReturn(quoteSnapshot(
-            "qsnap-000660-live-001",
-            "000660",
-            FIXED_FRESH_QUOTE_AS_OF,
-            120000L,
-            120500L,
-            120250L
+        .thenReturn(hynixSnapshot());
+    when(fepQuoteSnapshotClient.queryLatestQuoteSnapshots(anyList(), eq(FepQuoteSourceMode.LIVE), anyString()))
+        .thenReturn(Map.of(
+            "005930", samsungSnapshot(),
+            "000660", hynixSnapshot()
         ));
   }
 
@@ -235,6 +228,28 @@ class CorebankAccountPositionIntegrationTest {
         lastTrade,
         42L,
         false
+    );
+  }
+
+  private FepQuoteSnapshotResult samsungSnapshot() {
+    return quoteSnapshot(
+        "qsnap-005930-live-001",
+        "005930",
+        FIXED_FRESH_QUOTE_AS_OF,
+        72000L,
+        72100L,
+        72050L
+    );
+  }
+
+  private FepQuoteSnapshotResult hynixSnapshot() {
+    return quoteSnapshot(
+        "qsnap-000660-live-001",
+        "000660",
+        FIXED_FRESH_QUOTE_AS_OF,
+        120000L,
+        120500L,
+        120250L
     );
   }
 

@@ -11,6 +11,10 @@ import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.TraceparentSupport;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -24,6 +28,7 @@ import org.springframework.web.client.RestClientResponseException;
 public class FepQuoteSnapshotClient {
 
   private static final String FEP_QUOTE_SNAPSHOT_LATEST_PATH = "/fep-internal/v1/quotes/snapshots/latest";
+  private static final String FEP_QUOTE_SNAPSHOT_LATEST_BATCH_PATH = "/fep-internal/v1/quotes/snapshots/latest/batch";
 
   private final RestClient restClient;
   private final String internalSecret;
@@ -85,9 +90,65 @@ public class FepQuoteSnapshotClient {
     }
   }
 
+  @CircuitBreaker(name = "fep-quote-snapshot", fallbackMethod = "queryLatestQuoteSnapshotsFallback")
+  public Map<String, FepQuoteSnapshotResult> queryLatestQuoteSnapshots(
+      List<String> symbols,
+      FepQuoteSourceMode quoteSourceMode,
+      String correlationId
+  ) {
+    List<String> normalizedSymbols = normalizeSymbols(symbols);
+    if (quoteSourceMode == null) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "quoteSourceMode is required");
+    }
+    try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
+      FepGatewayEnvelope<List<FepGatewayQuoteSnapshotResponse>> response = restClient.get()
+          .uri(uriBuilder -> {
+            var builder = uriBuilder
+                .path(FEP_QUOTE_SNAPSHOT_LATEST_BATCH_PATH)
+                .queryParam("quoteSourceMode", quoteSourceMode.name());
+            normalizedSymbols.forEach(symbol -> builder.queryParam("symbol", symbol));
+            return builder.build();
+          })
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      Map<String, FepQuoteSnapshotResult> snapshotsBySymbol = new LinkedHashMap<>();
+      extractBodyList(response).forEach(snapshotResponse -> {
+        FepQuoteSnapshotResult snapshot = FepQuoteSnapshotResult.fromResponse(snapshotResponse);
+        snapshotsBySymbol.put(snapshot.symbol(), snapshot);
+      });
+
+      Map<String, FepQuoteSnapshotResult> orderedSnapshots = new LinkedHashMap<>();
+      normalizedSymbols.forEach(symbol -> {
+        FepQuoteSnapshotResult snapshot = snapshotsBySymbol.get(symbol);
+        if (snapshot != null) {
+          orderedSnapshots.put(symbol, snapshot);
+        }
+      });
+      return orderedSnapshots;
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
   @SuppressWarnings("unused")
   private FepQuoteSnapshotResult queryLatestQuoteSnapshotFallback(
       String symbol,
+      FepQuoteSourceMode quoteSourceMode,
+      String correlationId,
+      Throwable throwable
+  ) {
+    throw translateFailure(throwable);
+  }
+
+  @SuppressWarnings("unused")
+  private Map<String, FepQuoteSnapshotResult> queryLatestQuoteSnapshotsFallback(
+      List<String> symbols,
       FepQuoteSourceMode quoteSourceMode,
       String correlationId,
       Throwable throwable
@@ -100,6 +161,18 @@ public class FepQuoteSnapshotClient {
       throw new BusinessException(
           ErrorCode.FEP_GATEWAY_UNAVAILABLE,
           "empty quote snapshot response from fep gateway"
+      );
+    }
+    return response.data();
+  }
+
+  private List<FepGatewayQuoteSnapshotResponse> extractBodyList(
+      FepGatewayEnvelope<List<FepGatewayQuoteSnapshotResponse>> response
+  ) {
+    if (response == null || !response.success() || response.data() == null) {
+      throw new BusinessException(
+          ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+          "empty quote snapshot batch response from fep gateway"
       );
     }
     return response.data();
@@ -253,6 +326,20 @@ public class FepQuoteSnapshotClient {
       return defaultValue;
     }
     return value;
+  }
+
+  private List<String> normalizeSymbols(List<String> symbols) {
+    if (symbols == null || symbols.isEmpty()) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "symbol is required");
+    }
+    LinkedHashSet<String> normalizedSymbols = new LinkedHashSet<>();
+    for (String symbol : symbols) {
+      if (symbol == null || symbol.isBlank()) {
+        throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "symbol is required");
+      }
+      normalizedSymbols.add(symbol);
+    }
+    return List.copyOf(normalizedSymbols);
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
