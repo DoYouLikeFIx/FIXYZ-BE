@@ -15,9 +15,13 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
+import com.fix.corebank.client.FepQuoteSnapshotClient;
+import com.fix.corebank.client.FepQuoteSnapshotResult;
+import com.fix.corebank.config.CorebankMarketDataProperties;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.JournalEntry;
 import com.fix.corebank.entity.LedgerEntry;
@@ -53,7 +57,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.function.IntConsumer;
@@ -107,6 +113,7 @@ class CorebankOrderServiceTest {
   private LedgerEntryRefRepository ledgerEntryRefRepository;
 
   private StubFepClient fepClient;
+  private StubFepQuoteSnapshotClient fepQuoteSnapshotClient;
   private CorebankOrderPersistenceService corebankOrderPersistenceService;
   private CorebankOrderService corebankOrderService;
   private PositionLockMetrics positionLockMetrics;
@@ -114,6 +121,7 @@ class CorebankOrderServiceTest {
   @BeforeEach
   void setUp() {
     fepClient = new StubFepClient();
+    fepQuoteSnapshotClient = new StubFepQuoteSnapshotClient();
     positionLockMetrics = new PositionLockMetrics(new SimpleMeterRegistry());
     corebankOrderPersistenceService = new CorebankOrderPersistenceService(
         accountRepository,
@@ -130,6 +138,9 @@ class CorebankOrderServiceTest {
         (order, account, position) -> {
         }
     );
+    CorebankMarketDataProperties marketDataProperties = new CorebankMarketDataProperties();
+    marketDataProperties.setMaxQuoteAgeMs(5_000L);
+    marketDataProperties.setQuoteSourceMode(FepQuoteSourceMode.LIVE);
     lenient().when(accountRepository.findByIdForUpdate(anyLong()))
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)));
     lenient().when(accountRepository.existsById(anyLong()))
@@ -140,8 +151,30 @@ class CorebankOrderServiceTest {
         executionRepository,
         corebankOrderPersistenceService,
         fepClient,
+        fepQuoteSnapshotClient,
+        new QuoteFreshnessPolicy(
+            marketDataProperties,
+            Clock.fixed(Instant.parse("2026-03-01T10:02:00Z"), ZoneId.of("UTC"))
+        ),
+        marketDataProperties,
         positionLockMetrics
     );
+    fepQuoteSnapshotClient.setQuoteResult("005930", quoteSnapshot(
+        "qsnap-005930-1",
+        "005930",
+        Instant.parse("2026-03-01T10:01:59Z"),
+        72000L,
+        72100L,
+        72050L
+    ));
+    fepQuoteSnapshotClient.setQuoteResult("000660", quoteSnapshot(
+        "qsnap-000660-1",
+        "000660",
+        Instant.parse("2026-03-01T10:01:58Z"),
+        120000L,
+        120500L,
+        120250L
+    ));
     ReflectionTestUtils.setField(corebankOrderService, "statusQueryMaxAttempts", 2);
     ReflectionTestUtils.setField(corebankOrderService, "statusQueryBackoffMs", 0L);
     org.mockito.Mockito.lenient().when(orderRepository.updateStateIfVersionMatches(
@@ -229,6 +262,10 @@ class CorebankOrderServiceTest {
     assertThat(result.getBalance()).isEqualByComparingTo("100000000.0000");
     assertThat(result.getCurrency()).isEqualTo("KRW");
     assertThat(result.getAsOf()).isEqualTo(positionUpdatedAt);
+    assertThat(result.getMarketPrice()).isEqualByComparingTo("72050.0000");
+    assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-005930-1");
+    assertThat(result.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-01T10:01:59Z"));
+    assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
   }
 
   @Test
@@ -247,6 +284,9 @@ class CorebankOrderServiceTest {
     assertThat(result.getAvailableQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
     assertThat(result.getBalance()).isEqualByComparingTo("100000000.0000");
     assertThat(result.getAsOf()).isEqualTo(accountUpdatedAt);
+    assertThat(result.getMarketPrice()).isEqualByComparingTo("120250.0000");
+    assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-000660-1");
+    assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
   }
 
   @Test
@@ -279,9 +319,13 @@ class CorebankOrderServiceTest {
     assertThat(result.get(0).getQuantity()).isEqualByComparingTo("40.0000");
     assertThat(result.get(0).getBalance()).isEqualByComparingTo("100000000.0000");
     assertThat(result.get(0).getAsOf()).isEqualTo(hynixUpdatedAt);
+    assertThat(result.get(0).getMarketPrice()).isEqualByComparingTo("120250.0000");
+    assertThat(result.get(0).getQuoteSnapshotId()).isEqualTo("qsnap-000660-1");
     assertThat(result.get(1).getSymbol()).isEqualTo("005930");
     assertThat(result.get(1).getQuantity()).isEqualByComparingTo("120.0000");
     assertThat(result.get(1).getAsOf()).isEqualTo(samsungUpdatedAt);
+    assertThat(result.get(1).getMarketPrice()).isEqualByComparingTo("72050.0000");
+    assertThat(result.get(1).getQuoteSnapshotId()).isEqualTo("qsnap-005930-1");
   }
 
   @Test
@@ -315,6 +359,48 @@ class CorebankOrderServiceTest {
         .isInstanceOf(BusinessException.class)
         .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode())
             .isEqualTo(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP));
+  }
+
+  @Test
+  void shouldRejectAccountPositionWhenQuoteSnapshotIsStale() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    fepQuoteSnapshotClient.setQuoteResult("005930", quoteSnapshot(
+        "qsnap-005930-stale",
+        "005930",
+        Instant.parse("2026-03-01T10:01:54Z"),
+        72000L,
+        72100L,
+        72050L
+    ));
+
+    assertThatThrownBy(() -> corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
+    ))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STALE_QUOTE);
+          assertThat(ex.getDetails()).containsEntry("symbol", "005930");
+          assertThat(ex.getDetails()).containsEntry("snapshotAgeMs", 6_000L);
+          assertThat(ex.getDetails()).containsEntry("quoteSourceMode", "LIVE");
+        });
+  }
+
+  @Test
+  void shouldRejectAccountPositionWhenQuoteSnapshotIsMissing() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    fepQuoteSnapshotClient.setQuoteFailure("005930", new BusinessException(ErrorCode.NOT_FOUND, "quote snapshot not found"));
+
+    assertThatThrownBy(() -> corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
+    ))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STALE_QUOTE);
+          assertThat(ex.getDetails()).containsEntry("symbol", "005930");
+          assertThat(ex.getDetails()).containsEntry("reason", "QUOTE_SNAPSHOT_NOT_FOUND");
+        });
   }
 
   @Test
@@ -1963,6 +2049,27 @@ class CorebankOrderServiceTest {
     return target;
   }
 
+  private FepQuoteSnapshotResult quoteSnapshot(
+      String quoteSnapshotId,
+      String symbol,
+      Instant quoteAsOf,
+      Long bestBid,
+      Long bestAsk,
+      Long lastTrade
+  ) {
+    return new FepQuoteSnapshotResult(
+        quoteSnapshotId,
+        symbol,
+        FepQuoteSourceMode.LIVE,
+        quoteAsOf,
+        bestBid,
+        bestAsk,
+        lastTrade,
+        42L,
+        false
+    );
+  }
+
   private static final class StubFepClient extends FepClient {
 
     private FepOrderResult submitResult;
@@ -2055,6 +2162,43 @@ class CorebankOrderServiceTest {
 
     private int queryCalls() {
       return queryCalls;
+    }
+  }
+
+  private static final class StubFepQuoteSnapshotClient extends FepQuoteSnapshotClient {
+
+    private final Map<String, FepQuoteSnapshotResult> quoteResults = new HashMap<>();
+    private final Map<String, RuntimeException> quoteFailures = new HashMap<>();
+
+    private StubFepQuoteSnapshotClient() {
+      super(RestClient.builder().baseUrl("http://localhost").build(), "test-secret");
+    }
+
+    @Override
+    public FepQuoteSnapshotResult queryLatestQuoteSnapshot(
+        String symbol,
+        FepQuoteSourceMode quoteSourceMode,
+        String correlationId
+    ) {
+      RuntimeException failure = quoteFailures.get(symbol);
+      if (failure != null) {
+        throw failure;
+      }
+      FepQuoteSnapshotResult result = quoteResults.get(symbol);
+      if (result == null) {
+        throw new BusinessException(ErrorCode.NOT_FOUND, "quote snapshot not found");
+      }
+      return result;
+    }
+
+    private void setQuoteResult(String symbol, FepQuoteSnapshotResult result) {
+      quoteFailures.remove(symbol);
+      quoteResults.put(symbol, result);
+    }
+
+    private void setQuoteFailure(String symbol, RuntimeException failure) {
+      quoteResults.remove(symbol);
+      quoteFailures.put(symbol, failure);
     }
   }
 }
