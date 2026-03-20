@@ -43,7 +43,8 @@ public class PasswordRecoveryService {
   private final PasswordRecoveryProperties properties;
   private final PasswordRecoveryRateLimitService rateLimitService;
   private final PasswordRecoveryTokenService tokenService;
-  private final PasswordRecoveryChallengeService challengeService;
+  private final List<PasswordRecoveryChallengeProvider> challengeProviders;
+  private final PasswordRecoveryChallengeTelemetryService challengeTelemetryService;
   private final PasswordRecoveryTimingEqualizer timingEqualizer;
   private final PasswordRecoveryMailDispatcher mailDispatcher;
   private final TaskExecutor taskExecutor;
@@ -58,7 +59,8 @@ public class PasswordRecoveryService {
       PasswordRecoveryProperties properties,
       PasswordRecoveryRateLimitService rateLimitService,
       PasswordRecoveryTokenService tokenService,
-      PasswordRecoveryChallengeService challengeService,
+      List<PasswordRecoveryChallengeProvider> challengeProviders,
+      PasswordRecoveryChallengeTelemetryService challengeTelemetryService,
       PasswordRecoveryTimingEqualizer timingEqualizer,
       PasswordRecoveryMailDispatcher mailDispatcher,
       @Qualifier("passwordRecoveryTaskExecutor") TaskExecutor taskExecutor,
@@ -72,7 +74,8 @@ public class PasswordRecoveryService {
     this.properties = properties;
     this.rateLimitService = rateLimitService;
     this.tokenService = tokenService;
-    this.challengeService = challengeService;
+    this.challengeProviders = challengeProviders;
+    this.challengeTelemetryService = challengeTelemetryService;
     this.timingEqualizer = timingEqualizer;
     this.mailDispatcher = mailDispatcher;
     this.taskExecutor = taskExecutor;
@@ -97,12 +100,59 @@ public class PasswordRecoveryService {
           rateLimitService.registerForgotAttempt(clientIp, normalizedEmail);
 
       boolean challengeProvided = hasText(command.getChallengeToken()) || hasText(command.getChallengeAnswer());
+      ChallengeRoutingDecision routingDecision = resolveChallengeRoutingDecision(normalizedEmail, request);
       if (challengeProvided) {
-        challengeService.validateAndConsume(
-            normalizedEmail,
-            command.getChallengeToken(),
-            command.getChallengeAnswer()
-        );
+        PasswordRecoveryChallengeProvider.ChallengeEventContext challengeContext =
+            challengeEventContext("unknown", routingDecision);
+        try {
+          PasswordRecoveryChallengeProvider challengeProvider = resolveChallengeProvider(command.getChallengeToken());
+          challengeContext = challengeProvider.describeVerifyContext(
+              command.getChallengeToken(),
+              challengeEventContext(challengeProvider.challengeContractVersionLabel(), routingDecision)
+          );
+          challengeProvider.validate(
+              command.getEmail(),
+              normalizedEmail,
+              command.getChallengeToken(),
+              command.getChallengeAnswer(),
+              request
+          );
+          String outcome = challengeTelemetryService.recordVerifySuccess(
+              challengeContext.contractVersion(),
+              challengeContext.rolloutEnabled(),
+              challengeContext.challengeCapableCohort(),
+              correlationId
+          );
+          auditLogService.record(AuditLog.of(
+              null,
+              AuditAction.PASSWORD_RECOVERY_FORGOT,
+              "PASSWORD_RECOVERY",
+              null,
+              challengeAuditDetail(outcome, challengeContext, null),
+              clientIp,
+              userAgent,
+              correlationId
+          ));
+        } catch (BusinessException ex) {
+          String outcome = challengeTelemetryService.recordVerifyFailure(
+              challengeContext.contractVersion(),
+              challengeContext.rolloutEnabled(),
+              challengeContext.challengeCapableCohort(),
+              ex.getErrorCode(),
+              correlationId
+          );
+          auditLogService.record(AuditLog.of(
+              null,
+              AuditAction.PASSWORD_RECOVERY_FORGOT,
+              "PASSWORD_RECOVERY",
+              null,
+              challengeAuditDetail(outcome, challengeContext, ex.getErrorCode()),
+              clientIp,
+              userAgent,
+              correlationId
+          ));
+          throw ex;
+        }
       }
 
       Member member = memberRepository.findByEmailForUpdate(normalizedEmail).orElse(null);
@@ -148,26 +198,66 @@ public class PasswordRecoveryService {
     String clientIp = resolveClientIp(request);
     String userAgent = resolveUserAgent(request);
     String correlationId = resolveCorrelationId(request);
+    ChallengeRoutingDecision routingDecision = resolveChallengeRoutingDecision(normalizedEmail, request);
 
     rateLimitService.registerChallengeAttempt(clientIp, normalizedEmail);
-    PasswordRecoveryChallengeService.ChallengePayload payload = challengeService.issue(normalizedEmail);
-
-    auditLogService.record(AuditLog.of(
-        null,
-        AuditAction.PASSWORD_RECOVERY_CHALLENGE_ISSUED,
-        "PASSWORD_RECOVERY",
-        null,
-        "challenge issued",
-        clientIp,
-        userAgent,
-        correlationId
-    ));
-
-    return PasswordForgotChallengeResult.of(
-        payload.token(),
-        payload.type(),
-        properties.getChallenge().getTtlSeconds()
-    );
+    String contractVersion = routingDecision.proofOfWorkActive() ? "2" : "legacy-v1";
+    PasswordRecoveryChallengeProvider.ChallengeEventContext challengeContext =
+        challengeEventContext(contractVersion, routingDecision);
+    try {
+      PasswordRecoveryChallengeProvider provider = resolveChallengeBootstrapProvider(routingDecision);
+      request.setAttribute(
+          PasswordRecoveryChallengeProvider.ISSUE_CONTEXT_ROLLOUT_ENABLED_ATTRIBUTE,
+          challengeContext.rolloutEnabled()
+      );
+      request.setAttribute(
+          PasswordRecoveryChallengeProvider.ISSUE_CONTEXT_CHALLENGE_CAPABLE_COHORT_ATTRIBUTE,
+          challengeContext.challengeCapableCohort()
+      );
+      PasswordForgotChallengeResult result = provider.issue(command.getEmail(), normalizedEmail, request);
+      contractVersion = contractVersionLabel(result, provider);
+      challengeContext = new PasswordRecoveryChallengeProvider.ChallengeEventContext(
+          contractVersion,
+          challengeContext.rolloutEnabled(),
+          challengeContext.challengeCapableCohort()
+      );
+      String outcome = challengeTelemetryService.recordBootstrapSuccess(
+          challengeContext.contractVersion(),
+          challengeContext.rolloutEnabled(),
+          challengeContext.challengeCapableCohort(),
+          correlationId
+      );
+      auditLogService.record(AuditLog.of(
+          null,
+          AuditAction.PASSWORD_RECOVERY_CHALLENGE_ISSUED,
+          "PASSWORD_RECOVERY",
+          null,
+          challengeAuditDetail(outcome, challengeContext, null),
+          clientIp,
+          userAgent,
+          correlationId
+      ));
+      return result;
+    } catch (BusinessException ex) {
+      String outcome = challengeTelemetryService.recordBootstrapFailure(
+          challengeContext.contractVersion(),
+          challengeContext.rolloutEnabled(),
+          challengeContext.challengeCapableCohort(),
+          ex.getErrorCode(),
+          correlationId
+      );
+      auditLogService.record(AuditLog.of(
+          null,
+          AuditAction.PASSWORD_RECOVERY_CHALLENGE_ISSUED,
+          "PASSWORD_RECOVERY",
+          null,
+          challengeAuditDetail(outcome, challengeContext, ex.getErrorCode()),
+          clientIp,
+          userAgent,
+          correlationId
+      ));
+      throw ex;
+    }
   }
 
   @Transactional
@@ -305,6 +395,95 @@ public class PasswordRecoveryService {
     return value != null && !value.isBlank();
   }
 
+  private PasswordRecoveryChallengeProvider resolveChallengeBootstrapProvider(ChallengeRoutingDecision routingDecision) {
+    if (routingDecision.proofOfWorkActive()) {
+      return challengeProviders.stream()
+          .filter(PasswordRecoveryChallengeProvider::isProofOfWorkProvider)
+          .findFirst()
+          .orElseThrow(() -> new IllegalStateException("proof-of-work challenge provider is unavailable"));
+    }
+
+    return challengeProviders.stream()
+        .filter(provider -> !provider.isProofOfWorkProvider())
+        .findFirst()
+        .orElseThrow(() -> new IllegalStateException("legacy challenge provider is unavailable"));
+  }
+
+  private PasswordRecoveryChallengeProvider resolveChallengeProvider(String challengeToken) {
+    return challengeProviders.stream()
+        .filter(provider -> provider.supportsToken(challengeToken))
+        .findFirst()
+        .orElseThrow(() -> new IllegalStateException("challenge provider is unavailable"));
+  }
+
+  private ChallengeRoutingDecision resolveChallengeRoutingDecision(String normalizedEmail, HttpServletRequest request) {
+    PasswordRecoveryProperties.Challenge challenge = properties.getChallenge();
+    boolean rolloutEnabled = challenge.isV2Enabled();
+    if (!rolloutEnabled) {
+      return new ChallengeRoutingDecision(false, false, false);
+    }
+
+    int cohortPercentage = Math.max(0, Math.min(100, challenge.getCohortPercentage()));
+    if (cohortPercentage <= 0) {
+      return new ChallengeRoutingDecision(true, false, false);
+    }
+    if (cohortPercentage >= 100) {
+      return new ChallengeRoutingDecision(true, true, true);
+    }
+
+    String sessionId = request.getSession(true).getId();
+    String material = normalizedEmail + ":" + sessionId + ":" + challenge.getCohortSalt();
+    String fingerprint = tokenService.fingerprint(material);
+    long bucket = Long.parseUnsignedLong(fingerprint.substring(0, 8), 16) % 100L;
+    boolean challengeCapableCohort = bucket < cohortPercentage;
+    return new ChallengeRoutingDecision(true, challengeCapableCohort, challengeCapableCohort);
+  }
+
+  private String contractVersionLabel(PasswordRecoveryChallengeProvider provider) {
+    return provider.challengeContractVersionLabel();
+  }
+
+  private String contractVersionLabel(
+      PasswordForgotChallengeResult result,
+      PasswordRecoveryChallengeProvider provider
+  ) {
+    Integer contractVersion = result.getChallengeContractVersion();
+    if (contractVersion != null) {
+      return String.valueOf(contractVersion);
+    }
+    return contractVersionLabel(provider);
+  }
+
+  private String challengeAuditDetail(
+      String outcome,
+      PasswordRecoveryChallengeProvider.ChallengeEventContext challengeContext,
+      ErrorCode errorCode
+  ) {
+    StringBuilder detail = new StringBuilder("outcome=")
+        .append(outcome)
+        .append(", contractVersion=")
+        .append(challengeContext.contractVersion())
+        .append(", rolloutEnabled=")
+        .append(challengeContext.rolloutEnabled())
+        .append(", challengeCapableCohort=")
+        .append(challengeContext.challengeCapableCohort());
+    if (errorCode != null) {
+      detail.append(", errorCode=").append(errorCode.code());
+    }
+    return detail.toString();
+  }
+
+  private PasswordRecoveryChallengeProvider.ChallengeEventContext challengeEventContext(
+      String contractVersion,
+      ChallengeRoutingDecision routingDecision
+  ) {
+    return new PasswordRecoveryChallengeProvider.ChallengeEventContext(
+        contractVersion,
+        routingDecision.rolloutEnabled(),
+        routingDecision.challengeCapableCohort()
+    );
+  }
+
   private String maskIpAddress(String clientIp) {
     if (clientIp == null || clientIp.isBlank()) {
       return null;
@@ -342,5 +521,12 @@ public class PasswordRecoveryService {
 
   private String resolveCorrelationId(HttpServletRequest request) {
     return ChannelCorrelationIdSupport.ensureCorrelationId(request);
+  }
+
+  private record ChallengeRoutingDecision(
+      boolean rolloutEnabled,
+      boolean challengeCapableCohort,
+      boolean proofOfWorkActive
+  ) {
   }
 }
