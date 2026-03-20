@@ -1,14 +1,15 @@
 package com.fix.channel.contract;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.TreeSet;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 class ChannelOpenApiCompatibilityTest {
 
@@ -235,28 +236,18 @@ class ChannelOpenApiCompatibilityTest {
         .contains("previousStatus", "newStatus", "changed", "eventId", "reason", "actor", "context", "asOf");
     assertThat(adminAuditLogsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAdminAuditLogQueryResponse");
-    assertThat(schemaRef(adminAuditLogsOperation, "401"))
-        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminAuditLogsOperation.path("responses").path("401").isMissingNode()).isTrue();
     assertThat(schemaRef(adminAuditLogsOperation, "403"))
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(schemaRef(adminAuditLogsOperation, "429"))
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(schemaRef(adminAuditLogsOperation, "400"))
         .isEqualTo("#/components/schemas/ApiErrorResponse");
-    assertThat(adminAuditLogsOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
-        .path("type").asText()).isEqualTo("string");
-    assertThat(adminAuditLogsOperation.path("responses").path("401").path("headers").path("traceparent").path("schema")
-        .path("type").asText()).isEqualTo("string");
-    assertThat(adminAuditLogsOperation.path("responses").path("403").path("headers").path("X-Correlation-Id").path("schema")
-        .path("type").asText()).isEqualTo("string");
-    assertThat(adminAuditLogsOperation.path("responses").path("403").path("headers").path("traceparent").path("schema")
-        .path("type").asText()).isEqualTo("string");
     assertThat(adminAuditLogsOperation.path("responses").path("429").path("headers").path("Retry-After").path("schema").path("type").asText())
         .isEqualTo("string");
     assertThat(adminMemberSessionDeleteOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAdminSessionInvalidationResponse");
-    assertThat(schemaRef(adminMemberSessionDeleteOperation, "401"))
-        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminMemberSessionDeleteOperation.path("responses").path("401").isMissingNode()).isTrue();
     assertThat(schemaRef(adminMemberSessionDeleteOperation, "403"))
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(schemaRef(adminMemberSessionDeleteOperation, "404"))
@@ -265,20 +256,10 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(adminMemberSessionDeleteOperation.path("responses").path("429").path("headers").path("Retry-After").path("schema").path("type").asText())
         .isEqualTo("string");
-    assertThat(schemaRef(memberProfileOperation, "401"))
-        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(memberProfileOperation.path("responses").path("401").isMissingNode()).isTrue();
     assertThat(memberProfileOperation.path("responses").path("403").isMissingNode()).isTrue();
-    assertThat(memberProfileOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
-        .path("type").asText()).isEqualTo("string");
-    assertThat(memberProfileOperation.path("responses").path("401").path("headers").path("traceparent").path("schema")
-        .path("type").asText()).isEqualTo("string");
-    assertThat(schemaRef(orderSessionCreateOperation, "401"))
-        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(orderSessionCreateOperation.path("responses").path("401").isMissingNode()).isTrue();
     assertThat(orderSessionCreateOperation.path("responses").path("403").isMissingNode()).isTrue();
-    assertThat(orderSessionCreateOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
-        .path("type").asText()).isEqualTo("string");
-    assertThat(orderSessionCreateOperation.path("responses").path("401").path("headers").path("traceparent").path("schema")
-        .path("type").asText()).isEqualTo("string");
   }
 
   private Path openApiContract() {
