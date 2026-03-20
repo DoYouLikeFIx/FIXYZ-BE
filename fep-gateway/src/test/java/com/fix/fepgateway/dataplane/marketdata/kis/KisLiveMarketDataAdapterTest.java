@@ -1,6 +1,7 @@
 package com.fix.fepgateway.dataplane.marketdata.kis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.common.fep.FepQuoteSourceMode;
@@ -151,6 +152,19 @@ class KisLiveMarketDataAdapterTest {
     assertThat(meterRegistry.get("fep.marketdata.kis.session.open").gauge().value()).isEqualTo(1.0d);
   }
 
+  @Test
+  void shouldClearSessionWhenCloseFailsDuringDestroy() {
+    FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, new RecordingPersistencePort());
+
+    adapter.start(subscription("sub-005930", "005930"), event -> {
+    });
+    sessionClient.session().failOnClose(new IllegalStateException("close failed"));
+
+    assertThatNoException().isThrownBy(adapter::destroy);
+    assertThat(sessionClient.session().isOpen()).isFalse();
+  }
+
   private KisLiveMarketDataAdapter newAdapter(
       FakeKisWebSocketSessionClient sessionClient,
       LiveMarketDataPersistencePort persistencePort
@@ -272,6 +286,7 @@ class KisLiveMarketDataAdapterTest {
     private final List<String> sentPayloads = new ArrayList<>();
     private boolean open = true;
     private boolean closed;
+    private RuntimeException closeFailure;
 
     private FakeKisWebSocketSession(java.util.function.Consumer<String> inboundTextHandler) {
       this.inboundTextHandler = inboundTextHandler;
@@ -286,6 +301,9 @@ class KisLiveMarketDataAdapterTest {
     public void close() {
       open = false;
       closed = true;
+      if (closeFailure != null) {
+        throw closeFailure;
+      }
     }
 
     @Override
@@ -307,6 +325,10 @@ class KisLiveMarketDataAdapterTest {
 
     private void disconnectUnexpectedly() {
       open = false;
+    }
+
+    private void failOnClose(RuntimeException closeFailure) {
+      this.closeFailure = closeFailure;
     }
   }
 

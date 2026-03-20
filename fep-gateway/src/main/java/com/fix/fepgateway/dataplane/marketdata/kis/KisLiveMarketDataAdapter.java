@@ -370,8 +370,13 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
     if (session == null) {
       return;
     }
-    session.close();
-    session = null;
+    try {
+      session.close();
+    } catch (RuntimeException exception) {
+      log.warn("Failed to close KIS websocket session cleanly", exception);
+    } finally {
+      session = null;
+    }
   }
 
   private void refreshMetrics() {

@@ -3,7 +3,6 @@ package com.fix.fepgateway.dataplane.marketdata;
 import com.fix.fepgateway.entity.MarketDataSubscription;
 import com.fix.fepgateway.entity.QuoteSnapshot;
 import com.fix.fepgateway.repository.MarketDataSubscriptionRepository;
-import com.fix.fepgateway.repository.QuoteSnapshotRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class LiveMarketDataPersistenceService implements LiveMarketDataPersistencePort {
 
   private final MarketDataSubscriptionRepository marketDataSubscriptionRepository;
-  private final QuoteSnapshotRepository quoteSnapshotRepository;
+  private final QuoteSnapshotJdbcWriter quoteSnapshotJdbcWriter;
   private final QuoteSnapshotFactory quoteSnapshotFactory;
   private final MarketDataMetrics marketDataMetrics;
 
@@ -47,8 +46,7 @@ public class LiveMarketDataPersistenceService implements LiveMarketDataPersisten
   @Transactional
   public void persistSnapshot(MarketDataSubscriptionSpec subscriptionSpec, NormalizedQuoteEvent event) {
     QuoteSnapshot snapshot = quoteSnapshotFactory.create(event);
-    if (quoteSnapshotRepository.findByQuoteSnapshotId(snapshot.getQuoteSnapshotId()).isEmpty()) {
-      quoteSnapshotRepository.save(snapshot);
+    if (quoteSnapshotJdbcWriter.insertIfAbsent(snapshot)) {
       marketDataMetrics.recordSnapshotPersisted(event);
     }
 

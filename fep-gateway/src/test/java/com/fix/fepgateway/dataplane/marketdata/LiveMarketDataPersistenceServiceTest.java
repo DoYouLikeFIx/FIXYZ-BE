@@ -33,14 +33,14 @@ class LiveMarketDataPersistenceServiceTest {
 
   @AfterEach
   void cleanUp() {
-    quoteSnapshotRepository.deleteAll();
-    marketDataSubscriptionRepository.deleteAll();
+    quoteSnapshotRepository.deleteAllInBatch();
+    marketDataSubscriptionRepository.deleteAllInBatch();
   }
 
   @Test
   void shouldPersistLiveSnapshotAndAdvanceSubscriptionProgress() {
     MarketDataSubscriptionSpec subscriptionSpec = liveSubscription("bootstrap-005930", "005930");
-    NormalizedQuoteEvent event = liveEvent("005930", 17L, Instant.parse("2026-03-19T00:30:01Z"));
+    NormalizedQuoteEvent event = liveEvent("005930", 18L, Instant.parse("2026-03-19T00:30:02Z"));
     Counter counterBefore = meterRegistry.find("fep.marketdata.snapshots.persisted")
         .tags("provider", "KIS", "source_mode", "LIVE")
         .counter();
@@ -56,8 +56,8 @@ class LiveMarketDataPersistenceServiceTest {
         FepQuoteSourceMode.LIVE
     ).orElseThrow();
     assertThat(subscription.getSubscriptionId()).isEqualTo("bootstrap-005930");
-    assertThat(subscription.getLastEventOffset()).isEqualTo(17L);
-    assertThat(subscription.getLastQuoteAsOf()).isEqualTo(Instant.parse("2026-03-19T00:30:01Z"));
+    assertThat(subscription.getLastEventOffset()).isEqualTo(18L);
+    assertThat(subscription.getLastQuoteAsOf()).isEqualTo(Instant.parse("2026-03-19T00:30:02Z"));
     assertThat(subscription.isActive()).isTrue();
     assertThat(meterRegistry.get("fep.marketdata.snapshots.persisted")
         .tag("provider", "KIS")
@@ -70,11 +70,20 @@ class LiveMarketDataPersistenceServiceTest {
   void shouldSkipDuplicateQuoteSnapshotIdAndKeepSingleRow() {
     MarketDataSubscriptionSpec subscriptionSpec = liveSubscription("bootstrap-005930", "005930");
     NormalizedQuoteEvent event = liveEvent("005930", 17L, Instant.parse("2026-03-19T00:30:01Z"));
+    Counter counterBefore = meterRegistry.find("fep.marketdata.snapshots.persisted")
+        .tags("provider", "KIS", "source_mode", "LIVE")
+        .counter();
+    double persistedCountBefore = counterBefore == null ? 0.0d : counterBefore.count();
 
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
 
     assertThat(quoteSnapshotRepository.findAll()).hasSize(1);
+    assertThat(meterRegistry.get("fep.marketdata.snapshots.persisted")
+        .tag("provider", "KIS")
+        .tag("source_mode", "LIVE")
+        .counter()
+        .count()).isEqualTo(persistedCountBefore + 1.0d);
   }
 
   @Test
