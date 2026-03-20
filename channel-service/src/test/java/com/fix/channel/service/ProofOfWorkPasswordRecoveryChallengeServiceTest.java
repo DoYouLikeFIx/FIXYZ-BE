@@ -95,15 +95,19 @@ class ProofOfWorkPasswordRecoveryChallengeServiceTest {
   }
 
   @Test
-  void rejects_invalid_proof_with_auth_022() {
+  void rejects_invalid_proof_with_auth_022() throws Exception {
     MockHttpServletRequest request = requestWithSession();
     PasswordForgotChallengeResult issued = service.issue("demo@fix.com", "demo@fix.com", request);
+    String invalidNonce = findInvalidNonce(
+        issued.getChallengePayload().proofOfWork().seed(),
+        issued.getChallengePayload().proofOfWork().difficultyBits()
+    );
 
     when(valueOperations.get(anyString())).thenReturn(issued.getChallengeId());
 
     BusinessException ex = assertThrows(
         BusinessException.class,
-        () -> service.validate("demo@fix.com", "demo@fix.com", issued.getChallengeToken(), "12", request)
+        () -> service.validate("demo@fix.com", "demo@fix.com", issued.getChallengeToken(), invalidNonce, request)
     );
 
     assertEquals(ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID, ex.getErrorCode());
@@ -202,6 +206,17 @@ class ProofOfWorkPasswordRecoveryChallengeServiceTest {
       }
     }
     throw new IllegalStateException("Unable to find valid nonce for test");
+  }
+
+  private String findInvalidNonce(String seed, int difficultyBits) throws Exception {
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    for (long nonce = 0; nonce < 10_000_000L; nonce++) {
+      byte[] hash = digest.digest((seed + ":" + nonce).getBytes(StandardCharsets.UTF_8));
+      if (leadingZeroBits(hash) < difficultyBits) {
+        return Long.toUnsignedString(nonce);
+      }
+    }
+    throw new IllegalStateException("Unable to find invalid nonce for test");
   }
 
   private int leadingZeroBits(byte[] hash) {

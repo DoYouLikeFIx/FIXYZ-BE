@@ -162,7 +162,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     assertThat(response.path("data").path("quoteSnapshotId").asText()).isEqualTo("qsnap_005930_live_001");
     assertThat(response.path("data").path("quoteAsOf").asText()).isEqualTo("2026-03-20T00:00:00Z");
     assertThat(response.path("data").path("quoteSourceMode").asText()).isEqualTo("LIVE");
-    assertThat(response.path("data").path("preTradePrice").asText()).isEqualTo("72050.0000");
+    assertThat(response.path("data").path("preTradePrice").decimalValue()).isEqualByComparingTo("72050.0000");
 
     assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
         .hasValueSatisfying(session -> {
@@ -195,7 +195,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     assertThat(response.path("data").path("quoteSnapshotId").asText()).isEqualTo("qsnap_005930_live_001");
     assertThat(response.path("data").path("quoteAsOf").asText()).isEqualTo("2026-03-20T00:00:05Z");
     assertThat(response.path("data").path("quoteSourceMode").asText()).isEqualTo("LIVE");
-    assertThat(response.path("data").path("preTradePrice").asText()).isEqualTo("72050.0000");
+    assertThat(response.path("data").path("preTradePrice").decimalValue()).isEqualByComparingTo("72050.0000");
   }
 
   @Test
