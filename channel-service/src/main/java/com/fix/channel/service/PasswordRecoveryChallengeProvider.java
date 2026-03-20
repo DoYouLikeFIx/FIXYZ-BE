@@ -38,6 +38,10 @@ public interface PasswordRecoveryChallengeProvider {
     return fallbackContext;
   }
 
+  default String extractChallengeId(String challengeToken) {
+    return null;
+  }
+
   default String challengeContractVersionLabel() {
     return isProofOfWorkProvider() ? "2" : "legacy-v1";
   }
