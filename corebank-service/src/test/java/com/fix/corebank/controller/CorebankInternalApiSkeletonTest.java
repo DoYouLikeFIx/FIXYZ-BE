@@ -1,5 +1,7 @@
 package com.fix.corebank.controller;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -22,6 +24,7 @@ import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderPersistenceService;
 import com.fix.corebank.service.CorebankOrderReplayService;
 import com.fix.corebank.service.CorebankOrderService;
+import com.fix.corebank.service.LedgerIntegrityObservabilityService;
 import com.fix.corebank.service.LedgerReconciliationService;
 import com.fix.corebank.service.LedgerRepairService;
 import com.fix.corebank.service.PositionLockMetrics;
@@ -44,14 +47,16 @@ import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderReplayCommand;
 import com.fix.corebank.vo.InternalOrderReplayResult;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
+import com.fix.corebank.vo.LedgerIntegrityFailedIdentifier;
+import com.fix.corebank.vo.LedgerIntegrityObservabilitySummary;
 import com.fix.corebank.vo.PortfolioQueryCommand;
 import com.fix.corebank.vo.PortfolioResult;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -66,13 +71,16 @@ class CorebankInternalApiSkeletonTest {
   private MockMvc mockMvc;
   private StubCorebankOrderService corebankOrderService;
   private StubAccountProvisioningService accountProvisioningService;
+  private LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService;
   private CorebankOrderReplayService corebankOrderReplayService;
 
   @BeforeEach
   void setUp() {
     corebankOrderService = new StubCorebankOrderService();
     accountProvisioningService = new StubAccountProvisioningService();
+    ledgerIntegrityObservabilityService = mock(LedgerIntegrityObservabilityService.class);
     corebankOrderReplayService = mock(CorebankOrderReplayService.class);
+    ledgerIntegrityObservabilityService = mock(LedgerIntegrityObservabilityService.class);
     mockMvc = CorebankStandaloneMvcSupport.build(
         List.of(
             new CorrelationIdFilter(),
@@ -85,6 +93,7 @@ class CorebankInternalApiSkeletonTest {
             corebankOrderService,
             corebankOrderReplayService,
             accountProvisioningService,
+            ledgerIntegrityObservabilityService,
             mock(LedgerReconciliationService.class),
             mock(LedgerRepairService.class)
         )
@@ -449,6 +458,87 @@ class CorebankInternalApiSkeletonTest {
             .param("symbol", "005930"))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
+  }
+
+  @Test
+  void shouldReturnLedgerIntegritySummaryForInternalCaller() throws Exception {
+    LedgerIntegrityFailedIdentifier identifier = mock(LedgerIntegrityFailedIdentifier.class);
+    when(identifier.getAnomalyId()).thenReturn(801L);
+    when(identifier.getAnomalyType()).thenReturn("NEGATIVE_POSITION");
+    when(identifier.getClOrdId()).thenReturn(CORE_CL_ORD_ID_1);
+
+    when(ledgerIntegrityObservabilityService.readSummary()).thenReturn(
+        LedgerIntegrityObservabilitySummary.of(
+            72L,
+            Instant.parse("2026-03-01T10:10:00Z"),
+            true,
+            0,
+            "Ledger integrity check passed",
+            1L,
+            1L,
+            1L,
+            false,
+            71L,
+            List.of(identifier)
+        )
+    );
+
+    mockMvc.perform(get("/internal/v1/ledger-integrity/summary")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.latestRunId").value(72L))
+        .andExpect(jsonPath("$.data.latestRunPassed").value(true))
+        .andExpect(jsonPath("$.data.latestRunAnomalyCount").value(0))
+        .andExpect(jsonPath("$.data.unresolvedAnomalyCount").value(1))
+        .andExpect(jsonPath("$.data.repairPendingCount").value(1))
+        .andExpect(jsonPath("$.data.criticalAnomalyCount").value(1))
+        .andExpect(jsonPath("$.data.staleLastRun").value(false))
+        .andExpect(jsonPath("$.data.latestFailedRunId").value(71L))
+        .andExpect(jsonPath("$.data.latestFailedIdentifiers[0].anomalyId").value(801L))
+        .andExpect(jsonPath("$.data.latestFailedIdentifiers[0].anomalyType").value("NEGATIVE_POSITION"))
+        .andExpect(jsonPath("$.data.latestFailedIdentifiers[0].clOrdId").value(CORE_CL_ORD_ID_1));
+  }
+
+  @Test
+  void shouldReturnEmptyLedgerIntegritySummaryForInternalCaller() throws Exception {
+    when(ledgerIntegrityObservabilityService.readSummary()).thenReturn(
+        LedgerIntegrityObservabilitySummary.of(
+            null,
+            null,
+            null,
+            null,
+            null,
+            0L,
+            0L,
+            0L,
+            true,
+            null,
+            List.of()
+        )
+    );
+
+    mockMvc.perform(get("/internal/v1/ledger-integrity/summary")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.latestRunId").doesNotExist())
+        .andExpect(jsonPath("$.data.latestRunCheckedAt").doesNotExist())
+        .andExpect(jsonPath("$.data.latestRunPassed").doesNotExist())
+        .andExpect(jsonPath("$.data.latestRunAnomalyCount").doesNotExist())
+        .andExpect(jsonPath("$.data.latestRunSummaryMessage").doesNotExist())
+        .andExpect(jsonPath("$.data.unresolvedAnomalyCount").value(0))
+        .andExpect(jsonPath("$.data.repairPendingCount").value(0))
+        .andExpect(jsonPath("$.data.criticalAnomalyCount").value(0))
+        .andExpect(jsonPath("$.data.staleLastRun").value(true))
+        .andExpect(jsonPath("$.data.latestFailedRunId").doesNotExist())
+        .andExpect(jsonPath("$.data.latestFailedIdentifiers").isEmpty());
+  }
+
+  @Test
+  void shouldRejectLedgerIntegritySummaryWithoutInternalSecret() throws Exception {
+    mockMvc.perform(get("/internal/v1/ledger-integrity/summary"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_REQUIRED.code()))
+        .andExpect(jsonPath("$.message").value("Missing or invalid X-Internal-Secret"));
   }
 
   @Test

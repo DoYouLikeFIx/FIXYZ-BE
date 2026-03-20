@@ -9,3 +9,9 @@ spring:
 corebank:
   ledger-integrity:
     enabled: false
+    observability:
+      stale-after: PT5M
+      alert:
+        unresolved-backlog-threshold: 10
+        repair-pending-threshold: 5
+        critical-anomaly-threshold: 1

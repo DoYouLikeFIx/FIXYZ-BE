@@ -18,15 +18,18 @@ public class LedgerIntegrityService {
   private final LedgerIntegrityQueryRepository ledgerIntegrityQueryRepository;
   private final LedgerIntegrityRunRepository ledgerIntegrityRunRepository;
   private final LedgerIntegrityAnomalyRecordRepository ledgerIntegrityAnomalyRecordRepository;
+  private final LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService;
 
   public LedgerIntegrityService(
       LedgerIntegrityQueryRepository ledgerIntegrityQueryRepository,
       LedgerIntegrityRunRepository ledgerIntegrityRunRepository,
-      LedgerIntegrityAnomalyRecordRepository ledgerIntegrityAnomalyRecordRepository
+      LedgerIntegrityAnomalyRecordRepository ledgerIntegrityAnomalyRecordRepository,
+      LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService
   ) {
     this.ledgerIntegrityQueryRepository = ledgerIntegrityQueryRepository;
     this.ledgerIntegrityRunRepository = ledgerIntegrityRunRepository;
     this.ledgerIntegrityAnomalyRecordRepository = ledgerIntegrityAnomalyRecordRepository;
+    this.ledgerIntegrityObservabilityService = ledgerIntegrityObservabilityService;
   }
 
   public LedgerIntegrityCheckResult runCheck() {
@@ -40,6 +43,10 @@ public class LedgerIntegrityService {
   }
 
   public LedgerIntegrityCheckResult runCheckAndStore() {
+    return runCheckAndStore(true);
+  }
+
+  LedgerIntegrityCheckResult runCheckAndStore(boolean refreshObservability) {
     LedgerIntegrityCheckResult result = runCheck();
     LedgerIntegrityRun savedRun = ledgerIntegrityRunRepository.save(
         LedgerIntegrityRun.of(
@@ -70,7 +77,11 @@ public class LedgerIntegrityService {
       );
     }
 
-    return result.withRunId(savedRun.getId());
+    LedgerIntegrityCheckResult persistedResult = result.withRunId(savedRun.getId());
+    if (refreshObservability) {
+      ledgerIntegrityObservabilityService.refreshMetricsAndEvaluateAlertsAfterCommit();
+    }
+    return persistedResult;
   }
 
   private String summarize(List<LedgerIntegrityAnomaly> anomalies) {

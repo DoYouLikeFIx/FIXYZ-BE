@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRootDefault = path.resolve(scriptDir, "..", "..");
+const repoRootDefault = path.resolve(scriptDir, "..");
 const configPath = path.join(scriptDir, "openapi-docs-site.config.json");
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 

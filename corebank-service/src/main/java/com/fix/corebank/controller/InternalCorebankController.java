@@ -1,41 +1,7 @@
 package com.fix.corebank.controller;
 
-import com.fix.common.error.ApiResponse;
-import com.fix.common.web.CommonHeaders;
-import com.fix.common.validation.ContractPatterns;
-import com.fix.corebank.dto.request.InternalAccountPositionRequest;
-import com.fix.corebank.dto.request.InternalAccountStatusRequest;
-import com.fix.corebank.dto.request.InternalAccountStatusTransitionRequest;
-import com.fix.corebank.dto.request.InternalAccountPositionsRequest;
-import com.fix.corebank.dto.request.InternalAccountSummaryRequest;
-import com.fix.corebank.dto.request.InternalAccountOrderHistoryRequest;
-import com.fix.corebank.dto.request.InternalOrderCreateRequest;
-import com.fix.corebank.dto.request.InternalOrderReplayRequest;
-import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
-import com.fix.corebank.dto.request.InternalLedgerReconciliationCaseCreateRequest;
-import com.fix.corebank.dto.request.InternalLedgerReconciliationCaseTransitionRequest;
-import com.fix.corebank.dto.request.InternalLedgerReconciliationRepairRequest;
-import com.fix.corebank.dto.request.InternalLedgerReconciliationRerunRequest;
-import com.fix.corebank.dto.request.InternalPortfolioRequest;
-import com.fix.corebank.dto.request.InternalPortfolioProvisioningRequest;
-import com.fix.corebank.dto.response.InternalAccountOrderHistoryResponse;
-import com.fix.corebank.dto.response.InternalAccountPositionResponse;
-import com.fix.corebank.dto.response.InternalAccountStatusResponse;
-import com.fix.corebank.dto.response.InternalAccountStatusTransitionResponse;
-import com.fix.corebank.dto.response.InternalLedgerReconciliationCaseResponse;
-import com.fix.corebank.dto.response.InternalLedgerReconciliationRepairResponse;
-import com.fix.corebank.dto.response.InternalLedgerReconciliationRerunResponse;
-import com.fix.corebank.dto.response.InternalOrderResponse;
-import com.fix.corebank.dto.response.InternalOrderReplayResponse;
-import com.fix.corebank.dto.response.InternalPortfolioResponse;
-import com.fix.corebank.dto.response.InternalPortfolioProvisioningResponse;
-import com.fix.corebank.service.AccountProvisioningService;
-import com.fix.corebank.service.CorebankOrderService;
-import com.fix.corebank.service.CorebankOrderReplayService;
-import com.fix.corebank.service.LedgerReconciliationService;
-import com.fix.corebank.service.LedgerRepairService;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Pattern;
+import java.util.List;
+
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -50,7 +16,46 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import java.util.List;
+
+import com.fix.common.error.ApiResponse;
+import com.fix.common.validation.ContractPatterns;
+import com.fix.common.web.CommonHeaders;
+import com.fix.corebank.dto.request.InternalAccountOrderHistoryRequest;
+import com.fix.corebank.dto.request.InternalAccountPositionRequest;
+import com.fix.corebank.dto.request.InternalAccountPositionsRequest;
+import com.fix.corebank.dto.request.InternalAccountStatusRequest;
+import com.fix.corebank.dto.request.InternalAccountStatusTransitionRequest;
+import com.fix.corebank.dto.request.InternalAccountSummaryRequest;
+import com.fix.corebank.dto.request.InternalLedgerReconciliationCaseCreateRequest;
+import com.fix.corebank.dto.request.InternalLedgerReconciliationCaseTransitionRequest;
+import com.fix.corebank.dto.request.InternalLedgerReconciliationRepairRequest;
+import com.fix.corebank.dto.request.InternalLedgerReconciliationRerunRequest;
+import com.fix.corebank.dto.request.InternalOrderCreateRequest;
+import com.fix.corebank.dto.request.InternalOrderReplayRequest;
+import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
+import com.fix.corebank.dto.request.InternalPortfolioProvisioningRequest;
+import com.fix.corebank.dto.request.InternalPortfolioRequest;
+import com.fix.corebank.dto.response.InternalAccountOrderHistoryResponse;
+import com.fix.corebank.dto.response.InternalAccountPositionResponse;
+import com.fix.corebank.dto.response.InternalAccountStatusResponse;
+import com.fix.corebank.dto.response.InternalAccountStatusTransitionResponse;
+import com.fix.corebank.dto.response.InternalLedgerIntegritySummaryResponse;
+import com.fix.corebank.dto.response.InternalLedgerReconciliationCaseResponse;
+import com.fix.corebank.dto.response.InternalLedgerReconciliationRepairResponse;
+import com.fix.corebank.dto.response.InternalLedgerReconciliationRerunResponse;
+import com.fix.corebank.dto.response.InternalOrderReplayResponse;
+import com.fix.corebank.dto.response.InternalOrderResponse;
+import com.fix.corebank.dto.response.InternalPortfolioProvisioningResponse;
+import com.fix.corebank.dto.response.InternalPortfolioResponse;
+import com.fix.corebank.service.AccountProvisioningService;
+import com.fix.corebank.service.CorebankOrderReplayService;
+import com.fix.corebank.service.CorebankOrderService;
+import com.fix.corebank.service.LedgerIntegrityObservabilityService;
+import com.fix.corebank.service.LedgerReconciliationService;
+import com.fix.corebank.service.LedgerRepairService;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
 
 @RestController
 @Validated
@@ -60,6 +65,7 @@ public class InternalCorebankController {
   private final CorebankOrderService corebankOrderService;
   private final CorebankOrderReplayService corebankOrderReplayService;
   private final AccountProvisioningService accountProvisioningService;
+  private final LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService;
   private final LedgerReconciliationService ledgerReconciliationService;
   private final LedgerRepairService ledgerRepairService;
 
@@ -67,12 +73,14 @@ public class InternalCorebankController {
       CorebankOrderService corebankOrderService,
       CorebankOrderReplayService corebankOrderReplayService,
       AccountProvisioningService accountProvisioningService,
+      LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService,
       LedgerReconciliationService ledgerReconciliationService,
       LedgerRepairService ledgerRepairService
   ) {
     this.corebankOrderService = corebankOrderService;
     this.corebankOrderReplayService = corebankOrderReplayService;
     this.accountProvisioningService = accountProvisioningService;
+    this.ledgerIntegrityObservabilityService = ledgerIntegrityObservabilityService;
     this.ledgerReconciliationService = ledgerReconciliationService;
     this.ledgerRepairService = ledgerRepairService;
   }
@@ -188,6 +196,13 @@ public class InternalCorebankController {
   ) {
     return ApiResponse.success(InternalOrderReplayResponse.from(
         corebankOrderReplayService.replay(request.toVo(clOrdId, correlationId))
+    ));
+  }
+
+  @GetMapping("/ledger-integrity/summary")
+  public ApiResponse<InternalLedgerIntegritySummaryResponse> ledgerIntegritySummary() {
+    return ApiResponse.success(InternalLedgerIntegritySummaryResponse.from(
+        ledgerIntegrityObservabilityService.readSummary()
     ));
   }
 
