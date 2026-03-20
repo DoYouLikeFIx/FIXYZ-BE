@@ -386,6 +386,10 @@ class OrderSessionRecoveryServiceTest {
         eq("ORDER"),
         eq("orderSessionId=" + requerying.getOrderSessionId() + " status=CANCELED")
     );
+    assertThat(meterRegistry.get("channel.order.recovery.convergence")
+        .tag("outcome", "success")
+        .counter()
+        .count()).isEqualTo(1.0d);
   }
 
   @Test
@@ -439,6 +443,16 @@ class OrderSessionRecoveryServiceTest {
         eq(null),
         eq(1)
     );
+    verify(attemptStore).clear(requerying.getOrderSessionId());
+    verify(channelScaffoldService).bootstrapNotification(
+        eq(requerying.getMemberId()),
+        eq("ORDER"),
+        eq("orderSessionId=" + requerying.getOrderSessionId() + " status=ESCALATED")
+    );
+    assertThat(meterRegistry.get("channel.order.recovery.convergence")
+        .tag("outcome", "escalated")
+        .counter()
+        .count()).isEqualTo(1.0d);
   }
 
   @Test

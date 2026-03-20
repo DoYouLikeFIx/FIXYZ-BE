@@ -85,6 +85,16 @@
                 }
               }
             }
+          },
+          "504": {
+            "description": "9004 TIMEOUT",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
           }
         }
       }

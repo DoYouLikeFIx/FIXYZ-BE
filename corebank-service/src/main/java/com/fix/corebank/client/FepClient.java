@@ -229,6 +229,9 @@ public class FepClient {
     if (FepExternalErrorTaxonomy.isMappedExternalRc(errorResponse.externalRc())) {
       return FepExternalErrorTaxonomy.toException(errorResponse.externalRc(), restClientResponseException);
     }
+    if (FepExternalErrorTaxonomy.isMappedExternalRc(errorResponse.normalizedCode())) {
+      return FepExternalErrorTaxonomy.toException(errorResponse.normalizedCode(), restClientResponseException);
+    }
     if (errorResponse.normalizedCode() != null && !errorResponse.normalizedCode().isBlank()) {
       BusinessException normalizedError = ErrorCode.fromCode(errorResponse.normalizedCode())
           .map(errorCode -> new BusinessException(

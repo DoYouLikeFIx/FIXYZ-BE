@@ -18,7 +18,7 @@ public enum ErrorCode {
   VIRTUAL_FILL_DEVIATION_EXCEEDED("VALIDATION-002", "Virtual fill deviation exceeded", 422),
   MANUAL_REPLAY_GOVERNANCE_FAILED("VALIDATION-004", "Manual replay governance validation failed", 422),
   CANCEL_REJECTED("9006", "Cancel rejected", 409),
-  CANCEL_TIMEOUT("9004", "Cancel request timed out", 504),
+  FEP_ACK_TIMEOUT("9004", "Exchange acknowledgement timed out", 504),
   INVALID_SESSION_STATUS("9009", "Replay target is not escalated", 409),
   AUTH_UNAUTHORIZED("AUTH_001", "Unauthorized", 401),
   AUTH_ACCOUNT_LOCKED("AUTH_002", "Account locked", 401),

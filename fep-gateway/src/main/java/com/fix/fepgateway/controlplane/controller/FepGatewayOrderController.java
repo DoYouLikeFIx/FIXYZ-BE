@@ -51,6 +51,11 @@ public class FepGatewayOrderController {
           responseCode = "422",
           description = "VALIDATION-001 request contract or idempotency policy violation",
           content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+      ),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(
+          responseCode = "504",
+          description = "9004 TIMEOUT",
+          content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
       )
   })
   public ApiResponse<FepOrderResponse> submit(

@@ -39,6 +39,7 @@ jobs:
             :channel-service:test \
             :corebank-domain:test \
             :corebank-service:test \
+            :corebank-service:resilienceScenarioTest \
             :fep-gateway:test \
             :fep-simulator:test
 
