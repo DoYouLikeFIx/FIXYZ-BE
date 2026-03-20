@@ -55,17 +55,30 @@ class FepGatewayOpenApiCompatibilityTest {
     JsonNode cancelOperation = contract.path("paths").path("/fep/v1/orders/{clOrdId}/cancel").path("post");
     JsonNode replayOperation = contract.path("paths").path("/fep/v1/orders/{clOrdId}/replay").path("post");
     JsonNode internalStatusOperation = contract.path("paths").path("/fep-internal/v1/orders/{clOrdId}/status").path("post");
+    JsonNode replayTimelineStartOperation = contract.path("paths").path("/fep-internal/v1/market-data/replay/timelines").path("post");
+    JsonNode replayTimelineStatusOperation = contract.path("paths").path("/fep-internal/v1/market-data/replay/timelines/{replayId}").path("get");
+    JsonNode replayTimelinePauseOperation = contract.path("paths").path("/fep-internal/v1/market-data/replay/timelines/{replayId}/pause").path("post");
+    JsonNode replayTimelineResumeOperation = contract.path("paths").path("/fep-internal/v1/market-data/replay/timelines/{replayId}/resume").path("post");
     JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode submitSchema = contract.path("components").path("schemas").path("FepOrderSubmitRequest");
     JsonNode cancelSchema = contract.path("components").path("schemas").path("FepOrderCancelRequest");
     JsonNode replaySchema = contract.path("components").path("schemas").path("FepOrderReplayRequest");
     JsonNode internalStatusSchema = contract.path("components").path("schemas").path("FepInternalOrderStatusRequest");
+    JsonNode replayTimelineStartSchema = contract.path("components").path("schemas").path("FepReplayTimelineStartRequest");
+    JsonNode replayTimelineResponseSchema = contract.path("components").path("schemas").path("FepReplayTimelineResponse");
     JsonNode statusResponseSchema = contract.path("components").path("schemas").path("FepOrderResponse");
     JsonNode cancelResponseSchema = contract.path("components").path("schemas").path("FepOrderCancelResponse");
     JsonNode replayResponseSchema = contract.path("components").path("schemas").path("FepOrderReplayResponse");
 
     assertThat(fieldNames(contract.path("paths")))
-        .contains("/fep/v1/orders", "/fep/v1/orders/{clOrdId}/status")
+        .contains(
+            "/fep/v1/orders",
+            "/fep/v1/orders/{clOrdId}/status",
+            "/fep-internal/v1/market-data/replay/timelines",
+            "/fep-internal/v1/market-data/replay/timelines/{replayId}",
+            "/fep-internal/v1/market-data/replay/timelines/{replayId}/pause",
+            "/fep-internal/v1/market-data/replay/timelines/{replayId}/resume"
+        )
         .doesNotContain("/fep/v2/orders");
 
     assertThat(parameterNames(submitOperation.path("parameters")))
@@ -82,6 +95,14 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(parameterNames(internalStatusOperation.path("parameters")))
         .contains("X-Internal-Secret", "X-Correlation-Id", "X-ClOrdID")
         .doesNotContain("request");
+    assertThat(parameterNames(replayTimelineStartOperation.path("parameters")))
+        .contains("X-Internal-Secret", "X-Correlation-Id");
+    assertThat(parameterNames(replayTimelineStatusOperation.path("parameters")))
+        .contains("X-Internal-Secret", "X-Correlation-Id", "replayId");
+    assertThat(parameterNames(replayTimelinePauseOperation.path("parameters")))
+        .contains("X-Internal-Secret", "X-Correlation-Id", "replayId");
+    assertThat(parameterNames(replayTimelineResumeOperation.path("parameters")))
+        .contains("X-Internal-Secret", "X-Correlation-Id", "replayId");
 
     assertThat(schemaRef(submitOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
     assertThat(schemaRef(submitOperation, "401")).isEqualTo("#/components/schemas/ApiErrorResponse");
@@ -90,6 +111,10 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(schemaRef(cancelOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderCancelResponse");
     assertThat(schemaRef(replayOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderReplayResponse");
     assertThat(schemaRef(internalStatusOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
+    assertThat(schemaRef(replayTimelineStartOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepReplayTimelineResponse");
+    assertThat(schemaRef(replayTimelineStatusOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepReplayTimelineResponse");
+    assertThat(schemaRef(replayTimelinePauseOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepReplayTimelineResponse");
+    assertThat(schemaRef(replayTimelineResumeOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepReplayTimelineResponse");
     assertThat(submitOperation.path("responses").path("401").path("description").asText())
       .contains("AUTH_001");
     assertThat(submitOperation.path("responses").path("504").path("description").asText()).contains("9004");
@@ -101,6 +126,7 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(cancelOperation.path("requestBody").path("required").asBoolean()).isTrue();
     assertThat(replayOperation.path("requestBody").path("required").asBoolean()).isTrue();
     assertThat(internalStatusOperation.path("requestBody").path("required").asBoolean()).isTrue();
+    assertThat(replayTimelineStartOperation.path("requestBody").path("required").asBoolean()).isTrue();
     assertThat(fieldNames(apiErrorSchema.path("properties")))
         .contains(
             "code",
@@ -127,6 +153,11 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(replaySchema.path("properties").path("reason").path("minLength").asInt()).isEqualTo(30);
     assertThat(replaySchema.path("properties").path("executionPrice").path("description").asText())
         .contains("VALIDATION-002", "maxVirtualFillDeviationBps");
+    assertThat(fieldNames(replayTimelineStartSchema.path("properties")))
+        .containsExactlyInAnyOrder("symbol", "seed", "startOffset", "speedFactor");
+    assertThat(requiredFields(replayTimelineStartSchema))
+        .containsExactlyInAnyOrder("symbol", "seed");
+    assertThat(replayTimelineStartSchema.path("properties").path("startOffset").path("minimum").asInt()).isEqualTo(0);
     assertThat(fieldNames(internalStatusSchema.path("properties")))
         .contains(
             "status",
@@ -170,6 +201,17 @@ class FepGatewayOpenApiCompatibilityTest {
             "executedPrice",
             "processedBy",
             "processedAt"
+        );
+    assertThat(fieldNames(replayTimelineResponseSchema.path("properties")))
+        .containsExactlyInAnyOrder(
+            "replayId",
+            "symbol",
+            "seed",
+            "cursorOffset",
+            "speedFactor",
+            "status",
+            "emittedCount",
+            "sequenceHash"
         );
   }
 
