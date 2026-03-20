@@ -20,6 +20,7 @@ public final class ChannelSecurityPaths {
       "/api/v1/members/me/totp/confirm",
       "/api/v1/auth/password/forgot",
       "/api/v1/auth/password/forgot/challenge",
+      "/api/v1/auth/password/forgot/challenge/fail-closed",
       "/api/v1/auth/password/reset",
       "/swagger-ui/**",
       "/v3/api-docs/**",

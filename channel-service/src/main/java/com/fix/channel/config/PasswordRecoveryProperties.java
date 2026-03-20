@@ -77,6 +77,9 @@ public class PasswordRecoveryProperties {
     private boolean v2Enabled = false;
     private int cohortPercentage = 0;
     private String cohortSalt = "dev-password-recovery-challenge-cohort-salt";
+    private boolean deterministicOverrideEnabled = false;
+    private String deterministicOverrideHeader = "X-Fixyz-Recovery-Challenge-Mode";
+    private String observabilitySecret = "dev-password-recovery-observability-secret";
     private int difficultyBits = 18;
 
     public RateLimit getIp() {
@@ -129,6 +132,30 @@ public class PasswordRecoveryProperties {
 
     public void setCohortSalt(String cohortSalt) {
       this.cohortSalt = cohortSalt;
+    }
+
+    public boolean isDeterministicOverrideEnabled() {
+      return deterministicOverrideEnabled;
+    }
+
+    public void setDeterministicOverrideEnabled(boolean deterministicOverrideEnabled) {
+      this.deterministicOverrideEnabled = deterministicOverrideEnabled;
+    }
+
+    public String getDeterministicOverrideHeader() {
+      return deterministicOverrideHeader;
+    }
+
+    public void setDeterministicOverrideHeader(String deterministicOverrideHeader) {
+      this.deterministicOverrideHeader = deterministicOverrideHeader;
+    }
+
+    public String getObservabilitySecret() {
+      return observabilitySecret;
+    }
+
+    public void setObservabilitySecret(String observabilitySecret) {
+      this.observabilitySecret = observabilitySecret;
     }
 
     public int getDifficultyBits() {
