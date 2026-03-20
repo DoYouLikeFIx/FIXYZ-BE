@@ -744,6 +744,32 @@ class ChannelFlywayMigrationTest {
     assertThat(securityOccurredAtNullable).isEqualTo("NO");
   }
 
+  @Test
+  void shouldAllowAuditAndSecurityUuidInsertCompatibilityDefaults() {
+    jdbcTemplate.update("""
+        INSERT INTO audit_logs(member_id, action, target_type, detail)
+        VALUES (?, ?, ?, ?)
+        """, 10L, "PASSWORD_RECOVERY_FORGOT", "PASSWORD_RECOVERY", "default uuid compatibility");
+    jdbcTemplate.update("""
+        INSERT INTO security_events(member_id, event_type, severity)
+        VALUES (?, ?, ?)
+        """, 10L, "PASSWORD_RECOVERY_RATE_LIMITED", "LOW");
+
+    String auditUuid = jdbcTemplate.queryForObject(
+        "SELECT audit_uuid FROM audit_logs WHERE detail = ?",
+        String.class,
+        "default uuid compatibility"
+    );
+    String securityEventUuid = jdbcTemplate.queryForObject(
+        "SELECT security_event_uuid FROM security_events WHERE event_type = ?",
+        String.class,
+        "PASSWORD_RECOVERY_RATE_LIMITED"
+    );
+
+    assertThat(auditUuid).isNotBlank();
+    assertThat(securityEventUuid).isNotBlank();
+  }
+
   private record TestFlywayContext(Connection connection) implements Context {
 
     @Override

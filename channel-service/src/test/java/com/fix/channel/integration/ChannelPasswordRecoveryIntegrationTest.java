@@ -44,11 +44,13 @@ import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.session.FindByIndexNameSessionRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
@@ -461,6 +463,49 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
   }
 
   @Test
+  void shouldRejectPayloadOnlyAndDualFieldChallengeSubmissionsWithAuth022() throws Exception {
+    memberRepository.save(
+        Member.registerUser(
+            "M-REC-002C",
+            "malformed.challenge@fixyz.com",
+            passwordEncoder.encode("Abcd1234!"),
+            "Malformed Challenge"
+        )
+    );
+
+    String challengeToken = bootstrapChallenge("malformed.challenge@fixyz.com");
+
+    mockMvc.perform(post("/api/v1/auth/password/forgot")
+            .with(csrf())
+            .contentType("application/json")
+            .content(objectMapper.writeValueAsString(Map.of(
+                "email", "malformed.challenge@fixyz.com",
+                "challengeToken", challengeToken,
+                "challengeAnswerPayload", Map.of(
+                    "kind", "proof-of-work",
+                    "nonce", "12345"
+                )
+            ))))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-022"));
+
+    mockMvc.perform(post("/api/v1/auth/password/forgot")
+            .with(csrf())
+            .contentType("application/json")
+            .content(objectMapper.writeValueAsString(Map.of(
+                "email", "malformed.challenge@fixyz.com",
+                "challengeToken", challengeToken,
+                "challengeAnswer", "verified",
+                "challengeAnswerPayload", Map.of(
+                    "kind", "proof-of-work",
+                    "nonce", "12345"
+                )
+            ))))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("AUTH-022"));
+  }
+
+  @Test
   void shouldReturnSameChallengeContractForUnknownEmail() throws Exception {
     memberRepository.save(
         Member.registerUser("M-REC-002A", "known.challenge@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Known Challenge")
@@ -742,6 +787,16 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
           assertThat(body).doesNotContain("\"success\"");
         });
 
+    mockMvc.perform(post("/api/v1/auth/password/forgot/challenge/fail-closed")
+            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+            .content("reason=clock-skew&surface=forgot-password-web"))
+        .andExpect(status().isForbidden())
+        .andExpect(result -> {
+          String body = result.getResponse().getContentAsString();
+          assertThat(body).doesNotContain("\"code\"");
+          assertThat(body).doesNotContain("\"success\"");
+        });
+
     mockMvc.perform(post("/api/v1/auth/password/reset")
             .contentType("application/json")
             .content("""
@@ -756,6 +811,36 @@ class ChannelPasswordRecoveryIntegrationTest extends ChannelContainersIntegratio
           assertThat(body).doesNotContain("\"code\"");
           assertThat(body).doesNotContain("\"success\"");
         });
+  }
+
+  @Test
+  void shouldAcceptClientFailClosedTelemetryWithCsrf() throws Exception {
+    MockHttpSession session = new MockHttpSession();
+    Class<?> pendingContextClass = Class.forName(
+        "com.fix.channel.service.PasswordRecoveryService$PendingChallengeTelemetryContext"
+    );
+    java.lang.reflect.Constructor<?> constructor = pendingContextClass.getDeclaredConstructor(
+        String.class,
+        boolean.class,
+        boolean.class,
+        Long.class,
+        String.class
+    );
+    constructor.setAccessible(true);
+    Object pendingContext = constructor.newInstance("2", true, true, 10L, "hash-1234567890abcdef123456");
+    session.setAttribute(
+        "com.fix.channel.service.PasswordRecoveryService.challenge.pendingTelemetryContexts",
+        new ArrayList<>(List.of(pendingContext))
+    );
+
+    mockMvc.perform(post("/api/v1/auth/password/forgot/challenge/fail-closed")
+            .session(session)
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+            .param("reason", "clock-skew")
+            .param("surface", "forgot-password-web")
+            .param("challengeIssuedAtEpochMs", "10"))
+        .andExpect(status().isNoContent());
   }
 
   @Test
