@@ -196,6 +196,7 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(attemptCountParameter.path("schema").path("default").asInt())
         .isEqualTo(1);
     assertThat(parameterByName(requeryParameters, "request").isMissingNode()).isTrue();
+    assertThat(parameterByName(requeryParameters, "X-Internal-Secret").path("in").asText()).isEqualTo("header");
     assertThat(parameterByName(portfolioOperation.path("parameters"), "X-Internal-Secret").isMissingNode()).isFalse();
     assertThat(parameterByName(ledgerIntegritySummaryOperation.path("parameters"), "X-Internal-Secret").isMissingNode())
         .isFalse();
