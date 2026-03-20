@@ -216,6 +216,19 @@ public class ProofOfWorkPasswordRecoveryChallengeService implements PasswordReco
         : fallbackContext;
   }
 
+  @Override
+  public String extractChallengeId(String challengeToken) {
+    if (!supportsToken(challengeToken)) {
+      return null;
+    }
+
+    try {
+      return decodeToken(challengeToken).challengeId();
+    } catch (RuntimeException ex) {
+      return null;
+    }
+  }
+
   private boolean isValidProof(ProofOfWorkPayload proofOfWork, String answer) {
     if (proofOfWork == null || answer == null || answer.isBlank() || !answer.chars().allMatch(Character::isDigit)) {
       return false;
