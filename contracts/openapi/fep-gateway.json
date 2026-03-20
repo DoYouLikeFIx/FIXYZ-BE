@@ -575,6 +575,98 @@
                 }
             }
         },
+        "/fep-internal/v1/quotes/snapshots/latest": {
+            "get": {
+                "tags": [
+                    "fep-gateway-quote-snapshot-controller"
+                ],
+                "summary": "Latest Snapshot",
+                "operationId": "latestSnapshot",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/FepQuoteSnapshotLatestRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseFepQuoteSnapshotResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/fep-internal/v1/ping": {
             "get": {
                 "tags": [
@@ -1207,6 +1299,92 @@
                         "type": "integer",
                         "description": "Optional reference price override for legacy MARKET recovery rows.",
                         "format": "int64"
+                    }
+                }
+            },
+            "FepQuoteSnapshotLatestRequest": {
+                "required": [
+                    "quoteSourceMode",
+                    "symbol"
+                ],
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "minLength": 1,
+                        "type": "string",
+                        "description": "KRX symbol code used to query the latest stored quote snapshot."
+                    },
+                    "quoteSourceMode": {
+                        "type": "string",
+                        "description": "Quote source mode to query.",
+                        "enum": [
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY",
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY"
+                        ]
+                    }
+                }
+            },
+            "ApiResponseFepQuoteSnapshotResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/FepQuoteSnapshotResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "FepQuoteSnapshotResponse": {
+                "type": "object",
+                "properties": {
+                    "quoteSnapshotId": {
+                        "type": "string"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "quoteSourceMode": {
+                        "type": "string",
+                        "enum": [
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY"
+                        ]
+                    },
+                    "quoteAsOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "bestBid": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "bestAsk": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "lastTrade": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "streamOffset": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "stale": {
+                        "type": "boolean"
                     }
                 }
             }
