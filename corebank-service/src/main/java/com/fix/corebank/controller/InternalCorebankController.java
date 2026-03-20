@@ -10,6 +10,7 @@ import com.fix.corebank.dto.request.InternalAccountPositionsRequest;
 import com.fix.corebank.dto.request.InternalAccountSummaryRequest;
 import com.fix.corebank.dto.request.InternalAccountOrderHistoryRequest;
 import com.fix.corebank.dto.request.InternalOrderCreateRequest;
+import com.fix.corebank.dto.request.InternalOrderReplayRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
 import com.fix.corebank.dto.request.InternalLedgerReconciliationCaseCreateRequest;
 import com.fix.corebank.dto.request.InternalLedgerReconciliationCaseTransitionRequest;
@@ -26,11 +27,13 @@ import com.fix.corebank.dto.response.InternalLedgerReconciliationCaseResponse;
 import com.fix.corebank.dto.response.InternalLedgerReconciliationRepairResponse;
 import com.fix.corebank.dto.response.InternalLedgerReconciliationRerunResponse;
 import com.fix.corebank.dto.response.InternalOrderResponse;
+import com.fix.corebank.dto.response.InternalOrderReplayResponse;
 import com.fix.corebank.dto.response.InternalPortfolioResponse;
 import com.fix.corebank.dto.response.InternalPortfolioProvisioningResponse;
 import com.fix.corebank.service.AccountProvisioningService;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.LedgerIntegrityObservabilityService;
+import com.fix.corebank.service.CorebankOrderReplayService;
 import com.fix.corebank.service.LedgerReconciliationService;
 import com.fix.corebank.service.LedgerRepairService;
 import jakarta.validation.Valid;
@@ -57,6 +60,7 @@ import java.util.List;
 public class InternalCorebankController {
 
   private final CorebankOrderService corebankOrderService;
+  private final CorebankOrderReplayService corebankOrderReplayService;
   private final AccountProvisioningService accountProvisioningService;
   private final LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService;
   private final LedgerReconciliationService ledgerReconciliationService;
@@ -64,12 +68,14 @@ public class InternalCorebankController {
 
   public InternalCorebankController(
       CorebankOrderService corebankOrderService,
+      CorebankOrderReplayService corebankOrderReplayService,
       AccountProvisioningService accountProvisioningService,
       LedgerIntegrityObservabilityService ledgerIntegrityObservabilityService,
       LedgerReconciliationService ledgerReconciliationService,
       LedgerRepairService ledgerRepairService
   ) {
     this.corebankOrderService = corebankOrderService;
+    this.corebankOrderReplayService = corebankOrderReplayService;
     this.accountProvisioningService = accountProvisioningService;
     this.ledgerIntegrityObservabilityService = ledgerIntegrityObservabilityService;
     this.ledgerReconciliationService = ledgerReconciliationService;
@@ -176,6 +182,18 @@ public class InternalCorebankController {
       @ParameterObject @Valid @ModelAttribute InternalOrderRequeryRequest request
   ) {
     return ApiResponse.success(InternalOrderResponse.from(corebankOrderService.requeryOrder(request.toVo(clOrdId))));
+  }
+
+  @PostMapping(value = "/orders/{clOrdId}/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
+  public ApiResponse<InternalOrderReplayResponse> replayOrder(
+      @Pattern(regexp = ContractPatterns.UUID_V4)
+      @PathVariable String clOrdId,
+      @RequestHeader(CommonHeaders.X_CORRELATION_ID) String correlationId,
+      @Valid @RequestBody InternalOrderReplayRequest request
+  ) {
+    return ApiResponse.success(InternalOrderReplayResponse.from(
+        corebankOrderReplayService.replay(request.toVo(clOrdId, correlationId))
+    ));
   }
 
   @GetMapping("/ledger-integrity/summary")

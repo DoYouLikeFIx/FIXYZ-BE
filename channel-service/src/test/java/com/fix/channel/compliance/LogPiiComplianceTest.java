@@ -3,10 +3,8 @@ package com.fix.channel.compliance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fix.channel.config.PasswordRecoveryProperties;
@@ -58,11 +56,11 @@ import com.fix.channel.vo.PasswordResetContinuationResult;
 import com.fix.channel.vo.TotpRebindBootstrapResult;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -71,7 +69,6 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -537,6 +534,7 @@ class LogPiiComplianceTest {
         "M-PII-501",
         AdminActorContext.of(
             900L,
+            "OPS-ADMIN-900",
             "admin@fixyz.com",
             RAW_SESSION_TOKEN,
             RAW_CLIENT_IP,

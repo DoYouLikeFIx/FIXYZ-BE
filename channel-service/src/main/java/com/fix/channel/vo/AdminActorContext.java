@@ -3,6 +3,7 @@ package com.fix.channel.vo;
 public class AdminActorContext {
 
   private final Long adminMemberId;
+  private final String operatorId;
   private final String adminEmail;
   private final String sessionId;
   private final String clientIp;
@@ -11,6 +12,7 @@ public class AdminActorContext {
 
   private AdminActorContext(
       Long adminMemberId,
+      String operatorId,
       String adminEmail,
       String sessionId,
       String clientIp,
@@ -18,6 +20,7 @@ public class AdminActorContext {
       String correlationId
   ) {
     this.adminMemberId = adminMemberId;
+    this.operatorId = operatorId;
     this.adminEmail = adminEmail;
     this.sessionId = sessionId;
     this.clientIp = clientIp;
@@ -27,17 +30,22 @@ public class AdminActorContext {
 
   public static AdminActorContext of(
       Long adminMemberId,
+      String operatorId,
       String adminEmail,
       String sessionId,
       String clientIp,
       String userAgent,
       String correlationId
   ) {
-    return new AdminActorContext(adminMemberId, adminEmail, sessionId, clientIp, userAgent, correlationId);
+    return new AdminActorContext(adminMemberId, operatorId, adminEmail, sessionId, clientIp, userAgent, correlationId);
   }
 
   public Long getAdminMemberId() {
     return adminMemberId;
+  }
+
+  public String getOperatorId() {
+    return operatorId;
   }
 
   public String getAdminEmail() {

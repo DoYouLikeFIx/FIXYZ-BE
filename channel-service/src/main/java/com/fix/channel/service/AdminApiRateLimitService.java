@@ -19,10 +19,12 @@ public class AdminApiRateLimitService {
 
   private static final String ENDPOINT_DEFAULT = "default";
   private static final String ENDPOINT_AUDIT_LOGS = "audit-logs";
+  private static final String ENDPOINT_ORDER_REPLAY = "order-replay";
   private static final String ENDPOINT_SESSION_INVALIDATION = "session-invalidation";
   private static final Set<String> ALLOWED_ENDPOINTS = Set.of(
       ENDPOINT_DEFAULT,
       ENDPOINT_AUDIT_LOGS,
+      ENDPOINT_ORDER_REPLAY,
       ENDPOINT_SESSION_INVALIDATION
   );
 
@@ -37,6 +39,9 @@ public class AdminApiRateLimitService {
   @Value("${channel.admin.rate-limit.audit-logs.max-attempts:20}")
   private int auditLogsMaxAttempts;
 
+  @Value("${channel.admin.rate-limit.order-replay.max-attempts:20}")
+  private int orderReplayMaxAttempts;
+
   @Value("${channel.admin.rate-limit.session-invalidation.max-attempts:20}")
   private int sessionInvalidationMaxAttempts;
 
@@ -49,6 +54,10 @@ public class AdminApiRateLimitService {
 
   public void enforceAuditLogs(String sessionId) {
     enforceForEndpoint(sessionId, ENDPOINT_AUDIT_LOGS);
+  }
+
+  public void enforceOrderReplay(String sessionId) {
+    enforceForEndpoint(sessionId, ENDPOINT_ORDER_REPLAY);
   }
 
   public void enforceSessionInvalidation(String sessionId) {
@@ -71,10 +80,17 @@ public class AdminApiRateLimitService {
       return;
     }
     throw new RetryAfterBusinessException(
-        ErrorCode.RATE_LIMIT_EXCEEDED,
+        rateLimitErrorCode(normalizedEndpoint),
         "rate limit exceeded",
         retryAfterSeconds(redisTemplate, key)
     );
+  }
+
+  private ErrorCode rateLimitErrorCode(String endpointKey) {
+    if (ENDPOINT_ORDER_REPLAY.equals(endpointKey)) {
+      return ErrorCode.CONTRACT_RATE_LIMIT_EXCEEDED;
+    }
+    return ErrorCode.RATE_LIMIT_EXCEEDED;
   }
 
   private String sanitizeSessionId(String sessionId) {
@@ -98,6 +114,9 @@ public class AdminApiRateLimitService {
   private int maxAttemptsFor(String endpointKey) {
     if (ENDPOINT_AUDIT_LOGS.equals(endpointKey)) {
       return Math.max(1, auditLogsMaxAttempts);
+    }
+    if (ENDPOINT_ORDER_REPLAY.equals(endpointKey)) {
+      return Math.max(1, orderReplayMaxAttempts);
     }
     if (ENDPOINT_SESSION_INVALIDATION.equals(endpointKey)) {
       return Math.max(1, sessionInvalidationMaxAttempts);
