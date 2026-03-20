@@ -32,6 +32,9 @@ class FepGatewayMigrationTest {
     assertTableExists("gateway_order_replays");
     assertTableExists("gateway_security_events");
     assertTableExists("gateway_sessions");
+    assertTableExists("fep_market_data_subscriptions");
+    assertTableExists("fep_quote_snapshots");
+    assertTableExists("fep_replay_cursors");
     assertColumnExists("gateway_orders", "account_id");
     assertColumnExists("gateway_orders", "reference_id");
     assertColumnExists("gateway_orders", "reference_id_expires_at");
@@ -47,6 +50,61 @@ class FepGatewayMigrationTest {
     assertVarcharColumnContract("gateway_security_events", "correlation_id", false, 64);
     assertIndexExists("gateway_orders", "uk_gateway_orders_reference_id");
     assertIndexExists("gateway_security_events", "idx_gateway_security_events_reference_id");
+    assertColumnExists("fep_market_data_subscriptions", "subscription_id");
+    assertColumnExists("fep_market_data_subscriptions", "provider");
+    assertColumnExists("fep_market_data_subscriptions", "symbol");
+    assertColumnExists("fep_market_data_subscriptions", "source_mode");
+    assertColumnExists("fep_market_data_subscriptions", "tr_id");
+    assertColumnExists("fep_market_data_subscriptions", "tr_key");
+    assertColumnExists("fep_market_data_subscriptions", "last_event_offset");
+    assertColumnExists("fep_market_data_subscriptions", "last_quote_as_of");
+    assertColumnExists("fep_market_data_subscriptions", "is_active");
+    assertVarcharColumnContract("fep_market_data_subscriptions", "subscription_id", false, 36);
+    assertVarcharColumnContract("fep_market_data_subscriptions", "provider", false, 32);
+    assertVarcharColumnContract("fep_market_data_subscriptions", "symbol", false, 16);
+    assertVarcharColumnContract("fep_market_data_subscriptions", "source_mode", false, 16);
+    assertColumnNullability("fep_market_data_subscriptions", "last_event_offset", true);
+    assertIndexExists(
+        "fep_market_data_subscriptions",
+        "uk_fep_market_data_subscriptions_subscription_id"
+    );
+    assertIndexExists(
+        "fep_market_data_subscriptions",
+        "uk_fep_market_data_subscriptions_provider_symbol_source_mode"
+    );
+    assertIndexExists(
+        "fep_market_data_subscriptions",
+        "idx_fep_market_data_subscriptions_active_updated_at"
+    );
+    assertColumnExists("fep_quote_snapshots", "quote_snapshot_id");
+    assertColumnExists("fep_quote_snapshots", "symbol");
+    assertColumnExists("fep_quote_snapshots", "source_mode");
+    assertColumnExists("fep_quote_snapshots", "quote_as_of");
+    assertColumnExists("fep_quote_snapshots", "best_bid");
+    assertColumnExists("fep_quote_snapshots", "best_ask");
+    assertColumnExists("fep_quote_snapshots", "last_trade");
+    assertColumnExists("fep_quote_snapshots", "stream_offset");
+    assertColumnExists("fep_quote_snapshots", "is_stale");
+    assertVarcharColumnContract("fep_quote_snapshots", "quote_snapshot_id", false, 128);
+    assertVarcharColumnContract("fep_quote_snapshots", "symbol", false, 16);
+    assertVarcharColumnContract("fep_quote_snapshots", "source_mode", false, 16);
+    assertColumnNullability("fep_quote_snapshots", "stream_offset", false);
+    assertIndexExists("fep_quote_snapshots", "uk_fep_quote_snapshots_quote_snapshot_id");
+    assertIndexExists("fep_quote_snapshots", "idx_fep_quote_snapshots_symbol_quote_as_of");
+    assertIndexExists("fep_quote_snapshots", "idx_fep_quote_snapshots_source_mode_quote_as_of");
+    assertColumnExists("fep_replay_cursors", "replay_id");
+    assertColumnExists("fep_replay_cursors", "seed");
+    assertColumnExists("fep_replay_cursors", "symbol");
+    assertColumnExists("fep_replay_cursors", "cursor_offset");
+    assertColumnExists("fep_replay_cursors", "speed_factor");
+    assertColumnExists("fep_replay_cursors", "status");
+    assertVarcharColumnContract("fep_replay_cursors", "replay_id", false, 36);
+    assertVarcharColumnContract("fep_replay_cursors", "seed", false, 128);
+    assertVarcharColumnContract("fep_replay_cursors", "symbol", false, 16);
+    assertVarcharColumnContract("fep_replay_cursors", "status", false, 16);
+    assertColumnNullability("fep_replay_cursors", "cursor_offset", false);
+    assertIndexExists("fep_replay_cursors", "uk_fep_replay_cursors_replay_id");
+    assertIndexExists("fep_replay_cursors", "idx_fep_replay_cursors_symbol_status_updated_at");
   }
 
   @Test
