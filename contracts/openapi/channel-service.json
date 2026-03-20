@@ -720,6 +720,50 @@
                 }
             }
         },
+        "/api/v1/auth/password/forgot/challenge/fail-closed": {
+            "post": {
+                "tags": [
+                    "auth-controller"
+                ],
+                "summary": "Record Forgot Password Challenge Fail Closed",
+                "operationId": "recordForgotPasswordChallengeFailClosed",
+                "parameters": [
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/PasswordRecoveryChallengeFailClosedTelemetryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/otp/verify": {
             "post": {
                 "tags": [
@@ -3155,6 +3199,9 @@
                     }
                 }
             },
+            "JsonNode": {
+                "type": "object"
+            },
             "PasswordForgotRequest": {
                 "required": [
                     "email"
@@ -3171,6 +3218,9 @@
                     },
                     "challengeAnswer": {
                         "type": "string"
+                    },
+                    "challengeAnswerPayload": {
+                        "$ref": "#/components/schemas/JsonNode"
                     }
                 }
             },
@@ -3248,18 +3298,109 @@
                     }
                 }
             },
+            "ChallengePayload": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string"
+                    },
+                    "proofOfWork": {
+                        "$ref": "#/components/schemas/ProofOfWorkPayload"
+                    }
+                }
+            },
             "PasswordForgotChallengeResponse": {
                 "type": "object",
                 "properties": {
+                    "challengeContractVersion": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "challengeId": {
+                        "type": "string"
+                    },
                     "challengeToken": {
                         "type": "string"
                     },
                     "challengeType": {
                         "type": "string"
                     },
+                    "challengeIssuedAtEpochMs": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "challengeExpiresAtEpochMs": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
                     "challengeTtlSeconds": {
                         "type": "integer",
                         "format": "int32"
+                    },
+                    "challengePayload": {
+                        "$ref": "#/components/schemas/ChallengePayload"
+                    }
+                }
+            },
+            "ProofOfWorkPayload": {
+                "type": "object",
+                "properties": {
+                    "algorithm": {
+                        "type": "string"
+                    },
+                    "seed": {
+                        "type": "string"
+                    },
+                    "difficultyBits": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "answerFormat": {
+                        "type": "string"
+                    },
+                    "inputTemplate": {
+                        "type": "string"
+                    },
+                    "inputEncoding": {
+                        "type": "string"
+                    },
+                    "successCondition": {
+                        "$ref": "#/components/schemas/SuccessCondition"
+                    }
+                }
+            },
+            "SuccessCondition": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "minimum": {
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                }
+            },
+            "PasswordRecoveryChallengeFailClosedTelemetryRequest": {
+                "required": [
+                    "reason",
+                    "surface"
+                ],
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "minLength": 1,
+                        "pattern": "unknown-version|kind-mismatch|malformed-payload|mixed-shape|clock-skew|validity-untrusted",
+                        "type": "string"
+                    },
+                    "surface": {
+                        "minLength": 1,
+                        "pattern": "forgot-password-web|forgot-password-mobile",
+                        "type": "string"
+                    },
+                    "challengeIssuedAtEpochMs": {
+                        "type": "integer",
+                        "format": "int64"
                     }
                 }
             },
