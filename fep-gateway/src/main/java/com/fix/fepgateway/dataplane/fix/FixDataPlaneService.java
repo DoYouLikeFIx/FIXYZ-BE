@@ -54,6 +54,14 @@ public class FixDataPlaneService {
     this(null, null, false);
   }
 
+  protected FixDataPlaneService(FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient) {
+    this(fepSimulatorTraceBridgeClient, null, false);
+  }
+
+  protected FixDataPlaneService(RestClient simulatorRestClient, boolean chaosProbeEnabled) {
+    this(null, simulatorRestClient, chaosProbeEnabled);
+  }
+
   protected FixDataPlaneService(
       FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient,
       RestClient simulatorRestClient,
