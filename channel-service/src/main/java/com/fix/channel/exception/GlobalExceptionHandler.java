@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -76,6 +77,17 @@ public class GlobalExceptionHandler {
   })
   public ResponseEntity<ApiErrorResponse> handleValidationException(Exception ex, HttpServletRequest request) {
     return build(ErrorCode.VALIDATION_FAILED, resolveValidationMessage(ex), request);
+  }
+
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<ApiErrorResponse> handleUnreadableMessage(
+      HttpMessageNotReadableException ex,
+      HttpServletRequest request
+  ) {
+    ErrorCode errorCode = isAdminReplayPath(request)
+        ? ErrorCode.CONTRACT_VALIDATION_FAILED
+        : ErrorCode.VALIDATION_FAILED;
+    return build(errorCode, errorCode.defaultMessage(), request);
   }
 
   @ExceptionHandler(NoResourceFoundException.class)
@@ -172,5 +184,10 @@ public class GlobalExceptionHandler {
       }
     }
     return ErrorCode.VALIDATION_FAILED.defaultMessage();
+  }
+
+  private boolean isAdminReplayPath(HttpServletRequest request) {
+    String uri = request.getRequestURI();
+    return uri != null && uri.matches("^/api/v1/admin/orders/[^/]+/replay$");
   }
 }
