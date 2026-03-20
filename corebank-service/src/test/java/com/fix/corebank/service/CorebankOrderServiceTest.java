@@ -362,6 +362,56 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldAllowAccountPositionWhenQuoteSnapshotAgeMatchesThresholdExactly() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    fepQuoteSnapshotClient.setQuoteResult("005930", quoteSnapshot(
+        "qsnap-005930-threshold",
+        "005930",
+        Instant.parse("2026-03-01T10:01:55Z"),
+        72000L,
+        72100L,
+        72050L
+    ));
+
+    AccountPositionResult result = corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
+    );
+
+    assertThat(result.getMarketPrice()).isEqualByComparingTo("72050.0000");
+    assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-005930-threshold");
+    assertThat(result.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-01T10:01:55Z"));
+    assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+  }
+
+  @Test
+  void shouldRejectAccountPositionWhenQuoteSnapshotAgeExceedsThresholdByOneMillisecond() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    fepQuoteSnapshotClient.setQuoteResult("005930", quoteSnapshot(
+        "qsnap-005930-threshold-over",
+        "005930",
+        Instant.parse("2026-03-01T10:01:54.999Z"),
+        72000L,
+        72100L,
+        72050L
+    ));
+
+    assertThatThrownBy(() -> corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
+    ))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STALE_QUOTE);
+          assertThat(ex.getDetails()).containsEntry("symbol", "005930");
+          assertThat(ex.getDetails()).containsEntry("snapshotAgeMs", 5_001L);
+          assertThat(ex.getDetails()).containsEntry("quoteSourceMode", "LIVE");
+          assertThat(ex.getDetails()).containsEntry("quoteSnapshotId", "qsnap-005930-threshold-over");
+        });
+  }
+
+  @Test
   void shouldRejectAccountPositionWhenQuoteSnapshotIsStale() {
     Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
     Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);

@@ -93,8 +93,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
       connection.serverCommands().flushDb();
       return null;
     });
+    clock.setInstant(Instant.parse("2026-03-20T00:00:04Z"));
     accountPositionService.reset();
-    clock.setInstant(Instant.now());
   }
 
   @Test
@@ -170,6 +170,63 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
           assertThat(session.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-20T00:00:00Z"));
           assertThat(session.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
           assertThat(session.getPreTradePrice()).isEqualByComparingTo("72050.0000");
+        });
+  }
+
+  @Test
+  void shouldCreateMarketPrepareWhenQuoteAgeMatchesThresholdExactly() throws Exception {
+    saveLinkedMember("M-ORD-001AA", "market.threshold@fixyz.com", "Market Threshold", 143L, "12345678901276");
+
+    AuthSession authSession = login("market.threshold@fixyz.com", "Abcd1234!");
+    clock.setInstant(Instant.parse("2026-03-20T00:00:10Z"));
+    accountPositionService.setQuoteAsOf(clock.instant().minusMillis(5_000L));
+
+    JsonNode response = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174279",
+        143L,
+        "005930",
+        "BUY",
+        "MARKET",
+        10,
+        null
+    );
+
+    assertThat(response.path("data").path("quoteSnapshotId").asText()).isEqualTo("qsnap_005930_live_001");
+    assertThat(response.path("data").path("quoteAsOf").asText()).isEqualTo("2026-03-20T00:00:05Z");
+    assertThat(response.path("data").path("quoteSourceMode").asText()).isEqualTo("LIVE");
+    assertThat(response.path("data").path("preTradePrice").asText()).isEqualTo("72050.0000");
+  }
+
+  @Test
+  void shouldRejectMarketPrepareWhenQuoteAgeExceedsThresholdByOneMillisecond() throws Exception {
+    saveLinkedMember("M-ORD-001AB", "market.threshold.stale@fixyz.com", "Market Threshold Stale", 144L, "12345678901277");
+
+    AuthSession authSession = login("market.threshold.stale@fixyz.com", "Abcd1234!");
+    clock.setInstant(Instant.parse("2026-03-20T00:00:10Z"));
+    accountPositionService.setQuoteAsOf(clock.instant().minusMillis(5_001L));
+
+    mockMvc.perform(post("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174280")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(orderSessionPayload(144L, "005930", "BUY", "MARKET", 10, null)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-003"))
+        .andExpect(jsonPath("$.message").value("Stale quote"))
+        .andExpect(jsonPath("$.details.symbol").value("005930"))
+        .andExpect(jsonPath("$.details.snapshotAgeMs").value(5001))
+        .andExpect(jsonPath("$.details.quoteSourceMode").value("LIVE"))
+        .andExpect(jsonPath("$.details.quoteSnapshotId").value("qsnap_005930_live_001"));
+
+    assertThat(orderSessionRepository.findByClOrdId("123e4567-e89b-42d3-a456-426614174280")).isEmpty();
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_FAILED");
+          assertThat(log.getTargetId()).isEqualTo("123e4567-e89b-42d3-a456-426614174280");
+          assertThat(log.getDetail()).contains("snapshotAgeMs=5001");
+          assertThat(log.getDetail()).contains("quoteSourceMode=LIVE");
         });
   }
 
@@ -1367,7 +1424,6 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     Cookie sessionCookie = result.getResponse().getCookie("SESSION");
     assertThat(sessionCookie).isNotNull();
     assertThat(sessionCookie.getValue()).isNotBlank();
-    clock.setInstant(Instant.now());
 
     String csrfToken = fetchCsrfToken(sessionCookie.getValue());
 
@@ -1438,14 +1494,14 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     @Bean
     @Primary
-    StubAccountPositionService stubAccountPositionService() {
-      return new StubAccountPositionService();
+    StubAccountPositionService stubAccountPositionService(MutableClock clock) {
+      return new StubAccountPositionService(clock);
     }
 
     @Bean
     @Primary
     MutableClock testClock() {
-      return new MutableClock(Instant.now());
+      return new MutableClock(Instant.parse("2026-03-20T00:00:04Z"));
     }
   }
 
@@ -1483,6 +1539,8 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   static class StubAccountPositionService extends AccountPositionService {
 
+    private static final long MAX_QUOTE_AGE_MS = 5_000L;
+
     private BigDecimal availableBalance = BigDecimal.valueOf(5_000_000);
     private BigDecimal availableQuantity = BigDecimal.valueOf(500);
     private BigDecimal marketPrice = BigDecimal.valueOf(72050).setScale(4);
@@ -1490,9 +1548,11 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
     private Instant quoteAsOf = Instant.parse("2026-03-20T00:00:00Z");
     private FepQuoteSourceMode quoteSourceMode = FepQuoteSourceMode.LIVE;
     private RuntimeException failure;
+    private final Clock clock;
 
-    StubAccountPositionService() {
+    StubAccountPositionService(Clock clock) {
       super(null);
+      this.clock = clock;
     }
 
     @Override
@@ -1515,6 +1575,21 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
         RuntimeException nextFailure = failure;
         failure = null;
         throw nextFailure;
+      }
+      long snapshotAgeMs = Math.max(0L, Duration.between(quoteAsOf, clock.instant()).toMillis());
+      if (snapshotAgeMs > MAX_QUOTE_AGE_MS) {
+        throw new BusinessException(
+            ErrorCode.STALE_QUOTE,
+            ErrorCode.STALE_QUOTE.defaultMessage(),
+            null,
+            Map.of(
+                "symbol", command.getSymbol(),
+                "snapshotAgeMs", snapshotAgeMs,
+                "quoteSnapshotId", quoteSnapshotId,
+                "quoteAsOf", quoteAsOf.toString(),
+                "quoteSourceMode", quoteSourceMode.name()
+            )
+        );
       }
       return AccountPositionResult.of(
           command.getAccountId(),
@@ -1548,6 +1623,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     void setAvailableQuantity(BigDecimal availableQuantity) {
       this.availableQuantity = availableQuantity;
+    }
+
+    void setQuoteAsOf(Instant quoteAsOf) {
+      this.quoteAsOf = quoteAsOf;
     }
 
     void failNextWith(RuntimeException failure) {
