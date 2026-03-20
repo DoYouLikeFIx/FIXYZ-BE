@@ -9,6 +9,7 @@ import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
 import com.fix.channel.vo.AccountPositionQueryCommand;
+import com.fix.channel.vo.AccountPositionResult;
 import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import com.fix.channel.vo.OrderSessionOtpVerifyCommand;
@@ -17,6 +18,7 @@ import com.fix.channel.vo.OrderSessionResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.logging.LogPiiMasking;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -87,7 +89,7 @@ public class OrderSessionService {
     }
 
     orderSessionRateLimitService.enforceCreateRateLimit(command.getMemberId());
-    validatePreTradeEligibility(command);
+    PreTradeValidationOutcome preTradeValidation = validatePreTradeEligibilityWithAudit(command);
 
     OrderSession savedSession;
     Instant expiresAt = Instant.now(clock).plus(orderSessionTtlStore.ttl());
@@ -97,7 +99,11 @@ public class OrderSessionService {
           command,
           authorizationDecision.challengeRequired(),
           authorizationDecision.authorizationReason(),
-          expiresAt
+          expiresAt,
+          preTradeValidation.quoteSnapshotId(),
+          preTradeValidation.quoteAsOf(),
+          preTradeValidation.quoteSourceMode(),
+          preTradeValidation.preTradePrice()
       );
     } catch (DataIntegrityViolationException ex) {
       return resolveConcurrentReplay(command, ex);
@@ -441,10 +447,10 @@ public class OrderSessionService {
         session.getOrderType(),
         session.getQty(),
         session.getPrice(),
-        null,
-        null,
-        null,
-        null,
+        session.getQuoteSnapshotId(),
+        session.getQuoteAsOf(),
+        session.getQuoteSourceMode() == null ? null : session.getQuoteSourceMode().name(),
+        session.getPreTradePrice(),
         activeWindow.expiresAt(),
         activeWindow.remainingSeconds(),
         session.getExecutionResult(),
@@ -574,19 +580,40 @@ public class OrderSessionService {
     ).withOrderSessionId(session.getId()).withDetail("clOrdId=" + session.getClOrdId() + ", reason=replay"));
   }
 
-  private void validatePreTradeEligibility(OrderSessionCreateCommand command) {
-    if ("BUY".equals(command.getSide())) {
-      validateBuyCapacity(command);
-      return;
-    }
-    if ("SELL".equals(command.getSide())) {
-      validateSellCapacity(command);
+  private PreTradeValidationOutcome validatePreTradeEligibilityWithAudit(OrderSessionCreateCommand command) {
+    try {
+      return validatePreTradeEligibility(command);
+    } catch (BusinessException ex) {
+      recordStaleQuoteAuditIfNeeded(command, ex);
+      throw ex;
     }
   }
 
-  private void validateBuyCapacity(OrderSessionCreateCommand command) {
+  private PreTradeValidationOutcome validatePreTradeEligibility(OrderSessionCreateCommand command) {
+    if ("BUY".equals(command.getSide())) {
+      return validateBuyCapacity(command);
+    }
+    if ("SELL".equals(command.getSide())) {
+      return validateSellCapacity(command);
+    }
+    return PreTradeValidationOutcome.none();
+  }
+
+  private PreTradeValidationOutcome validateBuyCapacity(OrderSessionCreateCommand command) {
     if (command.getPrice() == null) {
-      return;
+      AccountPositionResult position = accountPositionService.getAccountPosition(
+          AccountPositionQueryCommand.of(command.getAccountId(), command.getMemberId(), command.getSymbol())
+      );
+      BigDecimal marketPrice = requireMarketPrice(position);
+      BigDecimal requiredNotional = command.getQty().multiply(marketPrice);
+      if (position.getBalance().compareTo(requiredNotional) < 0) {
+        throw new BusinessException(
+            ErrorCode.ORD_INSUFFICIENT_CASH,
+            "available cash is insufficient",
+            new ErrorMetadata("error.order.insufficient_cash", "INSUFFICIENT_CASH")
+        );
+      }
+      return PreTradeValidationOutcome.from(position, marketPrice);
     }
     BigDecimal requiredNotional = command.getQty().multiply(command.getPrice());
     BigDecimal availableBalance = accountPositionService.getAccountSummary(
@@ -599,12 +626,14 @@ public class OrderSessionService {
           new ErrorMetadata("error.order.insufficient_cash", "INSUFFICIENT_CASH")
       );
     }
+    return PreTradeValidationOutcome.none();
   }
 
-  private void validateSellCapacity(OrderSessionCreateCommand command) {
-    BigDecimal availableQuantity = accountPositionService.getAccountPosition(
-            AccountPositionQueryCommand.of(command.getAccountId(), command.getMemberId(), command.getSymbol())
-        ).getAvailableQuantity();
+  private PreTradeValidationOutcome validateSellCapacity(OrderSessionCreateCommand command) {
+    AccountPositionResult position = accountPositionService.getAccountPosition(
+        AccountPositionQueryCommand.of(command.getAccountId(), command.getMemberId(), command.getSymbol())
+    );
+    BigDecimal availableQuantity = position.getAvailableQuantity();
     if (availableQuantity.compareTo(command.getQty()) < 0) {
       throw new BusinessException(
           ErrorCode.ORD_INSUFFICIENT_POSITION,
@@ -612,6 +641,56 @@ public class OrderSessionService {
           new ErrorMetadata("error.order.insufficient_position", "INSUFFICIENT_POSITION")
       );
     }
+    if (command.getPrice() == null) {
+      BigDecimal marketPrice = requireMarketPrice(position);
+      return PreTradeValidationOutcome.from(position, marketPrice);
+    }
+    return PreTradeValidationOutcome.none();
+  }
+
+  private BigDecimal requireMarketPrice(AccountPositionResult position) {
+    if (position.getMarketPrice() != null) {
+      return position.getMarketPrice();
+    }
+    throw new BusinessException(
+        ErrorCode.CONTRACT_VALIDATION_FAILED,
+        "marketPrice is required for MARKET order prepare"
+    );
+  }
+
+  private void recordStaleQuoteAuditIfNeeded(OrderSessionCreateCommand command, BusinessException ex) {
+    if (ex.getErrorCode() != ErrorCode.STALE_QUOTE) {
+      return;
+    }
+    Map<String, Object> details = ex.getDetails();
+    String symbol = detailValue(details, "symbol", command.getSymbol());
+    String snapshotAgeMs = detailValue(details, "snapshotAgeMs", "unknown");
+    String quoteSourceMode = detailValue(details, "quoteSourceMode", "unknown");
+    String quoteSnapshotId = detailValue(details, "quoteSnapshotId", "unknown");
+    auditLogService.record(AuditLog.of(
+        command.getMemberId(),
+        AuditAction.ORDER_SESSION_FAILED,
+        ORDER_SESSION_TARGET_TYPE,
+        command.getClOrdId(),
+        "reason=STALE_QUOTE"
+            + ", clOrdId=" + command.getClOrdId()
+            + ", symbol=" + symbol
+            + ", snapshotAgeMs=" + snapshotAgeMs
+            + ", quoteSourceMode=" + quoteSourceMode
+            + ", quoteSnapshotId=" + quoteSnapshotId
+    ));
+  }
+
+  private String detailValue(Map<String, Object> details, String key, String fallback) {
+    if (details == null) {
+      return fallback;
+    }
+    Object value = details.get(key);
+    if (value == null) {
+      return fallback;
+    }
+    String text = String.valueOf(value);
+    return text.isBlank() ? fallback : text;
   }
 
   private OrderSessionResult resolveConcurrentReplay(OrderSessionCreateCommand command, DataIntegrityViolationException ex) {
@@ -759,6 +838,26 @@ public class OrderSessionService {
   private record ActiveWindowMetadata(Instant expiresAt, Long remainingSeconds) {
     private static ActiveWindowMetadata inactive() {
       return new ActiveWindowMetadata(null, null);
+    }
+  }
+
+  private record PreTradeValidationOutcome(
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode,
+      BigDecimal preTradePrice
+  ) {
+    private static PreTradeValidationOutcome none() {
+      return new PreTradeValidationOutcome(null, null, null, null);
+    }
+
+    private static PreTradeValidationOutcome from(AccountPositionResult position, BigDecimal preTradePrice) {
+      return new PreTradeValidationOutcome(
+          position.getQuoteSnapshotId(),
+          position.getQuoteAsOf(),
+          position.getQuoteSourceMode(),
+          preTradePrice
+      );
     }
   }
 }

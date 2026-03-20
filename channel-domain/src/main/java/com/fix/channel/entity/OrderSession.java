@@ -3,6 +3,7 @@ package com.fix.channel.entity;
 import com.fix.common.entity.BaseTimeEntity;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.fep.FepQuoteSourceMode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -56,6 +57,19 @@ public class OrderSession extends BaseTimeEntity {
 
   @Column(name = "price", precision = 19, scale = 4)
   private BigDecimal price;
+
+  @Column(name = "quote_snapshot_id", length = 128)
+  private String quoteSnapshotId;
+
+  @Column(name = "quote_as_of")
+  private Instant quoteAsOf;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "quote_source_mode", length = 16)
+  private FepQuoteSourceMode quoteSourceMode;
+
+  @Column(name = "pre_trade_price", precision = 19, scale = 4)
+  private BigDecimal preTradePrice;
 
   @Enumerated(EnumType.STRING)
   @Column(name = "status", nullable = false, length = 32)
@@ -131,6 +145,10 @@ public class OrderSession extends BaseTimeEntity {
       String orderType,
       BigDecimal qty,
       BigDecimal price,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode,
+      BigDecimal preTradePrice,
       OrderSessionStatus status,
       boolean challengeRequired,
       String authorizationReason,
@@ -146,6 +164,10 @@ public class OrderSession extends BaseTimeEntity {
     this.orderType = orderType;
     this.qty = qty;
     this.price = price;
+    this.quoteSnapshotId = quoteSnapshotId;
+    this.quoteAsOf = quoteAsOf;
+    this.quoteSourceMode = quoteSourceMode;
+    this.preTradePrice = preTradePrice;
     this.status = status;
     this.challengeRequired = challengeRequired;
     this.authorizationReason = authorizationReason;
@@ -166,6 +188,44 @@ public class OrderSession extends BaseTimeEntity {
       String authorizationReason,
       Instant expiresAt
   ) {
+    return initiated(
+        memberId,
+        accountId,
+        clOrdId,
+        replayFingerprint,
+        symbol,
+        side,
+        orderType,
+        qty,
+        price,
+        challengeRequired,
+        authorizationReason,
+        expiresAt,
+        null,
+        null,
+        null,
+        null
+    );
+  }
+
+  public static OrderSession initiated(
+      Long memberId,
+      Long accountId,
+      String clOrdId,
+      String replayFingerprint,
+      String symbol,
+      String side,
+      String orderType,
+      BigDecimal qty,
+      BigDecimal price,
+      boolean challengeRequired,
+      String authorizationReason,
+      Instant expiresAt,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode,
+      BigDecimal preTradePrice
+  ) {
     return new OrderSession(
         memberId,
         accountId,
@@ -176,6 +236,10 @@ public class OrderSession extends BaseTimeEntity {
         orderType,
         qty,
         price,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode,
+        preTradePrice,
         challengeRequired ? OrderSessionStatus.PENDING_NEW : OrderSessionStatus.AUTHED,
         challengeRequired,
         authorizationReason,
@@ -225,6 +289,22 @@ public class OrderSession extends BaseTimeEntity {
 
   public BigDecimal getPrice() {
     return price;
+  }
+
+  public String getQuoteSnapshotId() {
+    return quoteSnapshotId;
+  }
+
+  public Instant getQuoteAsOf() {
+    return quoteAsOf;
+  }
+
+  public FepQuoteSourceMode getQuoteSourceMode() {
+    return quoteSourceMode;
+  }
+
+  public BigDecimal getPreTradePrice() {
+    return preTradePrice;
   }
 
   public OrderSessionStatus getStatus() {

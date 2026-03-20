@@ -158,7 +158,22 @@ class ChannelOpenApiCompatibilityTest {
     assertThat(fieldNames(otpVerifySchema.path("properties")))
         .contains("verified", "memberUuid", "email", "name", "role", "totpEnrolled", "accountId", "accountNumber", "mfaVerifiedAt");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
-        .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
+        .contains(
+            "quantity",
+            "availableQuantity",
+            "availableQty",
+            "balance",
+            "availableBalance",
+            "asOf",
+            "marketPrice",
+            "quoteSnapshotId",
+            "quoteAsOf",
+            "quoteSourceMode"
+        );
+    assertThat(accountPositionSchema.path("properties").path("marketPrice").path("type").asText()).isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("quoteSnapshotId").path("type").asText()).isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("quoteAsOf").path("format").asText()).isEqualTo("date-time");
+    assertThat(accountPositionSchema.path("properties").path("quoteSourceMode").path("type").asText()).isEqualTo("string");
     assertThat(fieldNames(orderSessionCreateRequestSchema.path("properties")))
         .contains("accountId", "symbol", "side", "orderType", "qty", "price");
     assertThat(fieldNames(orderSessionOtpVerifyRequestSchema.path("properties")))
