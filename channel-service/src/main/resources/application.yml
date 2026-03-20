@@ -107,6 +107,9 @@ auth:
       v2-enabled: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_V2_ENABLED:false}
       cohort-percentage: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_COHORT_PERCENTAGE:0}
       cohort-salt: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_COHORT_SALT:dev-password-recovery-challenge-cohort-salt}
+      deterministic-override-enabled: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_DETERMINISTIC_OVERRIDE_ENABLED:false}
+      deterministic-override-header: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_DETERMINISTIC_OVERRIDE_HEADER:X-Fixyz-Recovery-Challenge-Mode}
+      observability-secret: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_OBSERVABILITY_SECRET:dev-password-recovery-observability-secret}
       difficulty-bits: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_DIFFICULTY_BITS:18}
     reset:
       ip:

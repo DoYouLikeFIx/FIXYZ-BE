@@ -9,7 +9,7 @@ import java.util.Locale;
 import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;
 
-public class V22__add_order_session_quote_context_columns extends BaseJavaMigration {
+public class V23__add_order_session_quote_context_columns extends BaseJavaMigration {
 
   private static final String TABLE_NAME = "order_sessions";
 

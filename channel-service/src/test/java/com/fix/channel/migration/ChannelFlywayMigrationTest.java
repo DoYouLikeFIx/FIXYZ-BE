@@ -10,7 +10,7 @@ import db.migration.V13__add_order_session_authorization_decision_columns;
 import db.migration.V14__add_order_session_execution_columns;
 import db.migration.V15__add_order_session_external_sync_status_column;
 import db.migration.V17__align_audit_security_event_contract;
-import db.migration.V22__add_order_session_quote_context_columns;
+import db.migration.V23__add_order_session_quote_context_columns;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
@@ -799,8 +799,8 @@ class ChannelFlywayMigrationTest {
           """);
 
       Context context = new TestFlywayContext(connection);
-      V22__add_order_session_quote_context_columns migration =
-          new V22__add_order_session_quote_context_columns();
+      V23__add_order_session_quote_context_columns migration =
+          new V23__add_order_session_quote_context_columns();
 
       migration.migrate(context);
       migration.migrate(context);
@@ -835,6 +835,32 @@ class ChannelFlywayMigrationTest {
     assertThat(quoteAsOfColumnCount).isEqualTo(1);
     assertThat(quoteSourceModeColumnCount).isEqualTo(1);
     assertThat(preTradePriceColumnCount).isEqualTo(1);
+  }
+
+  @Test
+  void shouldAllowAuditAndSecurityUuidInsertCompatibilityDefaults() {
+    jdbcTemplate.update("""
+        INSERT INTO audit_logs(member_id, action, target_type, detail)
+        VALUES (?, ?, ?, ?)
+        """, 10L, "PASSWORD_RECOVERY_FORGOT", "PASSWORD_RECOVERY", "default uuid compatibility");
+    jdbcTemplate.update("""
+        INSERT INTO security_events(member_id, event_type, severity)
+        VALUES (?, ?, ?)
+        """, 10L, "PASSWORD_RECOVERY_RATE_LIMITED", "LOW");
+
+    String auditUuid = jdbcTemplate.queryForObject(
+        "SELECT audit_uuid FROM audit_logs WHERE detail = ?",
+        String.class,
+        "default uuid compatibility"
+    );
+    String securityEventUuid = jdbcTemplate.queryForObject(
+        "SELECT security_event_uuid FROM security_events WHERE event_type = ?",
+        String.class,
+        "PASSWORD_RECOVERY_RATE_LIMITED"
+    );
+
+    assertThat(auditUuid).isNotBlank();
+    assertThat(securityEventUuid).isNotBlank();
   }
 
   private record TestFlywayContext(Connection connection) implements Context {

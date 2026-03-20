@@ -426,7 +426,10 @@ class LogPiiComplianceTest {
     PasswordResetTokenRepository passwordResetTokenRepository =
         org.mockito.Mockito.mock(PasswordResetTokenRepository.class);
     PasswordRecoveryChallengeTelemetryService challengeTelemetryService =
-        new PasswordRecoveryChallengeTelemetryService(new SimpleMeterRegistry());
+        new PasswordRecoveryChallengeTelemetryService(
+            new SimpleMeterRegistry(),
+            new org.springframework.mock.env.MockEnvironment()
+        );
     PasswordRecoveryMailDispatcher mailDispatcher = new LoggingPasswordRecoveryMailDispatcher();
     Member member = member(601L, "M-PII-PR-601", "recover.user@fixyz.com", false);
     String rawResetToken = "raw-reset-token-123";
@@ -458,7 +461,7 @@ class LogPiiComplianceTest {
     );
 
     passwordRecoveryService.forgot(
-        PasswordForgotCommand.of("recover.user@fixyz.com", null, null),
+        PasswordForgotCommand.of("recover.user@fixyz.com", null, null, false),
         sensitiveRequest()
     );
     return rawResetToken;
@@ -479,7 +482,10 @@ class LogPiiComplianceTest {
         org.mockito.Mockito.mock(ChannelSessionInvalidationService.class);
     MfaRecoveryService mfaRecoveryService = org.mockito.Mockito.mock(MfaRecoveryService.class);
     PasswordRecoveryChallengeTelemetryService challengeTelemetryService =
-        new PasswordRecoveryChallengeTelemetryService(new SimpleMeterRegistry());
+        new PasswordRecoveryChallengeTelemetryService(
+            new SimpleMeterRegistry(),
+            new org.springframework.mock.env.MockEnvironment()
+        );
     Member member = member(602L, "M-PII-PR-602", "reset.user@fixyz.com", true);
     String rawResetToken = "raw-reset-token-456";
     PasswordResetToken resetToken = PasswordResetToken.issueActive(
