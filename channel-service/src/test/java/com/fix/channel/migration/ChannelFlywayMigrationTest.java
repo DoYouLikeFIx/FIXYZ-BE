@@ -10,6 +10,7 @@ import db.migration.V13__add_order_session_authorization_decision_columns;
 import db.migration.V14__add_order_session_execution_columns;
 import db.migration.V15__add_order_session_external_sync_status_column;
 import db.migration.V17__align_audit_security_event_contract;
+import db.migration.V22__add_order_session_quote_context_columns;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
@@ -99,6 +100,26 @@ class ChannelFlywayMigrationTest {
     Integer orderSessionRecoveryNextAttemptAtColumnCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
             + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'RECOVERY_NEXT_ATTEMPT_AT'",
+        Integer.class
+    );
+    Integer orderSessionQuoteSnapshotIdColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'QUOTE_SNAPSHOT_ID'",
+        Integer.class
+    );
+    Integer orderSessionQuoteAsOfColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'QUOTE_AS_OF'",
+        Integer.class
+    );
+    Integer orderSessionQuoteSourceModeColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'QUOTE_SOURCE_MODE'",
+        Integer.class
+    );
+    Integer orderSessionPreTradePriceColumnCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'PRE_TRADE_PRICE'",
         Integer.class
     );
     Integer orderSessionRecoveryCursorIndexCount = jdbcTemplate.queryForObject(
@@ -205,6 +226,10 @@ class ChannelFlywayMigrationTest {
     assertThat(orderSessionExternalSyncStatusColumnCount).isEqualTo(1);
     assertThat(orderSessionRecoveryAttemptCountColumnCount).isEqualTo(1);
     assertThat(orderSessionRecoveryNextAttemptAtColumnCount).isEqualTo(1);
+    assertThat(orderSessionQuoteSnapshotIdColumnCount).isEqualTo(1);
+    assertThat(orderSessionQuoteAsOfColumnCount).isEqualTo(1);
+    assertThat(orderSessionQuoteSourceModeColumnCount).isEqualTo(1);
+    assertThat(orderSessionPreTradePriceColumnCount).isEqualTo(1);
     assertThat(orderSessionRecoveryCursorIndexCount).isEqualTo(1);
     assertThat(manualRecoveryQueueTableCount).isEqualTo(1);
     assertThat(manualRecoveryPublishClaimTokenColumnCount).isEqualTo(1);
@@ -742,6 +767,74 @@ class ChannelFlywayMigrationTest {
     assertThat(securityEventUuidNullable).isEqualTo("NO");
     assertThat(securityStatusNullable).isEqualTo("NO");
     assertThat(securityOccurredAtNullable).isEqualTo("NO");
+  }
+
+  @Test
+  void shouldAddQuoteContextColumnsAndRemainIdempotent() throws Exception {
+    String jdbcUrl = "jdbc:h2:mem:channel_migration_quote_context;MODE=MySQL;DB_CLOSE_DELAY=-1";
+
+    try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+         Statement statement = connection.createStatement()) {
+      statement.execute("""
+          CREATE TABLE order_sessions (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            order_session_id CHAR(36) NOT NULL,
+            member_id BIGINT NOT NULL,
+            cl_ord_id VARCHAR(64) NOT NULL UNIQUE,
+            order_ref VARCHAR(64) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            account_id BIGINT,
+            symbol VARCHAR(16),
+            side VARCHAR(16),
+            order_type VARCHAR(16),
+            qty DECIMAL(19, 4),
+            price DECIMAL(19, 4),
+            challenge_required BOOLEAN NOT NULL,
+            authorization_reason VARCHAR(64) NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            version BIGINT
+          )
+          """);
+
+      Context context = new TestFlywayContext(connection);
+      V22__add_order_session_quote_context_columns migration =
+          new V22__add_order_session_quote_context_columns();
+
+      migration.migrate(context);
+      migration.migrate(context);
+    }
+
+    JdbcTemplate quoteContextJdbcTemplate = new JdbcTemplate(
+        new org.springframework.jdbc.datasource.DriverManagerDataSource(jdbcUrl, "sa", "")
+    );
+
+    Integer quoteSnapshotIdColumnCount = quoteContextJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'QUOTE_SNAPSHOT_ID'",
+        Integer.class
+    );
+    Integer quoteAsOfColumnCount = quoteContextJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'QUOTE_AS_OF'",
+        Integer.class
+    );
+    Integer quoteSourceModeColumnCount = quoteContextJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'QUOTE_SOURCE_MODE'",
+        Integer.class
+    );
+    Integer preTradePriceColumnCount = quoteContextJdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDER_SESSIONS' AND COLUMN_NAME = 'PRE_TRADE_PRICE'",
+        Integer.class
+    );
+
+    assertThat(quoteSnapshotIdColumnCount).isEqualTo(1);
+    assertThat(quoteAsOfColumnCount).isEqualTo(1);
+    assertThat(quoteSourceModeColumnCount).isEqualTo(1);
+    assertThat(preTradePriceColumnCount).isEqualTo(1);
   }
 
   private record TestFlywayContext(Connection connection) implements Context {

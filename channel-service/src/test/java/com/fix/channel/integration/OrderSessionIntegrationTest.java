@@ -19,6 +19,9 @@ import com.fix.channel.service.AccountPositionService;
 import com.fix.channel.service.TotpService;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import com.fix.channel.vo.AccountPositionResult;
+import com.fix.common.error.BusinessException;
+import com.fix.common.error.ErrorCode;
+import com.fix.common.fep.FepQuoteSourceMode;
 import jakarta.servlet.http.Cookie;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -135,6 +138,77 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
         .anySatisfy(log -> {
           assertThat(log.getAction()).isEqualTo("ORDER_SESSION_CREATE");
           assertThat(log.getTargetId()).isEqualTo(orderSessionId);
+        });
+  }
+
+  @Test
+  void shouldPopulateQuoteMetadataForMarketPrepareResponse() throws Exception {
+    saveLinkedMember("M-ORD-001A", "market.prepare@fixyz.com", "Market Prepare", 141L, "12345678901274");
+
+    AuthSession authSession = login("market.prepare@fixyz.com", "Abcd1234!");
+    JsonNode response = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174277",
+        141L,
+        "005930",
+        "BUY",
+        "MARKET",
+        10,
+        null
+    );
+
+    String orderSessionId = response.path("data").path("orderSessionId").asText();
+    assertThat(response.path("data").path("price").isNull()).isTrue();
+    assertThat(response.path("data").path("quoteSnapshotId").asText()).isEqualTo("qsnap_005930_live_001");
+    assertThat(response.path("data").path("quoteAsOf").asText()).isEqualTo("2026-03-20T00:00:00Z");
+    assertThat(response.path("data").path("quoteSourceMode").asText()).isEqualTo("LIVE");
+    assertThat(response.path("data").path("preTradePrice").asText()).isEqualTo("72050.0000");
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getQuoteSnapshotId()).isEqualTo("qsnap_005930_live_001");
+          assertThat(session.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-20T00:00:00Z"));
+          assertThat(session.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+          assertThat(session.getPreTradePrice()).isEqualByComparingTo("72050.0000");
+        });
+  }
+
+  @Test
+  void shouldRejectMarketPrepareWhenQuoteIsStaleAndAuditIt() throws Exception {
+    saveLinkedMember("M-ORD-001B", "market.stale@fixyz.com", "Market Stale", 142L, "12345678901275");
+
+    AuthSession authSession = login("market.stale@fixyz.com", "Abcd1234!");
+    accountPositionService.failNextWith(new BusinessException(
+        ErrorCode.STALE_QUOTE,
+        ErrorCode.STALE_QUOTE.defaultMessage(),
+        null,
+        Map.of(
+            "symbol", "005930",
+            "snapshotAgeMs", 6000,
+            "quoteSourceMode", "LIVE",
+            "quoteSnapshotId", "qsnap_005930_live_999"
+        )
+    ));
+
+    mockMvc.perform(post("/api/v1/orders/sessions")
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174278")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(orderSessionPayload(142L, "005930", "BUY", "MARKET", 10, null)))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value("VALIDATION-003"))
+        .andExpect(jsonPath("$.message").value("Stale quote"));
+
+    assertThat(orderSessionRepository.findByClOrdId("123e4567-e89b-42d3-a456-426614174278")).isEmpty();
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_FAILED");
+          assertThat(log.getTargetId()).isEqualTo("123e4567-e89b-42d3-a456-426614174278");
+          assertThat(log.getDetail()).contains("reason=STALE_QUOTE");
+          assertThat(log.getDetail()).contains("symbol=005930");
+          assertThat(log.getDetail()).contains("snapshotAgeMs=6000");
+          assertThat(log.getDetail()).contains("quoteSourceMode=LIVE");
         });
   }
 
@@ -1411,6 +1485,11 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     private BigDecimal availableBalance = BigDecimal.valueOf(5_000_000);
     private BigDecimal availableQuantity = BigDecimal.valueOf(500);
+    private BigDecimal marketPrice = BigDecimal.valueOf(72050).setScale(4);
+    private String quoteSnapshotId = "qsnap_005930_live_001";
+    private Instant quoteAsOf = Instant.parse("2026-03-20T00:00:00Z");
+    private FepQuoteSourceMode quoteSourceMode = FepQuoteSourceMode.LIVE;
+    private RuntimeException failure;
 
     StubAccountPositionService() {
       super(null);
@@ -1432,21 +1511,35 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     @Override
     public AccountPositionResult getAccountPosition(com.fix.channel.vo.AccountPositionQueryCommand command) {
+      if (failure != null) {
+        RuntimeException nextFailure = failure;
+        failure = null;
+        throw nextFailure;
+      }
       return AccountPositionResult.of(
           command.getAccountId(),
           command.getMemberId(),
           command.getSymbol(),
           availableQuantity,
           availableQuantity,
-          BigDecimal.ZERO,
+          availableBalance,
           "KRW",
-          Instant.parse("2026-03-13T00:00:00Z")
+          Instant.parse("2026-03-13T00:00:00Z"),
+          marketPrice,
+          quoteSnapshotId,
+          quoteAsOf,
+          quoteSourceMode
       );
     }
 
     void reset() {
       availableBalance = BigDecimal.valueOf(5_000_000);
       availableQuantity = BigDecimal.valueOf(500);
+      marketPrice = BigDecimal.valueOf(72050).setScale(4);
+      quoteSnapshotId = "qsnap_005930_live_001";
+      quoteAsOf = Instant.parse("2026-03-20T00:00:00Z");
+      quoteSourceMode = FepQuoteSourceMode.LIVE;
+      failure = null;
     }
 
     void setAvailableBalance(BigDecimal availableBalance) {
@@ -1455,6 +1548,10 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
     void setAvailableQuantity(BigDecimal availableQuantity) {
       this.availableQuantity = availableQuantity;
+    }
+
+    void failNextWith(RuntimeException failure) {
+      this.failure = failure;
     }
   }
 }
