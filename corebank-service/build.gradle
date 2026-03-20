@@ -122,6 +122,17 @@ tasks.withType(Test).configureEach {
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
 }
 
+tasks.register('correlationPropagationTests', Test) {
+  description = 'Runs the corebank correlation-id propagation regression suite.'
+  group = 'verification'
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  filter {
+    includeTestsMatching('com.fix.corebank.filter.CorrelationIdFilterTest')
+    includeTestsMatching('com.fix.corebank.security.InternalSecretFilterTest')
+  }
+}
+
 tasks.register('resilienceScenarioTest', Test) {
   description = 'Runs cross-module resilience scenario coverage for Story 6.6.'
   group = 'verification'

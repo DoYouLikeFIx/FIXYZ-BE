@@ -1,3 +1,8 @@
+fep:
+  simulator:
+    control-plane-base-url: http://127.0.0.1:18082
+    trace-bridge-enabled: false
+
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/seed

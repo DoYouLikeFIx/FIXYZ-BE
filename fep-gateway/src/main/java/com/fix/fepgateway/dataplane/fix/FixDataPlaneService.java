@@ -17,6 +17,8 @@ import com.fix.fepgateway.vo.GatewayOrderSubmitCommand;
 import com.fix.fepgateway.vo.FepReplayDecision;
 import java.time.Instant;
 import java.util.Locale;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -27,30 +29,51 @@ import org.springframework.web.client.RestClientException;
 @Service
 public class FixDataPlaneService {
 
+  private static final Logger log = LoggerFactory.getLogger(FixDataPlaneService.class);
   private static final String CHAOS_ACTION_NONE = "NONE";
 
+  private final FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient;
   private final RestClient simulatorRestClient;
   private final boolean chaosProbeEnabled;
 
   @Autowired
   public FixDataPlaneService(
+      FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient,
       RestClient.Builder restClientBuilder,
       @Value("${fep.simulator.base-url:http://localhost:8082}") String simulatorBaseUrl,
       @Value("${fep.simulator.chaos-probe-enabled:false}") boolean chaosProbeEnabled
   ) {
-    this(restClientBuilder.baseUrl(simulatorBaseUrl).build(), chaosProbeEnabled);
+    this(
+        fepSimulatorTraceBridgeClient,
+        restClientBuilder.baseUrl(simulatorBaseUrl).build(),
+        chaosProbeEnabled
+    );
   }
 
   protected FixDataPlaneService() {
-    this(null, false);
+    this(null, null, false);
+  }
+
+  protected FixDataPlaneService(FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient) {
+    this(fepSimulatorTraceBridgeClient, null, false);
   }
 
   protected FixDataPlaneService(RestClient simulatorRestClient, boolean chaosProbeEnabled) {
+    this(null, simulatorRestClient, chaosProbeEnabled);
+  }
+
+  protected FixDataPlaneService(
+      FepSimulatorTraceBridgeClient fepSimulatorTraceBridgeClient,
+      RestClient simulatorRestClient,
+      boolean chaosProbeEnabled
+  ) {
+    this.fepSimulatorTraceBridgeClient = fepSimulatorTraceBridgeClient;
     this.simulatorRestClient = simulatorRestClient;
     this.chaosProbeEnabled = chaosProbeEnabled;
   }
 
   public GatewayOrderResult sendOrderStatusRequest(String clOrdId, GatewayOrder order) {
+    bridgeTraceToSimulator(clOrdId);
     if (order == null) {
       return new GatewayOrderResult(
           clOrdId,
@@ -72,6 +95,7 @@ public class FixDataPlaneService {
   }
 
   public GatewayExecutionOutcome sendNewOrder(GatewayOrderSubmitCommand command) {
+    bridgeTraceToSimulator(command.clOrdId());
     long executedPrice = resolveSubmitPrice(command);
     String chaosAction = resolveSubmitChaosAction(command, executedPrice);
     if ("TIMEOUT".equals(chaosAction)) {
@@ -125,6 +149,7 @@ public class FixDataPlaneService {
   }
 
   public GatewayExecutionOutcome sendCancel(GatewayOrderCancelCommand command, GatewayOrder order) {
+    bridgeTraceToSimulator(command.getClOrdId());
     if ("TIMEOUT".equals(order.getCancelFailureMode())) {
       throw new BusinessException(ErrorCode.FEP_ACK_TIMEOUT, "cancel acknowledgement timed out");
     }
@@ -153,6 +178,7 @@ public class FixDataPlaneService {
   }
 
   public GatewayReplayExecution sendReplay(GatewayOrderReplayCommand command, GatewayOrder order) {
+    bridgeTraceToSimulator(command.getClOrdId());
     long totalQty = order.totalQty();
     long executedQty = order.getExecutedQty() == null ? 0L : order.getExecutedQty();
 
@@ -282,6 +308,16 @@ public class FixDataPlaneService {
         null,
         FepReplayExecutionSource.FILLED
     );
+  }
+
+  private void bridgeTraceToSimulator(String clOrdId) {
+    if (fepSimulatorTraceBridgeClient != null) {
+      try {
+        fepSimulatorTraceBridgeClient.bridgeCurrentTrace();
+      } catch (RuntimeException ex) {
+        log.debug("Ignoring simulator trace bridge failure for clOrdId={}", clOrdId, ex);
+      }
+    }
   }
 
   private GatewayReplayExecution resolveRequeryOutcome(

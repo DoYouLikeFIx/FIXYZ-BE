@@ -7,6 +7,9 @@ internal:
 fep:
   replay:
     max-virtual-fill-deviation-bps: ${FEP_REPLAY_MAX_VIRTUAL_FILL_DEVIATION_BPS:500}
+  simulator:
+    control-plane-base-url: ${FEP_SIMULATOR_CONTROL_PLANE_BASE_URL:http://fep-simulator:8082}
+    trace-bridge-enabled: ${FEP_SIMULATOR_TRACE_BRIDGE_ENABLED:true}
 
 spring:
   application:
