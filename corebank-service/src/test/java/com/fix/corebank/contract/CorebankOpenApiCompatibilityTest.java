@@ -108,7 +108,26 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(ledgerIntegritySummaryResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(fieldNames(accountPositionSchema.path("properties")))
-        .contains("quantity", "availableQuantity", "availableQty", "balance", "availableBalance", "asOf");
+        .contains(
+            "quantity",
+            "availableQuantity",
+            "availableQty",
+            "balance",
+            "availableBalance",
+            "asOf",
+            "marketPrice",
+            "quoteSnapshotId",
+            "quoteAsOf",
+            "quoteSourceMode"
+        );
+    assertThat(accountPositionSchema.path("properties").path("marketPrice").path("type").asText())
+        .isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("quoteSnapshotId").path("type").asText())
+        .isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("quoteAsOf").path("format").asText())
+        .isEqualTo("date-time");
+    assertThat(accountPositionSchema.path("properties").path("quoteSourceMode").path("type").asText())
+        .isEqualTo("string");
     assertThat(fieldNames(accountStatusSchema.path("properties")))
         .contains("accountNumber", "status", "orderEligible", "denialCode", "asOf");
     assertThat(fieldNames(accountStatusTransitionSchema.path("properties")))

@@ -16,6 +16,7 @@ public enum ErrorCode {
   VALIDATION_FAILED("VALIDATION_001", "Validation failed", 400),
   CONTRACT_VALIDATION_FAILED("VALIDATION-001", "Validation failed", 422),
   VIRTUAL_FILL_DEVIATION_EXCEEDED("VALIDATION-002", "Virtual fill deviation exceeded", 422),
+  STALE_QUOTE("VALIDATION-003", "Stale quote", 422),
   MANUAL_REPLAY_GOVERNANCE_FAILED("VALIDATION-004", "Manual replay governance validation failed", 422),
   CANCEL_REJECTED("9006", "Cancel rejected", 409),
   FEP_ACK_TIMEOUT("9004", "Exchange acknowledgement timed out", 504),

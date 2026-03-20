@@ -26,6 +26,7 @@ import com.fix.channel.vo.OrderReplayResult;
 import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
@@ -359,6 +360,43 @@ class CorebankClientTest {
         .withHeader("X-Correlation-Id", equalTo("trace-channel-alias")));
   }
 
+  @Test
+  void shouldMapQuoteMetadataWhenCorebankProvidesCanonicalFields() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo(SYMBOL))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "005930",
+                    "quantity": 120.0000,
+                    "availableQuantity": 90.0000,
+                    "balance": 500000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z",
+                    "marketPrice": 72100.0000,
+                    "quoteSnapshotId": "qsnap-005930-live-001",
+                    "quoteAsOf": "2026-03-10T00:00:59Z",
+                    "quoteSourceMode": "LIVE"
+                  }
+                }
+                """)));
+
+    AccountPositionResult result = corebankClient.getAccountPosition(command(), "trace-channel-quote");
+
+    assertThat(result.getMarketPrice()).isEqualByComparingTo("72100.0000");
+    assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-005930-live-001");
+    assertThat(result.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-10T00:00:59Z"));
+    assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+  }
+
+  @Test
   void shouldMapAccountSummaryResponse() {
     wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/summary"))
         .withQueryParam("memberId", equalTo("301"))
@@ -392,6 +430,10 @@ class CorebankClientTest {
     assertThat(result.getAvailableQuantity()).isEqualByComparingTo("0.0000");
     assertThat(result.getBalance()).isEqualByComparingTo("1000000.0000");
     assertThat(result.getCurrency()).isEqualTo("KRW");
+    assertThat(result.getMarketPrice()).isNull();
+    assertThat(result.getQuoteSnapshotId()).isNull();
+    assertThat(result.getQuoteAsOf()).isNull();
+    assertThat(result.getQuoteSourceMode()).isNull();
 
     wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/summary"))
         .withQueryParam("memberId", equalTo("301"))
@@ -420,7 +462,11 @@ class CorebankClientTest {
                       "balance": 98500000.0000,
                       "availableBalance": 98500000.0000,
                       "currency": "KRW",
-                      "asOf": "2026-03-10T00:00:00Z"
+                      "asOf": "2026-03-10T00:00:00Z",
+                      "marketPrice": 120250.0000,
+                      "quoteSnapshotId": "qsnap-000660-live-001",
+                      "quoteAsOf": "2026-03-10T00:00:58Z",
+                      "quoteSourceMode": "LIVE"
                     },
                     {
                       "accountId": 1,
@@ -432,7 +478,11 @@ class CorebankClientTest {
                       "balance": 100000000.0000,
                       "availableBalance": 100000000.0000,
                       "currency": "KRW",
-                      "asOf": "2026-03-10T00:01:00Z"
+                      "asOf": "2026-03-10T00:01:00Z",
+                      "marketPrice": 72050.0000,
+                      "quoteSnapshotId": "qsnap-005930-live-001",
+                      "quoteAsOf": "2026-03-10T00:00:59Z",
+                      "quoteSourceMode": "LIVE"
                     }
                   ]
                 }
@@ -440,8 +490,20 @@ class CorebankClientTest {
 
     assertThat(corebankClient.getAccountPositions(positionsCommand(), "trace-position-list"))
         .hasSize(2)
-        .extracting(AccountPositionResult::getSymbol)
-        .containsExactly("000660", "005930");
+        .satisfies(results -> {
+          AccountPositionResult first = results.get(0);
+          AccountPositionResult second = results.get(1);
+          assertThat(first.getSymbol()).isEqualTo("000660");
+          assertThat(first.getMarketPrice()).isEqualByComparingTo("120250.0000");
+          assertThat(first.getQuoteSnapshotId()).isEqualTo("qsnap-000660-live-001");
+          assertThat(first.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-10T00:00:58Z"));
+          assertThat(first.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+          assertThat(second.getSymbol()).isEqualTo("005930");
+          assertThat(second.getMarketPrice()).isEqualByComparingTo("72050.0000");
+          assertThat(second.getQuoteSnapshotId()).isEqualTo("qsnap-005930-live-001");
+          assertThat(second.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-10T00:00:59Z"));
+          assertThat(second.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+        });
 
     wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
         .withQueryParam("memberId", equalTo("301"))

@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.web.CommonHeaders;
 import com.fix.corebank.filter.CorrelationIdFilter;
 import com.fix.corebank.repository.AccountRepository;
@@ -137,7 +138,11 @@ class CorebankInternalApiSkeletonTest {
         new BigDecimal("120.0000"),
         new BigDecimal("1000000.0000"),
         "KRW",
-        Instant.parse("2026-03-01T10:01:00Z")
+        Instant.parse("2026-03-01T10:01:00Z"),
+        new BigDecimal("72050.0000"),
+        "qsnap-005930-live-001",
+        Instant.parse("2026-03-01T10:00:59Z"),
+        FepQuoteSourceMode.LIVE
     ));
     corebankOrderService.setAccountSummaryResult(AccountPositionResult.of(
         1L,
@@ -158,7 +163,11 @@ class CorebankInternalApiSkeletonTest {
             new BigDecimal("15.0000"),
             new BigDecimal("98500000.0000"),
             "KRW",
-            Instant.parse("2026-03-01T10:01:30Z")
+            Instant.parse("2026-03-01T10:01:30Z"),
+            new BigDecimal("120250.0000"),
+            "qsnap-000660-live-001",
+            Instant.parse("2026-03-01T10:01:20Z"),
+            FepQuoteSourceMode.LIVE
         ),
         AccountPositionResult.of(
             1L,
@@ -168,7 +177,11 @@ class CorebankInternalApiSkeletonTest {
             new BigDecimal("120.0000"),
             new BigDecimal("1000000.0000"),
             "KRW",
-            Instant.parse("2026-03-01T10:01:00Z")
+            Instant.parse("2026-03-01T10:01:00Z"),
+            new BigDecimal("72050.0000"),
+            "qsnap-005930-live-001",
+            Instant.parse("2026-03-01T10:00:59Z"),
+            FepQuoteSourceMode.LIVE
         )
     ));
     corebankOrderService.setAccountStatusResult(AccountStatusResult.of(
@@ -304,7 +317,11 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(jsonPath("$.data.availableQty").value(120.0))
         .andExpect(jsonPath("$.data.balance").value(1000000.0))
         .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
-            .andExpect(jsonPath("$.data.currency").value("KRW"));
+        .andExpect(jsonPath("$.data.currency").value("KRW"))
+        .andExpect(jsonPath("$.data.marketPrice").value(72050.0))
+        .andExpect(jsonPath("$.data.quoteSnapshotId").value("qsnap-005930-live-001"))
+        .andExpect(jsonPath("$.data.quoteAsOf").exists())
+        .andExpect(jsonPath("$.data.quoteSourceMode").value("LIVE"));
 
     mockMvc.perform(get("/internal/v1/accounts/{accountId}/summary", 1L)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -320,7 +337,11 @@ class CorebankInternalApiSkeletonTest {
             .param("memberId", "301"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data[0].symbol").value("000660"))
-        .andExpect(jsonPath("$.data[1].symbol").value("005930"));
+        .andExpect(jsonPath("$.data[0].marketPrice").value(120250.0))
+        .andExpect(jsonPath("$.data[0].quoteSnapshotId").value("qsnap-000660-live-001"))
+        .andExpect(jsonPath("$.data[1].symbol").value("005930"))
+        .andExpect(jsonPath("$.data[1].marketPrice").value(72050.0))
+        .andExpect(jsonPath("$.data[1].quoteSourceMode").value("LIVE"));
 
     mockMvc.perform(get("/internal/v1/accounts/{accountId}/status", 1L)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -457,6 +478,30 @@ class CorebankInternalApiSkeletonTest {
             .param("symbol", "005930"))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_FORBIDDEN_OWNERSHIP.code()));
+  }
+
+  @Test
+  void shouldMapStaleQuoteFailureForAccountPositionEndpoint() throws Exception {
+    corebankOrderService.setAccountPositionFailure(new BusinessException(
+        ErrorCode.STALE_QUOTE,
+        ErrorCode.STALE_QUOTE.defaultMessage(),
+        null,
+        Map.of(
+            "symbol", "005930",
+            "snapshotAgeMs", 6000,
+            "quoteSourceMode", "LIVE"
+        )
+    ));
+
+    mockMvc.perform(get("/internal/v1/accounts/{accountId}/positions", 1L)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("memberId", "301")
+            .param("symbol", "005930"))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.code").value(ErrorCode.STALE_QUOTE.code()))
+        .andExpect(jsonPath("$.details.symbol").value("005930"))
+        .andExpect(jsonPath("$.details.snapshotAgeMs").value(6000))
+        .andExpect(jsonPath("$.details.quoteSourceMode").value("LIVE"));
   }
 
   @Test
@@ -803,6 +848,10 @@ class CorebankInternalApiSkeletonTest {
           (PositionRepository) null,
           (ExecutionRepository) null,
           (CorebankOrderPersistenceService) null,
+          null,
+          null,
+          null,
+          null,
           null,
           new PositionLockMetrics(new SimpleMeterRegistry())
       );

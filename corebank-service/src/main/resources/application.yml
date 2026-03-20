@@ -61,6 +61,13 @@ resilience4j:
         failureRateThreshold: 100
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 1
+      fep-quote-snapshot:
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 3
+        minimumNumberOfCalls: 3
+        failureRateThreshold: 100
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 1
 
 recovery:
   max-retry-count: ${RECOVERY_MAX_RETRY_COUNT:5}
@@ -70,6 +77,9 @@ recovery:
     backoff-ms: ${RECOVERY_STATUS_QUERY_BACKOFF_MS:0}
 
 corebank:
+  market-data:
+    max-quote-age-ms: ${COREBANK_MARKET_DATA_MAX_QUOTE_AGE_MS:30000}
+    quote-source-mode: ${COREBANK_MARKET_DATA_QUOTE_SOURCE_MODE:LIVE}
   order:
     position-lock-timeout-millis: ${COREBANK_ORDER_POSITION_LOCK_TIMEOUT_MILLIS:1000}
   ledger-integrity:

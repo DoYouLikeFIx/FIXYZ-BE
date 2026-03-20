@@ -1,5 +1,6 @@
 package com.fix.corebank.vo;
 
+import com.fix.common.fep.FepQuoteSourceMode;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -13,6 +14,10 @@ public class AccountPositionResult {
   private final BigDecimal balance;
   private final String currency;
   private final Instant asOf;
+  private final BigDecimal marketPrice;
+  private final String quoteSnapshotId;
+  private final Instant quoteAsOf;
+  private final FepQuoteSourceMode quoteSourceMode;
 
   private AccountPositionResult(
       Long accountId,
@@ -22,7 +27,11 @@ public class AccountPositionResult {
       BigDecimal availableQuantity,
       BigDecimal balance,
       String currency,
-      Instant asOf
+      Instant asOf,
+      BigDecimal marketPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode
   ) {
     this.accountId = accountId;
     this.memberId = memberId;
@@ -32,6 +41,10 @@ public class AccountPositionResult {
     this.balance = balance;
     this.currency = currency;
     this.asOf = asOf;
+    this.marketPrice = marketPrice;
+    this.quoteSnapshotId = quoteSnapshotId;
+    this.quoteAsOf = quoteAsOf;
+    this.quoteSourceMode = quoteSourceMode;
   }
 
   public static AccountPositionResult of(
@@ -44,7 +57,50 @@ public class AccountPositionResult {
       String currency,
       Instant asOf
   ) {
-    return new AccountPositionResult(accountId, memberId, symbol, quantity, availableQuantity, balance, currency, asOf);
+    return new AccountPositionResult(
+        accountId,
+        memberId,
+        symbol,
+        quantity,
+        availableQuantity,
+        balance,
+        currency,
+        asOf,
+        null,
+        null,
+        null,
+        null
+    );
+  }
+
+  public static AccountPositionResult of(
+      Long accountId,
+      Long memberId,
+      String symbol,
+      BigDecimal quantity,
+      BigDecimal availableQuantity,
+      BigDecimal balance,
+      String currency,
+      Instant asOf,
+      BigDecimal marketPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode
+  ) {
+    return new AccountPositionResult(
+        accountId,
+        memberId,
+        symbol,
+        quantity,
+        availableQuantity,
+        balance,
+        currency,
+        asOf,
+        marketPrice,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode
+    );
   }
 
   public Long getAccountId() {
@@ -77,6 +133,22 @@ public class AccountPositionResult {
 
   public Instant getAsOf() {
     return asOf;
+  }
+
+  public BigDecimal getMarketPrice() {
+    return marketPrice;
+  }
+
+  public String getQuoteSnapshotId() {
+    return quoteSnapshotId;
+  }
+
+  public Instant getQuoteAsOf() {
+    return quoteAsOf;
+  }
+
+  public FepQuoteSourceMode getQuoteSourceMode() {
+    return quoteSourceMode;
   }
 }
 
