@@ -18,14 +18,22 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.web.CommonHeaders;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
+import java.io.Serializable;
 import java.text.Normalizer;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -39,6 +47,14 @@ public class PasswordRecoveryService {
 
   private static final String FORGOT_MESSAGE = "If the account is eligible, a reset email will be sent.";
   private static final String CHALLENGE_ENDPOINT = "/api/v1/auth/password/forgot/challenge";
+  private static final String SESSION_PENDING_CHALLENGE_TELEMETRY_CONTEXTS_ATTRIBUTE =
+      PasswordRecoveryService.class.getName() + ".challenge.pendingTelemetryContexts";
+  private static final String CHALLENGE_ID_HASH_ALGORITHM = "HmacSHA256";
+  private static final int CHALLENGE_ID_HASH_LENGTH = 24;
+  private static final int MAX_PENDING_CHALLENGE_TELEMETRY_CONTEXTS = 6;
+  private static final String DETERMINISTIC_OVERRIDE_V2 = "v2";
+  private static final String DETERMINISTIC_OVERRIDE_LEGACY_V1 = "legacy-v1";
+  private static final String DETERMINISTIC_OVERRIDE_DISABLED = "disabled";
 
   private final PasswordRecoveryProperties properties;
   private final PasswordRecoveryRateLimitService rateLimitService;
@@ -99,17 +115,27 @@ public class PasswordRecoveryService {
       PasswordRecoveryRateLimitService.ForgotDecision forgotDecision =
           rateLimitService.registerForgotAttempt(clientIp, normalizedEmail);
 
-      boolean challengeProvided = hasText(command.getChallengeToken()) || hasText(command.getChallengeAnswer());
+      boolean challengeProvided = hasText(command.getChallengeToken())
+          || hasText(command.getChallengeAnswer())
+          || command.isChallengeAnswerPayloadPresent();
       ChallengeRoutingDecision routingDecision = resolveChallengeRoutingDecision(normalizedEmail, request);
       if (challengeProvided) {
         PasswordRecoveryChallengeProvider.ChallengeEventContext challengeContext =
             challengeEventContext("unknown", routingDecision);
+        PasswordRecoveryChallengeProvider challengeProvider = null;
         try {
-          PasswordRecoveryChallengeProvider challengeProvider = resolveChallengeProvider(command.getChallengeToken());
+          challengeProvider = resolveChallengeProvider(command.getChallengeToken());
           challengeContext = challengeProvider.describeVerifyContext(
               command.getChallengeToken(),
               challengeEventContext(challengeProvider.challengeContractVersionLabel(), routingDecision)
           );
+          String challengeIdHash = challengeIdHash(challengeProvider.extractChallengeId(command.getChallengeToken()));
+          if (command.isChallengeAnswerPayloadPresent()) {
+            throw new BusinessException(
+                ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID,
+                "recovery challenge token is invalid or expired"
+            );
+          }
           challengeProvider.validate(
               command.getEmail(),
               normalizedEmail,
@@ -121,32 +147,46 @@ public class PasswordRecoveryService {
               challengeContext.contractVersion(),
               challengeContext.rolloutEnabled(),
               challengeContext.challengeCapableCohort(),
-              correlationId
+              correlationId,
+              challengeIdHash
           );
           auditLogService.record(AuditLog.of(
               null,
               AuditAction.PASSWORD_RECOVERY_FORGOT,
               "PASSWORD_RECOVERY",
               null,
-              challengeAuditDetail(outcome, challengeContext, null),
+              challengeAuditDetail(outcome, challengeContext, null, challengeIdHash, false, null),
               clientIp,
               userAgent,
               correlationId
           ));
         } catch (BusinessException ex) {
+          String challengeIdHash = challengeIdHash(
+              challengeProvider == null
+                  ? null
+                  : challengeProvider.extractChallengeId(command.getChallengeToken())
+          );
           String outcome = challengeTelemetryService.recordVerifyFailure(
               challengeContext.contractVersion(),
               challengeContext.rolloutEnabled(),
               challengeContext.challengeCapableCohort(),
               ex.getErrorCode(),
-              correlationId
+              correlationId,
+              challengeIdHash
           );
           auditLogService.record(AuditLog.of(
               null,
               AuditAction.PASSWORD_RECOVERY_FORGOT,
               "PASSWORD_RECOVERY",
               null,
-              challengeAuditDetail(outcome, challengeContext, ex.getErrorCode()),
+              challengeAuditDetail(
+                  outcome,
+                  challengeContext,
+                  ex.getErrorCode(),
+                  challengeIdHash,
+                  isRetryable(ex.getErrorCode()),
+                  null
+              ),
               clientIp,
               userAgent,
               correlationId
@@ -221,18 +261,21 @@ public class PasswordRecoveryService {
           challengeContext.rolloutEnabled(),
           challengeContext.challengeCapableCohort()
       );
+      String challengeIdHash = challengeIdHash(result.getChallengeId());
+      rememberChallengeTelemetrySession(request, challengeContext, result, challengeIdHash);
       String outcome = challengeTelemetryService.recordBootstrapSuccess(
           challengeContext.contractVersion(),
           challengeContext.rolloutEnabled(),
           challengeContext.challengeCapableCohort(),
-          correlationId
+          correlationId,
+          challengeIdHash
       );
       auditLogService.record(AuditLog.of(
           null,
           AuditAction.PASSWORD_RECOVERY_CHALLENGE_ISSUED,
           "PASSWORD_RECOVERY",
           null,
-          challengeAuditDetail(outcome, challengeContext, null),
+          challengeAuditDetail(outcome, challengeContext, null, challengeIdHash, false, null),
           clientIp,
           userAgent,
           correlationId
@@ -244,20 +287,94 @@ public class PasswordRecoveryService {
           challengeContext.rolloutEnabled(),
           challengeContext.challengeCapableCohort(),
           ex.getErrorCode(),
-          correlationId
+          correlationId,
+          null
       );
       auditLogService.record(AuditLog.of(
           null,
           AuditAction.PASSWORD_RECOVERY_CHALLENGE_ISSUED,
           "PASSWORD_RECOVERY",
           null,
-          challengeAuditDetail(outcome, challengeContext, ex.getErrorCode()),
+          challengeAuditDetail(
+              outcome,
+              challengeContext,
+              ex.getErrorCode(),
+              null,
+              isRetryable(ex.getErrorCode()),
+              null
+          ),
           clientIp,
           userAgent,
           correlationId
       ));
       throw ex;
     }
+  }
+
+  public void recordClientFailClosed(
+      String reason,
+      String surface,
+      Long challengeIssuedAtEpochMs,
+      HttpServletRequest request
+  ) {
+    String correlationId = resolveCorrelationId(request);
+    ClientFailClosedResolution resolution =
+        consumeStoredChallengeTelemetryContext(request, challengeIssuedAtEpochMs);
+    if (resolution.dropReason() != null) {
+      challengeTelemetryService.recordClientFailClosedDrop(
+          reason,
+          surface,
+          resolution.dropReason(),
+          correlationId
+      );
+      return;
+    }
+    StoredChallengeTelemetryContext storedContext = resolution.storedContext();
+    if (storedContext == null) {
+      challengeTelemetryService.recordClientFailClosedDrop(
+          reason,
+          surface,
+          "missing-context",
+          correlationId
+      );
+      return;
+    }
+    String clientIp = resolveClientIp(request);
+    String userAgent = resolveUserAgent(request);
+    String safeContractVersion = storedContext.contractVersion();
+    PasswordRecoveryChallengeProvider.ChallengeEventContext challengeContext =
+        new PasswordRecoveryChallengeProvider.ChallengeEventContext(
+            safeContractVersion,
+            storedContext.rolloutEnabled(),
+            storedContext.challengeCapableCohort()
+        );
+
+    challengeTelemetryService.recordClientFailClosed(
+        reason,
+        surface,
+        safeContractVersion,
+        storedContext.rolloutEnabled(),
+        storedContext.challengeCapableCohort(),
+        correlationId,
+        storedContext.challengeIdHash()
+    );
+    auditLogService.record(AuditLog.of(
+        null,
+        AuditAction.PASSWORD_RECOVERY_CHALLENGE_ISSUED,
+        "PASSWORD_RECOVERY",
+        null,
+        challengeAuditDetail(
+            "client_fail_closed",
+            challengeContext,
+            null,
+            storedContext.challengeIdHash(),
+            true,
+            reason
+        ),
+        clientIp,
+        userAgent,
+        correlationId
+    ));
   }
 
   @Transactional
@@ -418,6 +535,10 @@ public class PasswordRecoveryService {
 
   private ChallengeRoutingDecision resolveChallengeRoutingDecision(String normalizedEmail, HttpServletRequest request) {
     PasswordRecoveryProperties.Challenge challenge = properties.getChallenge();
+    ChallengeRoutingDecision deterministicOverride = resolveDeterministicChallengeRoutingDecision(challenge, request);
+    if (deterministicOverride != null) {
+      return deterministicOverride;
+    }
     boolean rolloutEnabled = challenge.isV2Enabled();
     if (!rolloutEnabled) {
       return new ChallengeRoutingDecision(false, false, false);
@@ -439,6 +560,26 @@ public class PasswordRecoveryService {
     return new ChallengeRoutingDecision(true, challengeCapableCohort, challengeCapableCohort);
   }
 
+  private ChallengeRoutingDecision resolveDeterministicChallengeRoutingDecision(
+      PasswordRecoveryProperties.Challenge challenge,
+      HttpServletRequest request
+  ) {
+    if (!challenge.isDeterministicOverrideEnabled() || !hasText(challenge.getDeterministicOverrideHeader())) {
+      return null;
+    }
+    String requestedMode = request.getHeader(challenge.getDeterministicOverrideHeader());
+    if (!hasText(requestedMode)) {
+      return null;
+    }
+
+    return switch (requestedMode.trim().toLowerCase(Locale.ROOT)) {
+      case DETERMINISTIC_OVERRIDE_V2 -> new ChallengeRoutingDecision(true, true, true);
+      case DETERMINISTIC_OVERRIDE_LEGACY_V1 -> new ChallengeRoutingDecision(true, false, false);
+      case DETERMINISTIC_OVERRIDE_DISABLED -> new ChallengeRoutingDecision(false, false, false);
+      default -> null;
+    };
+  }
+
   private String contractVersionLabel(PasswordRecoveryChallengeProvider provider) {
     return provider.challengeContractVersionLabel();
   }
@@ -457,7 +598,10 @@ public class PasswordRecoveryService {
   private String challengeAuditDetail(
       String outcome,
       PasswordRecoveryChallengeProvider.ChallengeEventContext challengeContext,
-      ErrorCode errorCode
+      ErrorCode errorCode,
+      String challengeIdHash,
+      boolean retryable,
+      String clientFailClosedReason
   ) {
     StringBuilder detail = new StringBuilder("outcome=")
         .append(outcome)
@@ -466,9 +610,17 @@ public class PasswordRecoveryService {
         .append(", rolloutEnabled=")
         .append(challengeContext.rolloutEnabled())
         .append(", challengeCapableCohort=")
-        .append(challengeContext.challengeCapableCohort());
+        .append(challengeContext.challengeCapableCohort())
+        .append(", retryable=")
+        .append(retryable);
     if (errorCode != null) {
       detail.append(", errorCode=").append(errorCode.code());
+    }
+    if (hasText(challengeIdHash)) {
+      detail.append(", challengeIdHash=").append(challengeIdHash);
+    }
+    if (hasText(clientFailClosedReason)) {
+      detail.append(", clientFailClosedReason=").append(clientFailClosedReason);
     }
     return detail.toString();
   }
@@ -482,6 +634,125 @@ public class PasswordRecoveryService {
         routingDecision.rolloutEnabled(),
         routingDecision.challengeCapableCohort()
     );
+  }
+
+  private boolean isRetryable(ErrorCode errorCode) {
+    return errorCode == ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_BOOTSTRAP_UNAVAILABLE
+        || errorCode == ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_VERIFY_UNAVAILABLE;
+  }
+
+  private void rememberChallengeTelemetrySession(
+      HttpServletRequest request,
+      PasswordRecoveryChallengeProvider.ChallengeEventContext challengeContext,
+      PasswordForgotChallengeResult result,
+      String challengeIdHash
+  ) {
+    HttpSession session = request.getSession(true);
+    if (!"2".equals(challengeContext.contractVersion())
+        || !hasText(challengeIdHash)
+        || result.getChallengeIssuedAtEpochMs() == null) {
+      return;
+    }
+
+    ArrayList<PendingChallengeTelemetryContext> pendingContexts =
+        readPendingChallengeTelemetryContexts(session);
+    pendingContexts.add(new PendingChallengeTelemetryContext(
+        challengeContext.contractVersion(),
+        challengeContext.rolloutEnabled(),
+        challengeContext.challengeCapableCohort(),
+        result.getChallengeIssuedAtEpochMs(),
+        challengeIdHash
+    ));
+    while (pendingContexts.size() > MAX_PENDING_CHALLENGE_TELEMETRY_CONTEXTS) {
+      pendingContexts.remove(0);
+    }
+    writePendingChallengeTelemetryContexts(session, pendingContexts);
+  }
+
+  private ClientFailClosedResolution consumeStoredChallengeTelemetryContext(
+      HttpServletRequest request,
+      Long challengeIssuedAtEpochMs
+  ) {
+    HttpSession session = request.getSession(false);
+    if (session == null) {
+      return ClientFailClosedResolution.dropped("missing-session");
+    }
+
+    ArrayList<PendingChallengeTelemetryContext> pendingContexts =
+        readPendingChallengeTelemetryContexts(session);
+    if (pendingContexts.isEmpty()) {
+      return ClientFailClosedResolution.dropped("missing-context");
+    }
+
+    if (challengeIssuedAtEpochMs == null) {
+      if (pendingContexts.size() != 1) {
+        return ClientFailClosedResolution.dropped("ambiguous-context");
+      }
+
+      PendingChallengeTelemetryContext onlyContext = pendingContexts.remove(0);
+      writePendingChallengeTelemetryContexts(session, pendingContexts);
+      return ClientFailClosedResolution.found(onlyContext.toStoredContext(false));
+    }
+
+    List<PendingChallengeTelemetryContext> matchingContexts = pendingContexts.stream()
+        .filter(context -> Objects.equals(context.challengeIssuedAtEpochMs(), challengeIssuedAtEpochMs))
+        .toList();
+    if (matchingContexts.isEmpty()) {
+      return ClientFailClosedResolution.dropped("timestamp-mismatch");
+    }
+
+    pendingContexts.removeIf(context -> Objects.equals(context.challengeIssuedAtEpochMs(), challengeIssuedAtEpochMs));
+    writePendingChallengeTelemetryContexts(session, pendingContexts);
+
+    PendingChallengeTelemetryContext referenceContext = matchingContexts.get(matchingContexts.size() - 1);
+    return ClientFailClosedResolution.found(referenceContext.toStoredContext(matchingContexts.size() > 1));
+  }
+
+  private ArrayList<PendingChallengeTelemetryContext> readPendingChallengeTelemetryContexts(HttpSession session) {
+    Object storedContexts = session.getAttribute(SESSION_PENDING_CHALLENGE_TELEMETRY_CONTEXTS_ATTRIBUTE);
+    ArrayList<PendingChallengeTelemetryContext> resolvedContexts = new ArrayList<>();
+    if (!(storedContexts instanceof List<?> rawContexts)) {
+      return resolvedContexts;
+    }
+
+    for (Object candidate : rawContexts) {
+      if (candidate instanceof PendingChallengeTelemetryContext context) {
+        resolvedContexts.add(context);
+      }
+    }
+    return resolvedContexts;
+  }
+
+  private void writePendingChallengeTelemetryContexts(
+      HttpSession session,
+      List<PendingChallengeTelemetryContext> pendingContexts
+  ) {
+    if (pendingContexts.isEmpty()) {
+      session.removeAttribute(SESSION_PENDING_CHALLENGE_TELEMETRY_CONTEXTS_ATTRIBUTE);
+      return;
+    }
+    session.setAttribute(
+        SESSION_PENDING_CHALLENGE_TELEMETRY_CONTEXTS_ATTRIBUTE,
+        new ArrayList<>(pendingContexts)
+    );
+  }
+
+  private String challengeIdHash(String challengeId) {
+    if (!hasText(challengeId)) {
+      return null;
+    }
+
+    try {
+      Mac mac = Mac.getInstance(CHALLENGE_ID_HASH_ALGORITHM);
+      mac.init(new SecretKeySpec(
+          properties.getChallenge().getObservabilitySecret().getBytes(StandardCharsets.UTF_8),
+          CHALLENGE_ID_HASH_ALGORITHM
+      ));
+      String hexDigest = HexFormat.of().formatHex(mac.doFinal(challengeId.getBytes(StandardCharsets.UTF_8)));
+      return hexDigest.substring(0, Math.min(CHALLENGE_ID_HASH_LENGTH, hexDigest.length()));
+    } catch (Exception ex) {
+      throw new IllegalStateException("failed to derive password recovery challenge observability hash", ex);
+    }
   }
 
   private String maskIpAddress(String clientIp) {
@@ -528,5 +799,61 @@ public class PasswordRecoveryService {
       boolean challengeCapableCohort,
       boolean proofOfWorkActive
   ) {
+  }
+
+  private record StoredChallengeTelemetryContext(
+      String contractVersion,
+      boolean rolloutEnabled,
+      boolean challengeCapableCohort,
+      String challengeIdHash
+  ) {
+  }
+
+  private record ClientFailClosedResolution(
+      StoredChallengeTelemetryContext storedContext,
+      String dropReason
+  ) {
+    private static ClientFailClosedResolution found(StoredChallengeTelemetryContext storedContext) {
+      return new ClientFailClosedResolution(storedContext, null);
+    }
+
+    private static ClientFailClosedResolution dropped(String dropReason) {
+      return new ClientFailClosedResolution(null, dropReason);
+    }
+  }
+
+  private static final class PendingChallengeTelemetryContext implements Serializable {
+    private final String contractVersion;
+    private final boolean rolloutEnabled;
+    private final boolean challengeCapableCohort;
+    private final Long challengeIssuedAtEpochMs;
+    private final String challengeIdHash;
+
+    private PendingChallengeTelemetryContext(
+        String contractVersion,
+        boolean rolloutEnabled,
+        boolean challengeCapableCohort,
+        Long challengeIssuedAtEpochMs,
+        String challengeIdHash
+    ) {
+      this.contractVersion = contractVersion;
+      this.rolloutEnabled = rolloutEnabled;
+      this.challengeCapableCohort = challengeCapableCohort;
+      this.challengeIssuedAtEpochMs = challengeIssuedAtEpochMs;
+      this.challengeIdHash = challengeIdHash;
+    }
+
+    private Long challengeIssuedAtEpochMs() {
+      return challengeIssuedAtEpochMs;
+    }
+
+    private StoredChallengeTelemetryContext toStoredContext(boolean hashAmbiguous) {
+      return new StoredChallengeTelemetryContext(
+          contractVersion,
+          rolloutEnabled,
+          challengeCapableCohort,
+          hashAmbiguous ? null : challengeIdHash
+      );
+    }
   }
 }
