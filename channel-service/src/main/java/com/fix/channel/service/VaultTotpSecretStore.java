@@ -7,7 +7,12 @@ import com.fix.channel.config.TotpProperties;
 import com.fix.channel.entity.Member;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import java.io.InputStream;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -16,14 +21,19 @@ import java.util.HexFormat;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
 import org.apache.hc.core5.util.Timeout;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.DefaultHostnameVerifier;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -50,13 +60,21 @@ public class VaultTotpSecretStore implements TotpSecretStore {
         .setConnectTimeout(Timeout.of(vault.getConnectTimeout()))
         .setResponseTimeout(Timeout.of(vault.getReadTimeout()))
         .build();
+    SSLContext sslContext = buildSslContext(vault);
+    PoolingHttpClientConnectionManagerBuilder connectionManagerBuilder = PoolingHttpClientConnectionManagerBuilder.create()
+        .setSSLSocketFactory(
+            SSLConnectionSocketFactoryBuilder.create()
+                .setSslContext(sslContext)
+                .setHostnameVerifier(new DefaultHostnameVerifier())
+                .build()
+        );
 
     this.restClient = restClientBuilder
         .baseUrl(vault.getBaseUrl())
         .requestFactory(new HttpComponentsClientHttpRequestFactory(
             HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)
-                .setConnectionManager(PoolingHttpClientConnectionManagerBuilder.create().build())
+                .setConnectionManager(connectionManagerBuilder.build())
                 .build()
         ))
         .defaultHeader("X-Vault-Token", vault.getToken())
@@ -65,6 +83,34 @@ public class VaultTotpSecretStore implements TotpSecretStore {
     this.objectMapper = objectMapper;
     this.clock = clock;
     this.mount = vault.getMount();
+  }
+
+  private SSLContext buildSslContext(TotpProperties.Vault vault) {
+    try {
+      if (!StringUtils.hasText(vault.getTrustStorePath())) {
+        return SSLContext.getDefault();
+      }
+
+      String trustStoreType = StringUtils.hasText(vault.getTrustStoreType())
+          ? vault.getTrustStoreType()
+          : "PKCS12";
+      KeyStore trustStore = KeyStore.getInstance(trustStoreType);
+      char[] trustStorePassword = vault.getTrustStorePassword() != null
+          ? vault.getTrustStorePassword().toCharArray()
+          : new char[0];
+      try (InputStream trustStoreStream = Files.newInputStream(Path.of(vault.getTrustStorePath()))) {
+        trustStore.load(trustStoreStream, trustStorePassword);
+      }
+
+      TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+      trustManagerFactory.init(trustStore);
+
+      SSLContext sslContext = SSLContext.getInstance("TLS");
+      sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
+      return sslContext;
+    } catch (GeneralSecurityException | java.io.IOException ex) {
+      throw new IllegalStateException("Unable to initialize Vault trust store configuration", ex);
+    }
   }
 
   @Override
