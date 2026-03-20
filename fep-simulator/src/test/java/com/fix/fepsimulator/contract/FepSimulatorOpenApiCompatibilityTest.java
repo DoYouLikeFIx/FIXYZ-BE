@@ -21,6 +21,7 @@ class FepSimulatorOpenApiCompatibilityTest {
 
     JsonNode paths = contract.path("paths");
     JsonNode putRulePath = paths.path("/fep-internal/rules").path("put");
+    JsonNode getRulePath = paths.path("/fep-internal/rules").path("get");
     JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode upsertRuleResponse = contract.path("components").path("schemas").path("ApiResponseSimulatorRuleResponse");
     JsonNode listRuleResponse = contract.path("components").path("schemas").path("ApiResponseSimulatorRuleListResponse");
@@ -32,7 +33,20 @@ class FepSimulatorOpenApiCompatibilityTest {
     assertThat(putRulePath.path("requestBody").path("content").path("application/json")
       .path("schema").path("$ref").asText())
       .isEqualTo("#/components/schemas/SimulatorRuleUpsertRequest");
-    assertThat(putRulePath.path("parameters").isArray()).isFalse();
+    assertThat(parameterNames(putRulePath.path("parameters"))).contains("X-Internal-Secret");
+    assertThat(parameterNames(getRulePath.path("parameters"))).contains("X-Internal-Secret");
+    assertThat(schemaRef(putRulePath, "401"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(getRulePath, "401"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(putRulePath.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(putRulePath.path("responses").path("401").path("headers").path("traceparent").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(getRulePath.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
+        .path("type").asText()).isEqualTo("string");
+    assertThat(getRulePath.path("responses").path("401").path("headers").path("traceparent").path("schema")
+        .path("type").asText()).isEqualTo("string");
 
     assertThat(fieldNames(apiErrorSchema.path("properties")))
         .contains(
@@ -71,5 +85,22 @@ class FepSimulatorOpenApiCompatibilityTest {
     Set<String> names = new TreeSet<>();
     node.fieldNames().forEachRemaining(names::add);
     return names;
+  }
+
+  private Set<String> parameterNames(JsonNode node) {
+    Set<String> names = new TreeSet<>();
+    node.forEach(parameter -> names.add(parameter.path("name").asText()));
+    return names;
+  }
+
+  private String schemaRef(JsonNode operation, String statusCode) {
+    JsonNode content = operation.path("responses").path(statusCode).path("content");
+    if (content.has("application/json")) {
+      return content.path("application/json").path("schema").path("$ref").asText();
+    }
+    if (content.fieldNames().hasNext()) {
+      return content.path(content.fieldNames().next()).path("schema").path("$ref").asText();
+    }
+    return "";
   }
 }

@@ -1,14 +1,15 @@
 package com.fix.fepgateway.contract;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.TreeSet;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 class FepGatewayOpenApiCompatibilityTest {
 
@@ -89,6 +90,8 @@ class FepGatewayOpenApiCompatibilityTest {
     assertThat(schemaRef(cancelOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderCancelResponse");
     assertThat(schemaRef(replayOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderReplayResponse");
     assertThat(schemaRef(internalStatusOperation, "200")).isEqualTo("#/components/schemas/ApiResponseFepOrderResponse");
+    assertThat(submitOperation.path("responses").path("401").path("description").asText())
+      .contains("AUTH_001");
     assertThat(submitOperation.path("responses").path("504").path("description").asText()).contains("9004");
     assertThat(cancelOperation.path("responses").path("504").path("description").asText()).contains("9004");
     assertThat(replayOperation.path("responses").path("409").path("description").asText()).contains("9009");

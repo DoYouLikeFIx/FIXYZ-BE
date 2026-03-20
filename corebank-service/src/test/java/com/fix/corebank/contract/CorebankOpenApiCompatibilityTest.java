@@ -1,15 +1,16 @@
 package com.fix.corebank.contract;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.MissingNode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.TreeSet;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.MissingNode;
 
 class CorebankOpenApiCompatibilityTest {
 
@@ -49,6 +50,7 @@ class CorebankOpenApiCompatibilityTest {
     JsonNode requeryOperation = paths.path("/internal/v1/orders/{clOrdId}/requery").path("get");
     JsonNode requeryParameters = requeryOperation.path("parameters");
     JsonNode attemptCountParameter = parameterByName(requeryParameters, "attemptCount");
+    JsonNode portfolioOperation = paths.path("/internal/v1/portfolio").path("get");
     JsonNode positionsOperation = paths.path("/internal/v1/accounts/{accountId}/positions").path("get");
     JsonNode positionsListOperation = paths.path("/internal/v1/accounts/{accountId}/positions/list").path("get");
     JsonNode summaryOperation = paths.path("/internal/v1/accounts/{accountId}/summary").path("get");
@@ -137,6 +139,11 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(attemptCountParameter.path("schema").path("default").asInt())
         .isEqualTo(1);
     assertThat(parameterByName(requeryParameters, "request").isMissingNode()).isTrue();
+    assertThat(parameterByName(requeryParameters, "X-Internal-Secret").path("in").asText()).isEqualTo("header");
+    assertThat(parameterByName(portfolioOperation.path("parameters"), "X-Internal-Secret").path("in").asText())
+        .isEqualTo("header");
+    assertThat(schemaRef(portfolioOperation, "401"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
   }
 
   @Test
@@ -274,5 +281,16 @@ class CorebankOpenApiCompatibilityTest {
     }
     String schemaName = ref.substring("#/components/schemas/".length());
     return contract.path("components").path("schemas").path(schemaName);
+  }
+
+  private String schemaRef(JsonNode operation, String statusCode) {
+    JsonNode content = operation.path("responses").path(statusCode).path("content");
+    if (content.has("application/json")) {
+      return content.path("application/json").path("schema").path("$ref").asText();
+    }
+    if (content.fieldNames().hasNext()) {
+      return content.path(content.fieldNames().next()).path("schema").path("$ref").asText();
+    }
+    return "";
   }
 }

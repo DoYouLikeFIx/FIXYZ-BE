@@ -1,5 +1,10 @@
 server:
-  port: ${OPENAPI_SERVER_PORT:18081}
+  port: ${OPENAPI_SERVER_PORT:28081}
+
+management:
+  server:
+    port: 29081
+    address: 127.0.0.1
 
 internal:
   secret: local-internal-secret

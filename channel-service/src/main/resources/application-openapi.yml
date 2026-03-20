@@ -1,5 +1,5 @@
 server:
-  port: ${OPENAPI_SERVER_PORT:18080}
+  port: ${OPENAPI_SERVER_PORT:28080}
 
 spring:
   autoconfigure:
