@@ -1,6 +1,7 @@
 package com.fix.channel.dto.response;
 
 import com.fix.channel.vo.AccountPositionResult;
+import com.fix.common.fep.FepQuoteSourceMode;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -14,7 +15,11 @@ public record AccountPositionResponse(
     BigDecimal balance,
     BigDecimal availableBalance,
     String currency,
-    Instant asOf
+    Instant asOf,
+    BigDecimal marketPrice,
+    String quoteSnapshotId,
+    Instant quoteAsOf,
+    FepQuoteSourceMode quoteSourceMode
 ) {
 
   public static AccountPositionResponse from(AccountPositionResult result) {
@@ -28,7 +33,11 @@ public record AccountPositionResponse(
         result.getBalance(),
         result.getBalance(),
         result.getCurrency(),
-        result.getAsOf()
+        result.getAsOf(),
+        result.getMarketPrice(),
+        result.getQuoteSnapshotId(),
+        result.getQuoteAsOf(),
+        result.getQuoteSourceMode()
     );
   }
 }
