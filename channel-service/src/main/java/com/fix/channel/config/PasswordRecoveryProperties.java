@@ -74,6 +74,10 @@ public class PasswordRecoveryProperties {
     private final RateLimit global = new RateLimit(60, Duration.ofMinutes(1));
     private int ttlSeconds = 300;
     private String type = "proof-of-work";
+    private boolean v2Enabled = false;
+    private int cohortPercentage = 0;
+    private String cohortSalt = "dev-password-recovery-challenge-cohort-salt";
+    private int difficultyBits = 18;
 
     public RateLimit getIp() {
       return ip;
@@ -101,6 +105,38 @@ public class PasswordRecoveryProperties {
 
     public void setType(String type) {
       this.type = type;
+    }
+
+    public boolean isV2Enabled() {
+      return v2Enabled;
+    }
+
+    public void setV2Enabled(boolean v2Enabled) {
+      this.v2Enabled = v2Enabled;
+    }
+
+    public int getCohortPercentage() {
+      return cohortPercentage;
+    }
+
+    public void setCohortPercentage(int cohortPercentage) {
+      this.cohortPercentage = cohortPercentage;
+    }
+
+    public String getCohortSalt() {
+      return cohortSalt;
+    }
+
+    public void setCohortSalt(String cohortSalt) {
+      this.cohortSalt = cohortSalt;
+    }
+
+    public int getDifficultyBits() {
+      return difficultyBits;
+    }
+
+    public void setDifficultyBits(int difficultyBits) {
+      this.difficultyBits = difficultyBits;
     }
   }
 

@@ -3248,16 +3248,84 @@
                     }
                 }
             },
+            "ChallengePayload": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string"
+                    },
+                    "proofOfWork": {
+                        "$ref": "#/components/schemas/ProofOfWorkPayload"
+                    }
+                }
+            },
             "PasswordForgotChallengeResponse": {
                 "type": "object",
                 "properties": {
+                    "challengeContractVersion": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "challengeId": {
+                        "type": "string"
+                    },
                     "challengeToken": {
                         "type": "string"
                     },
                     "challengeType": {
                         "type": "string"
                     },
+                    "challengeIssuedAtEpochMs": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "challengeExpiresAtEpochMs": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
                     "challengeTtlSeconds": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "challengePayload": {
+                        "$ref": "#/components/schemas/ChallengePayload"
+                    }
+                }
+            },
+            "ProofOfWorkPayload": {
+                "type": "object",
+                "properties": {
+                    "algorithm": {
+                        "type": "string"
+                    },
+                    "seed": {
+                        "type": "string"
+                    },
+                    "difficultyBits": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "answerFormat": {
+                        "type": "string"
+                    },
+                    "inputTemplate": {
+                        "type": "string"
+                    },
+                    "inputEncoding": {
+                        "type": "string"
+                    },
+                    "successCondition": {
+                        "$ref": "#/components/schemas/SuccessCondition"
+                    }
+                }
+            },
+            "SuccessCondition": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "minimum": {
                         "type": "integer",
                         "format": "int32"
                     }

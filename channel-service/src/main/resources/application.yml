@@ -104,6 +104,10 @@ auth:
         window: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_GLOBAL_WINDOW:1m}
       ttl-seconds: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_TTL_SECONDS:300}
       type: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_TYPE:proof-of-work}
+      v2-enabled: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_V2_ENABLED:false}
+      cohort-percentage: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_COHORT_PERCENTAGE:0}
+      cohort-salt: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_COHORT_SALT:dev-password-recovery-challenge-cohort-salt}
+      difficulty-bits: ${AUTH_PASSWORD_RECOVERY_CHALLENGE_DIFFICULTY_BITS:18}
     reset:
       ip:
         max-attempts: ${AUTH_PASSWORD_RECOVERY_RESET_IP_MAX_ATTEMPTS:10}

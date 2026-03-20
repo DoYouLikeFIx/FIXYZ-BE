@@ -80,7 +80,6 @@ class CorebankInternalApiSkeletonTest {
     accountProvisioningService = new StubAccountProvisioningService();
     ledgerIntegrityObservabilityService = mock(LedgerIntegrityObservabilityService.class);
     corebankOrderReplayService = mock(CorebankOrderReplayService.class);
-    ledgerIntegrityObservabilityService = mock(LedgerIntegrityObservabilityService.class);
     mockMvc = CorebankStandaloneMvcSupport.build(
         List.of(
             new CorrelationIdFilter(),

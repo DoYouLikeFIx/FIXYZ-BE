@@ -65,7 +65,7 @@ public class LedgerIntegrityObservabilityService {
   private static final int MAX_SUMMARY_IDENTIFIERS = 25;
   private static final List<String> LEDGER_INTEGRITY_TABLE_NAMES = List.of(
       "ledger_integrity_runs",
-      "ledger_integrity_anomaly_records",
+      "ledger_integrity_anomalies",
       "ledger_reconciliation_cases"
   );
 
