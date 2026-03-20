@@ -128,7 +128,7 @@ public class PasswordRecoveryChallengeService implements PasswordRecoveryChallen
     if (challengeToken == null || challengeToken.isBlank() || challengeAnswer == null || challengeAnswer.isBlank()) {
       throw new BusinessException(
           ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID,
-          "password recovery challenge invalid"
+          ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID.defaultMessage()
       );
     }
 
@@ -136,7 +136,7 @@ public class PasswordRecoveryChallengeService implements PasswordRecoveryChallen
     if (parts.length != 2 || !tokenService.signaturesMatch(parts[0], parts[1])) {
       throw new BusinessException(
           ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID,
-          "password recovery challenge invalid"
+          ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID.defaultMessage()
       );
     }
 
@@ -145,7 +145,7 @@ public class PasswordRecoveryChallengeService implements PasswordRecoveryChallen
     if (payloadParts.length != 3 && payloadParts.length != 5) {
       throw new BusinessException(
           ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID,
-          "password recovery challenge invalid"
+          ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID.defaultMessage()
       );
     }
 
@@ -157,7 +157,7 @@ public class PasswordRecoveryChallengeService implements PasswordRecoveryChallen
     } catch (NumberFormatException ex) {
       throw new BusinessException(
           ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID,
-          "password recovery challenge invalid"
+          ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID.defaultMessage()
       );
     }
 
@@ -165,7 +165,7 @@ public class PasswordRecoveryChallengeService implements PasswordRecoveryChallen
         || Instant.ofEpochMilli(expiresAtMillis).compareTo(Instant.now()) <= 0) {
       throw new BusinessException(
           ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID,
-          "password recovery challenge invalid"
+          ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID.defaultMessage()
       );
     }
 
@@ -174,7 +174,7 @@ public class PasswordRecoveryChallengeService implements PasswordRecoveryChallen
     if (!emailHash.equals(storedEmailHash)) {
       throw new BusinessException(
           ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID,
-          "password recovery challenge invalid"
+          ErrorCode.AUTH_PASSWORD_RECOVERY_CHALLENGE_INVALID.defaultMessage()
       );
     }
   }
