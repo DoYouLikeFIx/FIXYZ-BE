@@ -22,7 +22,7 @@ import org.springframework.scheduling.config.ScheduledTaskHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 
-@SpringBootTest
+@SpringBootTest(properties = "auth.password-recovery.cleanup.enabled=true")
 @DirtiesContext
 class ChannelPasswordRecoveryCleanupSchedulerIntegrationTest extends ChannelContainersIntegrationTestBase {
 

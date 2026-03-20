@@ -4,7 +4,8 @@ ARG SERVICE_MODULE
 WORKDIR /workspace
 COPY . .
 RUN --mount=type=cache,target=/home/gradle/.gradle \
-    chmod +x ./gradlew \
+    sed -i 's/\r$//' ./gradlew \
+    && chmod +x ./gradlew \
     && ./gradlew :${SERVICE_MODULE}:bootJar --no-daemon \
     && cp ${SERVICE_MODULE}/build/libs/*.jar /tmp/app.jar
 

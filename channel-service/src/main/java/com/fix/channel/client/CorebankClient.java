@@ -11,8 +11,11 @@ import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryItemResult;
 import com.fix.channel.vo.AccountOrderHistoryResult;
+import com.fix.channel.vo.AdminOrderReplayCommand;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
+import com.fix.channel.vo.OrderReplayResult;
+import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
@@ -40,6 +43,8 @@ import org.springframework.web.client.ResourceAccessException;
 public class CorebankClient {
 
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
+  private static final String COREBANK_ORDER_REQUERY_PATH = "/internal/v1/orders/{clOrdId}/requery";
+  private static final String COREBANK_ORDER_REPLAY_PATH = "/internal/v1/orders/{clOrdId}/replay";
   private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
   private static final String COREBANK_ACCOUNT_SUMMARY_PATH = "/internal/v1/accounts/{accountId}/summary";
   private static final String COREBANK_ACCOUNT_POSITIONS_PATH = "/internal/v1/accounts/{accountId}/positions/list";
@@ -102,6 +107,92 @@ public class CorebankClient {
       );
     } catch (RestClientException ex) {
       throw translateFailure(ex);
+    }
+  }
+
+  public OrderRequeryResult requeryOrder(String clOrdId, int attemptCount, String correlationId) {
+    try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
+      CorebankApiResponse<CorebankOrderRequeryResponse> response = restClient.get()
+          .uri(uriBuilder -> uriBuilder
+              .path(COREBANK_ORDER_REQUERY_PATH)
+              .queryParam("attemptCount", attemptCount)
+              .build(clOrdId))
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankOrderRequeryResponse responseBody = extractBody(response);
+      return OrderRequeryResult.of(
+          responseBody.orderId(),
+          responseBody.clOrdId(),
+          responseBody.status(),
+          responseBody.externalSyncStatus(),
+          responseBody.executionResult(),
+          responseBody.executedQty(),
+          responseBody.leavesQty(),
+          responseBody.executedPrice(),
+          responseBody.externalOrderId(),
+          responseBody.executedAt(),
+          responseBody.canceledAt(),
+          responseBody.message(),
+          responseBody.retriable(),
+          responseBody.escalationRequired(),
+          responseBody.attemptCount(),
+          responseBody.maxRetryCount()
+      );
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public OrderReplayResult replayOrder(
+      String clOrdId,
+      AdminOrderReplayCommand command,
+      String operatorId,
+      String correlationId
+  ) {
+    try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
+      CorebankApiResponse<CorebankOrderReplayResponse> response = restClient.post()
+          .uri(COREBANK_ORDER_REPLAY_PATH, clOrdId)
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(new CorebankOrderReplayRequest(
+              command.getManualDecision(),
+              operatorId,
+              command.getApprovedBy(),
+              command.getEvidenceRef(),
+              command.getReason(),
+              command.getExecutionPrice()
+          ))
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankOrderReplayResponse responseBody = extractBody(response);
+      return OrderReplayResult.of(
+          responseBody.clOrdId(),
+          responseBody.finalStatus(),
+          responseBody.executionResult(),
+          responseBody.executionSource(),
+          responseBody.executedQty(),
+          responseBody.leavesQty(),
+          responseBody.executedPrice(),
+          responseBody.externalOrderId(),
+          responseBody.externalSyncStatus(),
+          responseBody.executedAt(),
+          responseBody.canceledAt(),
+          responseBody.processedBy(),
+          responseBody.processedAt()
+      );
+    } catch (RestClientException ex) {
+      throw translateReplayFailure(ex);
     }
   }
 
@@ -363,6 +454,38 @@ public class CorebankClient {
     return new BusinessException(ErrorCode.INTERNAL_ERROR, ErrorCode.INTERNAL_ERROR.defaultMessage(), throwable);
   }
 
+  private BusinessException translateReplayFailure(Throwable throwable) {
+    if (throwable instanceof RestClientResponseException restClientResponseException
+        && restClientResponseException.getStatusCode().value() == 409) {
+      return toReplayConflict(restClientResponseException);
+    }
+    BusinessException translated = translateFailure(throwable);
+    if (translated.getErrorCode() != ErrorCode.INVALID_SESSION_STATUS) {
+      return translated;
+    }
+    return new BusinessException(
+        ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
+        defaultIfBlank(translated.getMessage(), ErrorCode.ORDER_SESSION_NOT_AUTHORIZED.defaultMessage()),
+        translated.getCause(),
+        translated.getMetadata(),
+        translated.getDetails()
+    );
+  }
+
+  private BusinessException toReplayConflict(RestClientResponseException exception) {
+    CorebankApiErrorResponse errorResponse = parseError(exception.getResponseBodyAsString());
+    return new BusinessException(
+        ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
+        defaultIfBlank(
+            errorResponse == null ? null : errorResponse.message(),
+            ErrorCode.ORDER_SESSION_NOT_AUTHORIZED.defaultMessage()
+        ),
+        exception,
+        errorResponse == null ? null : errorResponse.metadata(),
+        errorResponse == null ? null : errorResponse.details()
+    );
+  }
+
   private ErrorCode resolveDependencyErrorCode(RestClientResponseException exception) {
     int statusCode = exception.getStatusCode().value();
     if (statusCode == 504) {
@@ -470,6 +593,56 @@ public class CorebankClient {
       String externalOrderId,
       String externalSyncStatus,
       Instant executedAt
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankOrderRequeryResponse(
+      Long orderId,
+      String clOrdId,
+      String status,
+      String externalSyncStatus,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      Instant executedAt,
+      Instant canceledAt,
+      String message,
+      Boolean retriable,
+      Boolean escalationRequired,
+      Integer attemptCount,
+      Integer maxRetryCount
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankOrderReplayRequest(
+      String manualDecision,
+      String operatorId,
+      String approvedBy,
+      String evidenceRef,
+      String reason,
+      Long executionPrice
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankOrderReplayResponse(
+      String clOrdId,
+      String finalStatus,
+      String executionResult,
+      String executionSource,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      String externalOrderId,
+      String externalSyncStatus,
+      Instant executedAt,
+      Instant canceledAt,
+      String processedBy,
+      Instant processedAt
   ) {
   }
 

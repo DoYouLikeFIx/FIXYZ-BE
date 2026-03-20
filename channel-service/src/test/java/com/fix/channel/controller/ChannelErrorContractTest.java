@@ -2,6 +2,7 @@ package com.fix.channel.controller;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -297,7 +298,7 @@ class ChannelErrorContractTest {
 
   @Test
   @WithMockUser(username = "qa-user")
-  void shouldPersistEscalatedTerminalStateWhenCorebankReturnsUnconfirmedSyncResult() throws Exception {
+  void shouldRouteUnknownExecutionOutcomeIntoRequeryingStateWhenCorebankReturnsFailedSyncResult() throws Exception {
     WIRE_MOCK_SERVER.resetAll();
     orderSessionTestFixture.reset();
     String orderSessionId = orderSessionTestFixture.createInitiatedSessionId(
@@ -344,21 +345,21 @@ class ChannelErrorContractTest {
         .andExpect(status().isOk())
         .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-escalated"))
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.status").value("ESCALATED"))
-        .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
-        .andExpect(jsonPath("$.data.executedQty").value(2))
-        .andExpect(jsonPath("$.data.leavesQty").value(0))
-        .andExpect(jsonPath("$.data.executedPrice").value(70100))
-        .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-90002"))
-        .andExpect(jsonPath("$.data.externalSyncStatus").value("FAILED"))
+        .andExpect(jsonPath("$.data.status").value("REQUERYING"))
+        .andExpect(jsonPath("$.data.executionResult").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.executedQty").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.leavesQty").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.executedPrice").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.externalOrderId").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value(org.hamcrest.Matchers.nullValue()))
         .andExpect(jsonPath("$.data.idempotent").value(false))
-        .andExpect(jsonPath("$.data.failureReason").value("ESCALATED_MANUAL_REVIEW"))
-        .andExpect(jsonPath("$.data.executedAt").value("2026-03-12T00:06:30Z"))
+        .andExpect(jsonPath("$.data.failureReason").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.executedAt").value(org.hamcrest.Matchers.nullValue()))
         .andExpect(jsonPath("$.data.expiresAt").doesNotExist())
         .andExpect(jsonPath("$.data.remainingSeconds").doesNotExist());
 
-    assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("ESCALATED");
-    assertThat(orderSessionTestFixture.failureReasonOf(orderSessionId)).isEqualTo("ESCALATED_MANUAL_REVIEW");
+    assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("REQUERYING");
+    assertThat(orderSessionTestFixture.failureReasonOf(orderSessionId)).isEqualTo("UNKNOWN_EXECUTION_OUTCOME");
     assertThat(orderSessionTestFixture.executionResultOf(orderSessionId)).isEqualTo("FILLED");
     assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isEqualByComparingTo("2");
     assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isEqualTo("FEP-KRX-90002");

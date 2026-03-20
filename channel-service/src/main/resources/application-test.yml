@@ -12,3 +12,5 @@ order:
   session:
     expiry-reconciliation:
       enabled: false
+    recovery:
+      enabled: false

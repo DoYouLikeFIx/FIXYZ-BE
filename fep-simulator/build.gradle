@@ -49,6 +49,18 @@ tasks.named('check') {
   dependsOn tasks.named('verifyCommittedOpenApi')
 }
 
+tasks.register('correlationPropagationTests', Test) {
+  description = 'Runs fep-simulator correlation propagation regressions.'
+  group = 'verification'
+  useJUnitPlatform()
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  filter {
+    includeTestsMatching('com.fix.fepsimulator.filter.CorrelationIdFilterTest')
+    includeTestsMatching('com.fix.fepsimulator.security.InternalSecretFilterTest')
+  }
+}
+
 dependencies {
   implementation project(':core-common')
 

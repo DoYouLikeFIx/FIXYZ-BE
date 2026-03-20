@@ -185,4 +185,112 @@ class OrderSessionStateMachineTest {
     assertThat(session.getExternalSyncStatus()).isEqualTo("FAILED");
     assertThat(session.getExecutedAt()).isEqualTo(Instant.parse("2026-03-12T00:06:30Z"));
   }
+
+  @Test
+  void shouldTransitionExecutingToRequeryingForTimeoutRecovery() {
+    OrderSession session = OrderSession.initiated(
+        1L,
+        101L,
+        "123e4567-e89b-42d3-a456-426614174266",
+        "fingerprint",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(70000),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.parse("2026-03-12T00:10:00Z")
+    );
+    session.startExecuting();
+    assertThat(session.getExecutingStartedAt()).isNotNull();
+
+    session.beginRequerying("EXECUTING_TIMEOUT");
+
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.REQUERYING);
+    assertThat(session.getExecutingStartedAt()).isNull();
+    assertThat(session.getFailureReason()).isEqualTo("EXECUTING_TIMEOUT");
+  }
+
+  @Test
+  void shouldPreserveExecutionSnapshotWhenTransitioningToRequeryingForUnknownOutcome() {
+    OrderSession session = OrderSession.initiated(
+        1L,
+        101L,
+        "123e4567-e89b-42d3-a456-426614174267",
+        "fingerprint",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(70000),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.parse("2026-03-12T00:10:00Z")
+    );
+    session.startExecuting();
+
+    session.beginRequerying(
+        "UNKNOWN_EXECUTION_OUTCOME",
+        "FILLED",
+        BigDecimal.ONE,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(70000),
+        "FEP-0003",
+        "FAILED",
+        Instant.parse("2026-03-12T00:06:30Z")
+    );
+
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.REQUERYING);
+    assertThat(session.getFailureReason()).isEqualTo("UNKNOWN_EXECUTION_OUTCOME");
+    assertThat(session.getExecutionResult()).isEqualTo("FILLED");
+    assertThat(session.getExecutedQty()).isEqualTo(BigDecimal.ONE);
+    assertThat(session.getLeavesQty()).isEqualTo(BigDecimal.ZERO);
+    assertThat(session.getExecutedPrice()).isEqualTo(BigDecimal.valueOf(70000));
+    assertThat(session.getExternalOrderId()).isEqualTo("FEP-0003");
+    assertThat(session.getExternalSyncStatus()).isEqualTo("FAILED");
+    assertThat(session.getExecutedAt()).isEqualTo(Instant.parse("2026-03-12T00:06:30Z"));
+  }
+
+  @Test
+  void shouldTransitionRequeryingSessionToCanceledAndPreserveCancellationSnapshot() {
+    OrderSession session = OrderSession.initiated(
+        1L,
+        101L,
+        "123e4567-e89b-42d3-a456-426614174268",
+        "fingerprint",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.TEN,
+        BigDecimal.valueOf(72000),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.parse("2026-03-12T00:10:00Z")
+    );
+    session.startExecuting();
+    session.beginRequerying("UNKNOWN_EXECUTION_OUTCOME");
+
+    session.cancel(
+        "PARTIAL_FILL_CANCEL",
+        BigDecimal.valueOf(3),
+        BigDecimal.valueOf(7),
+        BigDecimal.valueOf(72000),
+        "FEP-0004",
+        "CONFIRMED",
+        Instant.parse("2026-03-12T00:05:30Z"),
+        Instant.parse("2026-03-12T00:06:00Z")
+    );
+
+    assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.CANCELED);
+    assertThat(session.getFailureReason()).isNull();
+    assertThat(session.getExecutionResult()).isEqualTo("PARTIAL_FILL_CANCEL");
+    assertThat(session.getExecutedQty()).isEqualTo(BigDecimal.valueOf(3));
+    assertThat(session.getLeavesQty()).isEqualTo(BigDecimal.valueOf(7));
+    assertThat(session.getExecutedPrice()).isEqualTo(BigDecimal.valueOf(72000));
+    assertThat(session.getExternalOrderId()).isEqualTo("FEP-0004");
+    assertThat(session.getExternalSyncStatus()).isEqualTo("CONFIRMED");
+    assertThat(session.getExecutedAt()).isEqualTo(Instant.parse("2026-03-12T00:05:30Z"));
+    assertThat(session.getCanceledAt()).isEqualTo(Instant.parse("2026-03-12T00:06:00Z"));
+  }
 }

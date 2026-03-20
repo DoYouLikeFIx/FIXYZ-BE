@@ -36,4 +36,5 @@ jobs:
           ./gradlew --no-daemon --stacktrace \
             :core-common:test \
             :corebank-domain:test \
-            :corebank-service:test
+            :corebank-service:test \
+            :corebank-service:resilienceScenarioTest
