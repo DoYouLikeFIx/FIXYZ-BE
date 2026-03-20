@@ -5,14 +5,20 @@ import com.fix.corebank.repository.custom.OrderCustomRepository;
 import java.time.Instant;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import jakarta.persistence.LockModeType;
 
 public interface OrderRepository extends JpaRepository<Order, Long>, OrderCustomRepository {
   Optional<Order> findByClOrdId(String clOrdId);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select o from Order o where o.clOrdId = :clOrdId")
+  Optional<Order> findByClOrdIdForUpdate(@Param("clOrdId") String clOrdId);
 
   Page<Order> findByAccountId(Long accountId, Pageable pageable);
 

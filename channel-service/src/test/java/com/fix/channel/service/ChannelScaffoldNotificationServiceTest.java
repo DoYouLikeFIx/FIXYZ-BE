@@ -2,6 +2,9 @@ package com.fix.channel.service;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -12,7 +15,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.fix.channel.entity.Notification;
 import com.fix.channel.repository.NotificationRepository;
@@ -86,8 +93,65 @@ class ChannelScaffoldNotificationServiceTest {
         .isEqualTo(ErrorCode.CHANNEL_OWNERSHIP_MISMATCH);
   }
 
+  @Test
+  @SuppressWarnings("unchecked")
+  void shouldEmitTypedReplayEventToActiveEmitter() throws Exception {
+    CapturingEmitter emitter = new CapturingEmitter();
+    ConcurrentMap<Long, Set<SseEmitter>> emitters =
+        (ConcurrentMap<Long, Set<SseEmitter>>) ReflectionTestUtils.getField(channelScaffoldService, "notificationEmitters");
+    emitters.computeIfAbsent(500L, key -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(emitter);
+
+    Map<String, Object> payload = Map.of(
+        "type", "ORDER_FAILED",
+        "orderSessionId", "sess-500",
+        "clOrdId", "cl-500",
+        "symbol", "005930",
+        "side", "BUY",
+        "failureReason", "MANUAL_REJECT",
+        "timestamp", Instant.parse("2026-03-17T00:00:00Z")
+    );
+
+    channelScaffoldService.bootstrapTypedNotification(500L, "ORDER", "replay failed", "ORDER_FAILED", payload);
+
+    assertThat(notificationRepository.count()).isEqualTo(1);
+    assertThat(emitter.eventPrefix()).contains("id:");
+    assertThat(emitter.eventPrefix()).contains("event:ORDER_FAILED");
+    assertThat(emitter.eventPrefix()).contains("data:");
+    assertThat(emitter.payload()).isEqualTo(payload);
+    emitters.clear();
+  }
+
   private Notification savePending(Long memberId, String message) {
     return notificationRepository.save(Notification.pending(memberId, "ORDER", message));
+  }
+
+  private static final class CapturingEmitter extends SseEmitter {
+
+    private Set<ResponseBodyEmitter.DataWithMediaType> parts;
+
+    @Override
+    public void send(SseEventBuilder builder) {
+      this.parts = builder.build();
+    }
+
+    String eventPrefix() {
+      return parts.stream()
+          .map(ResponseBodyEmitter.DataWithMediaType::getData)
+          .filter(String.class::isInstance)
+          .map(String.class::cast)
+          .filter(value -> !value.isBlank())
+          .findFirst()
+          .orElse("");
+    }
+
+    Object payload() {
+      return parts.stream()
+          .filter(part -> part.getMediaType() == null || MediaType.APPLICATION_JSON.includes(part.getMediaType()))
+          .map(ResponseBodyEmitter.DataWithMediaType::getData)
+          .filter(data -> !(data instanceof String))
+          .findFirst()
+          .orElse(null);
+    }
   }
 
   @TestConfiguration
