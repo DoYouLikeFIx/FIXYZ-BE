@@ -61,7 +61,10 @@ public class OrderCustomRepositoryImpl implements OrderCustomRepository {
 
   private BooleanExpression remainingQuantityPositive() {
     return ORDER.leavesQty.isNotNull().and(ORDER.leavesQty.gt(BigDecimal.ZERO))
-        .or(ORDER.leavesQty.isNull().and(ORDER.orderQty.gt(BigDecimal.ZERO)));
+        .or(
+            ORDER.leavesQty.isNull()
+                .and(ORDER.orderQty.subtract(ORDER.executedQty.coalesce(BigDecimal.ZERO)).gt(BigDecimal.ZERO))
+        );
   }
 
   private OrderSpecifier<?>[] orderSpecifiersFor(String side) {

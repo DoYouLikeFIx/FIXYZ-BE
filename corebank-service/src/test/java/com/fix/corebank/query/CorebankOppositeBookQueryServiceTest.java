@@ -209,6 +209,37 @@ class CorebankOppositeBookQueryServiceTest {
   }
 
   @Test
+  void shouldExcludeExhaustedLegacyOrdersWhenLeavesQuantityIsMissing() {
+    Order active = persistRestingOrder(
+        "market-sell-active",
+        "SWEEP-LEGACY",
+        301L,
+        "SELL",
+        "ACCEPTED",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70000.0000"),
+        Instant.parse("2026-03-01T09:00:00Z")
+    );
+    persistExecutedWithoutLeavesQuantity(
+        "market-sell-exhausted",
+        "SWEEP-LEGACY",
+        302L,
+        "SELL",
+        new BigDecimal("3.0000"),
+        new BigDecimal("69950.0000"),
+        Instant.parse("2026-03-01T08:59:00Z")
+    );
+
+    List<CorebankOppositeBookQueryService.OppositeBookEntry> result =
+        oppositeBookQueryService.findSweepCandidates("SWEEP-LEGACY", "BUY");
+
+    assertThat(result).extracting(CorebankOppositeBookQueryService.OppositeBookEntry::orderId)
+        .containsExactly(active.getId());
+    assertThat(result).extracting(CorebankOppositeBookQueryService.OppositeBookEntry::clOrdId)
+        .containsExactly("market-sell-active");
+  }
+
+  @Test
   void shouldRejectUnsupportedAggressorSide() {
     assertThatThrownBy(() -> oppositeBookQueryService.findSweepCandidates("SWEEP-SELL", "HOLD"))
         .isInstanceOfSatisfying(BusinessException.class, ex -> {
@@ -251,6 +282,29 @@ class CorebankOppositeBookQueryServiceTest {
         "PARTIALLY_FILLED",
         executedQty,
         leavesQty,
+        price,
+        createdAt
+    );
+    Order saved = orderRepository.saveAndFlush(order);
+    updateOrderTimestamps(saved.getId(), createdAt);
+    return orderRepository.findById(saved.getId()).orElseThrow();
+  }
+
+  private Order persistExecutedWithoutLeavesQuantity(
+      String clOrdId,
+      String symbol,
+      Long accountId,
+      String side,
+      BigDecimal quantity,
+      BigDecimal price,
+      Instant createdAt
+  ) {
+    Order order = Order.accepted(accountId, clOrdId, symbol, side, "LIMIT", quantity, price, null, null, null, null);
+    order.updateStatus("PARTIALLY_FILLED");
+    order.updateExecutionSummary(
+        "PARTIALLY_FILLED",
+        quantity,
+        null,
         price,
         createdAt
     );
