@@ -67,6 +67,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.CannotAcquireLockException;
@@ -1202,13 +1203,9 @@ class CorebankOrderServiceTest {
   @Test
   void shouldRejectMarketOrderWhenOppositeBookIsEmpty() {
     Account account = persistedAccount();
-    Position takerPosition = Position.of(ACCOUNT_ID, "005930", BigDecimal.ZERO.setScale(4), BigDecimal.ZERO.setScale(4));
 
     when(orderRepository.findByClOrdId(MARKET_NO_LIQUIDITY_CL_ORD_ID)).thenReturn(Optional.empty());
     when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
-    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(takerPosition));
-    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
-        .thenReturn(BigDecimal.ZERO);
     when(orderRepository.findRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
         .thenReturn(List.of());
 
@@ -1361,6 +1358,124 @@ class CorebankOrderServiceTest {
     assertThat(makerTwoOrder.getExecutedPrice()).isEqualByComparingTo("70100.0000");
     assertThat(fepClient.lastSubmitPayload()).isNotNull();
     assertThat(fepClient.lastSubmitPayload().orderType()).isEqualTo(com.fix.common.fep.FepOrderType.MARKET);
+  }
+
+  @Test
+  void shouldLockMarketParticipantsInDeterministicAccountAndPositionOrder() {
+    Account takerAccount = persistedAccount();
+    Position takerPosition = Position.of(ACCOUNT_ID, "005930", BigDecimal.ZERO.setScale(4), BigDecimal.ZERO.setScale(4));
+    Account makerHighAccount = withId(
+        Account.of("ACC-3002", 3002L, "ACTIVE", "KRW", new BigDecimal("1000000.0000"), new BigDecimal("500.0000")),
+        3002L
+    );
+    Account makerLowAccount = withId(
+        Account.of("ACC-1000", 1000L, "ACTIVE", "KRW", new BigDecimal("1000000.0000"), new BigDecimal("500.0000")),
+        1000L
+    );
+    Position makerHighPosition = Position.of(3002L, "005930", new BigDecimal("2.0000"), new BigDecimal("68000.0000"));
+    Position makerLowPosition = Position.of(1000L, "005930", new BigDecimal("2.0000"), new BigDecimal("69000.0000"));
+    Order makerHighOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            3002L,
+            "maker-sell-3002",
+            "005930",
+            "SELL",
+            "LIMIT",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70000.0000"),
+            null,
+            null,
+            null,
+            null
+        ),
+        9302L
+    ), Instant.parse("2026-03-01T09:59:00Z"));
+    Order makerLowOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            1000L,
+            "maker-sell-1000",
+            "005930",
+            "SELL",
+            "LIMIT",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000"),
+            null,
+            null,
+            null,
+            null
+        ),
+        9100L
+    ), Instant.parse("2026-03-01T10:00:00Z"));
+    Order[] savedOrderRef = new Order[1];
+    Map<Long, Account> lockedAccounts = Map.of(
+        ACCOUNT_ID, takerAccount,
+        1000L, makerLowAccount,
+        3002L, makerHighAccount
+    );
+    Map<Long, Position> lockedPositions = Map.of(
+        ACCOUNT_ID, takerPosition,
+        1000L, makerLowPosition,
+        3002L, makerHighPosition
+    );
+    when(orderRepository.findByClOrdId(MARKET_SWEEP_CL_ORD_ID)).thenAnswer(invocation -> Optional.ofNullable(savedOrderRef[0]));
+    when(accountRepository.findById(anyLong())).thenAnswer(invocation -> Optional.ofNullable(lockedAccounts.get(invocation.getArgument(0))));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(anyLong(), eq("005930")))
+        .thenAnswer(invocation -> Optional.ofNullable(lockedPositions.get(invocation.getArgument(0))));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+    when(orderRepository.findRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+        .thenReturn(List.of(makerHighOrder, makerLowOrder));
+    when(orderRepository.saveAndFlush(any(Order.class)))
+        .thenAnswer(invocation -> {
+          Order persisted = persistedOrder(invocation.getArgument(0), 9310L);
+          savedOrderRef[0] = persisted;
+          return persisted;
+        });
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7310L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8310L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        MARKET_SWEEP_CL_ORD_ID,
+        "FEP-KRX-" + MARKET_SWEEP_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        3L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
+        null,
+        null
+    ));
+
+    corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        MARKET_SWEEP_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null,
+        "qsnap-market-sweep-1",
+        Instant.parse("2026-03-01T10:01:59Z"),
+        FepQuoteSourceMode.LIVE,
+        new BigDecimal("72050.0000")
+    ));
+
+    InOrder accountLockInOrder = org.mockito.Mockito.inOrder(accountRepository);
+    accountLockInOrder.verify(accountRepository).findByIdForUpdate(1000L);
+    accountLockInOrder.verify(accountRepository).findByIdForUpdate(ACCOUNT_ID);
+    accountLockInOrder.verify(accountRepository).findByIdForUpdate(3002L);
+
+    InOrder positionLockInOrder = org.mockito.Mockito.inOrder(positionRepository);
+    positionLockInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(1000L, "005930");
+    positionLockInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930");
+    positionLockInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(3002L, "005930");
   }
 
   @Test
