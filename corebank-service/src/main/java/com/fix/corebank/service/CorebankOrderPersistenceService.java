@@ -133,6 +133,7 @@ public class CorebankOrderPersistenceService {
     }
 
     String side = normalizeSide(command.getSide());
+    String orderType = normalizeOrderType(command.getOrderType());
     long waitStartedAtNanos = System.nanoTime();
     Position position;
     try {
@@ -177,13 +178,21 @@ public class CorebankOrderPersistenceService {
       }
     }
 
+    BigDecimal orderPrice = resolveOrderPrice(orderType, command);
+    BigDecimal referencePrice = resolveReferencePrice(orderType, command);
+
     Order candidateOrder = Order.accepted(
         command.getAccountId(),
         command.getClOrdId(),
         command.getSymbol(),
         side,
+        orderType,
         command.getQuantity(),
-        command.getPrice()
+        orderPrice,
+        command.getPreTradePrice(),
+        command.getQuoteSnapshotId(),
+        command.getQuoteAsOf(),
+        command.getQuoteSourceMode()
     );
     Order savedOrder = orderRepository.saveAndFlush(candidateOrder);
     if (savedOrder == null) {
@@ -192,7 +201,7 @@ public class CorebankOrderPersistenceService {
 
     Instant executedAt = Instant.now();
     BigDecimal executedQty = normalizeMoney(command.getQuantity());
-    BigDecimal executedPrice = normalizeMoney(command.getPrice());
+    BigDecimal executedPrice = normalizeMoney(referencePrice);
     BigDecimal leavesQty = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     BigDecimal grossAmount = calculateGrossAmount(executedQty, executedPrice);
 
@@ -204,6 +213,9 @@ public class CorebankOrderPersistenceService {
         savedOrder.getSide(),
         executedQty,
         executedPrice,
+        savedOrder.getQuoteSnapshotId(),
+        savedOrder.getQuoteAsOf(),
+        savedOrder.getQuoteSourceMode(),
         executedAt
     ));
 
@@ -439,6 +451,21 @@ public class CorebankOrderPersistenceService {
     return position.getQty();
   }
 
+  private String normalizeOrderType(String rawOrderType) {
+    if (rawOrderType == null || rawOrderType.isBlank()) {
+      return "LIMIT";
+    }
+    return rawOrderType.trim().toUpperCase(Locale.ROOT);
+  }
+
+  private BigDecimal resolveOrderPrice(String orderType, InternalOrderCreateCommand command) {
+    return "MARKET".equals(orderType) ? null : command.getPrice();
+  }
+
+  private BigDecimal resolveReferencePrice(String orderType, InternalOrderCreateCommand command) {
+    return "MARKET".equals(orderType) ? command.getPreTradePrice() : command.getPrice();
+  }
+
   private String normalizeSide(String side) {
     if (side == null) {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "side is required");
@@ -491,8 +518,13 @@ public class CorebankOrderPersistenceService {
       String clOrdId,
       String symbol,
       String side,
+      String orderType,
       BigDecimal orderQty,
       BigDecimal orderPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      com.fix.common.fep.FepQuoteSourceMode quoteSourceMode,
+      BigDecimal preTradePrice,
       String status
   ) {
     private static PendingOrderSubmission from(Order order, Account account) {
@@ -504,8 +536,13 @@ public class CorebankOrderPersistenceService {
           order.getClOrdId(),
           order.getSymbol(),
           order.getSide(),
+          order.getOrderType(),
           order.getOrderQty(),
           order.getOrderPrice(),
+          order.getQuoteSnapshotId(),
+          order.getQuoteAsOf(),
+          order.getQuoteSourceMode(),
+          order.getPreTradePrice(),
           order.getStatus()
       );
       }
@@ -537,9 +574,14 @@ public class CorebankOrderPersistenceService {
       String clOrdId,
       String symbol,
       String side,
+      String orderType,
       String status,
       BigDecimal orderQty,
       BigDecimal orderPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      com.fix.common.fep.FepQuoteSourceMode quoteSourceMode,
+      BigDecimal preTradePrice,
       String externalSyncStatus,
       String fepReferenceId,
       String failureReason,
@@ -557,9 +599,14 @@ public class CorebankOrderPersistenceService {
           order.getClOrdId(),
           order.getSymbol(),
           order.getSide(),
+          order.getOrderType(),
           order.getStatus(),
           order.getOrderQty(),
           order.getOrderPrice(),
+          order.getQuoteSnapshotId(),
+          order.getQuoteAsOf(),
+          order.getQuoteSourceMode(),
+          order.getPreTradePrice(),
           order.getExternalSyncStatus(),
           order.getFepReferenceId(),
           order.getFailureReason(),

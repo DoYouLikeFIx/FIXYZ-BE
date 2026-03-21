@@ -47,6 +47,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -486,8 +487,13 @@ public class CorebankOrderService {
   ) {
     if (!existingOrder.symbol().equals(command.getSymbol())
         || !existingOrder.side().equals(normalizeSide(command.getSide()))
+        || !normalizeOrderType(existingOrder.orderType()).equals(normalizeOrderType(command.getOrderType()))
         || compareNumeric(existingOrder.orderQty(), command.getQuantity()) != 0
-        || compareNumeric(existingOrder.orderPrice(), command.getPrice()) != 0) {
+        || compareNumeric(existingOrder.orderPrice(), command.getPrice()) != 0
+        || compareNumeric(existingOrder.preTradePrice(), command.getPreTradePrice()) != 0
+        || !Objects.equals(existingOrder.quoteSnapshotId(), command.getQuoteSnapshotId())
+        || !Objects.equals(existingOrder.quoteAsOf(), command.getQuoteAsOf())
+        || !Objects.equals(existingOrder.quoteSourceMode(), command.getQuoteSourceMode())) {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "clOrdId replay payload mismatch");
     }
   }
@@ -688,13 +694,13 @@ public class CorebankOrderService {
         pendingOrder.symbol(),
         FepSecurityExchange.KRX,
         FepSide.valueOf(pendingOrder.side()),
-        FepOrderType.LIMIT,
+        FepOrderType.valueOf(pendingOrder.orderType()),
         pendingOrder.orderQty().longValueExact(),
-        pendingOrder.orderPrice().longValueExact(),
-        null,
-        null,
-        null,
-        null,
+        pendingOrder.orderPrice() == null ? null : pendingOrder.orderPrice().longValueExact(),
+        pendingOrder.quoteSnapshotId(),
+        pendingOrder.quoteAsOf(),
+        pendingOrder.quoteSourceMode(),
+        pendingOrder.preTradePrice() == null ? null : pendingOrder.preTradePrice().longValueExact(),
         pendingOrder.currency(),
         pendingOrder.clOrdId()
     );
@@ -759,6 +765,13 @@ public class CorebankOrderService {
       return null;
     }
     return side.trim().toUpperCase(java.util.Locale.ROOT);
+  }
+
+  private String normalizeOrderType(String orderType) {
+    if (orderType == null || orderType.isBlank()) {
+      return FepOrderType.LIMIT.name();
+    }
+    return orderType.trim().toUpperCase(java.util.Locale.ROOT);
   }
 
   private String failureReason(BusinessException ex) {

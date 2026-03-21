@@ -87,6 +87,7 @@ class CorebankOrderServiceTest {
   private static final String IDEMPOTENT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174220";
   private static final String REQUERY_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174221";
   private static final String PAYLOAD_BOUND_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174222";
+  private static final String MARKET_PAYLOAD_BOUND_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174223";
 
   @Mock
   private AccountRepository accountRepository;
@@ -1086,6 +1087,118 @@ class CorebankOrderServiceTest {
     assertThat(fepClient.lastSubmitPayload().referenceId()).isEqualTo(PAYLOAD_BOUND_CL_ORD_ID);
     assertThat(savedOrder.getFepReferenceId()).isEqualTo("FEP-KRX-" + PAYLOAD_BOUND_CL_ORD_ID);
     assertThat(savedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
+  }
+
+  @Test
+  void shouldForwardMarketQuoteContextToGatewayPayload() {
+    Account account = persistedAccount();
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
+    Instant quoteAsOf = Instant.parse("2026-03-01T10:01:59Z");
+    BigDecimal preTradePrice = new BigDecimal("72050.0000");
+    Order[] savedOrderRef = new Order[1];
+
+    when(orderRepository.findByClOrdId(MARKET_PAYLOAD_BOUND_CL_ORD_ID))
+        .thenAnswer(invocation -> Optional.ofNullable(savedOrderRef[0]));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
+        .thenReturn(BigDecimal.ZERO);
+    when(orderRepository.saveAndFlush(any(Order.class)))
+        .thenAnswer(invocation -> {
+          Order persisted = persistedOrder(invocation.getArgument(0), 9015L);
+          savedOrderRef[0] = persisted;
+          return persisted;
+        });
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7015L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8015L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        MARKET_PAYLOAD_BOUND_CL_ORD_ID,
+        "FEP-KRX-" + MARKET_PAYLOAD_BOUND_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        3L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
+        null,
+        null
+    ));
+
+    corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        MARKET_PAYLOAD_BOUND_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null,
+        "qsnap-market-1",
+        quoteAsOf,
+        FepQuoteSourceMode.LIVE,
+        preTradePrice
+    ));
+
+    assertThat(savedOrderRef[0]).isNotNull();
+    assertThat(savedOrderRef[0].getOrderType()).isEqualTo("MARKET");
+    assertThat(savedOrderRef[0].getOrderPrice()).isNull();
+    assertThat(savedOrderRef[0].getQuoteSnapshotId()).isEqualTo("qsnap-market-1");
+    assertThat(savedOrderRef[0].getQuoteAsOf()).isEqualTo(quoteAsOf);
+    assertThat(savedOrderRef[0].getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(savedOrderRef[0].getPreTradePrice()).isEqualByComparingTo(preTradePrice);
+    assertThat(fepClient.lastSubmitPayload()).isNotNull();
+    assertThat(fepClient.lastSubmitPayload().orderType()).isEqualTo(com.fix.common.fep.FepOrderType.MARKET);
+    assertThat(fepClient.lastSubmitPayload().price()).isNull();
+    assertThat(fepClient.lastSubmitPayload().quoteSnapshotId()).isEqualTo("qsnap-market-1");
+    assertThat(fepClient.lastSubmitPayload().quoteAsOf()).isEqualTo(quoteAsOf);
+    assertThat(fepClient.lastSubmitPayload().quoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(fepClient.lastSubmitPayload().preTradePrice()).isEqualTo(72050L);
+  }
+
+  @Test
+  void shouldRejectIdempotentReplayWhenMarketQuoteContextDiffers() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            IDEMPOTENT_CL_ORD_ID,
+            "005930",
+            "BUY",
+            "MARKET",
+            new BigDecimal("3.0000"),
+            null,
+            new BigDecimal("72050.0000"),
+            "qsnap-market-1",
+            Instant.parse("2026-03-01T10:01:59Z"),
+            FepQuoteSourceMode.LIVE
+        ),
+        9016L
+    );
+
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null,
+        "qsnap-market-2",
+        Instant.parse("2026-03-01T10:01:59Z"),
+        FepQuoteSourceMode.LIVE,
+        new BigDecimal("72050.0000")
+    )))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST);
+          assertThat(ex.getMessage()).contains("clOrdId replay payload mismatch");
+        });
   }
 
   @Test
