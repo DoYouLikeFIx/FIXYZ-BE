@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -144,6 +145,37 @@ class ReplayMarketDataAdapterTest {
   }
 
   @Test
+  void shouldStopQueuedReplayEmissionsAfterPauseDuringDrain() {
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    FakeReplayCursorPersistencePort cursorPersistencePort = new FakeReplayCursorPersistencePort();
+    ReplayMarketDataAdapter adapter = new ReplayMarketDataAdapter(
+        replayProperties(),
+        persistencePort,
+        cursorPersistencePort,
+        new ReplayQuoteEventGenerator()
+    );
+    AtomicBoolean paused = new AtomicBoolean(false);
+
+    adapter.startTimeline(new ReplayCursorSpec(
+        "timeline-005930",
+        "seed-1",
+        "005930",
+        0L,
+        new BigDecimal("3.0000")
+    ));
+    persistencePort.onPersist(event -> {
+      if (paused.compareAndSet(false, true)) {
+        adapter.pauseTimeline("timeline-005930");
+      }
+    });
+
+    adapter.drainReplayEvents();
+
+    assertThat(adapter.getTimelineStatus("timeline-005930").status()).isEqualTo("PAUSED");
+    assertThat(persistencePort.persistedEvents()).hasSize(1);
+  }
+
+  @Test
   void shouldDropReplayTimelineWhenCursorDisappears() {
     RecordingPersistencePort persistencePort = new RecordingPersistencePort();
     FakeReplayCursorPersistencePort cursorPersistencePort = new FakeReplayCursorPersistencePort();
@@ -219,6 +251,7 @@ class ReplayMarketDataAdapterTest {
     private final List<MarketDataSubscriptionSpec> activatedSubscriptions = new ArrayList<>();
     private final List<MarketDataSubscriptionSpec> deactivatedSubscriptions = new ArrayList<>();
     private final List<NormalizedQuoteEvent> persistedEvents = new ArrayList<>();
+    private java.util.function.Consumer<NormalizedQuoteEvent> persistHook;
 
     @Override
     public void activateSubscription(MarketDataSubscriptionSpec subscriptionSpec) {
@@ -233,6 +266,9 @@ class ReplayMarketDataAdapterTest {
     @Override
     public void persistSnapshot(MarketDataSubscriptionSpec subscriptionSpec, NormalizedQuoteEvent event) {
       persistedEvents.add(event);
+      if (persistHook != null) {
+        persistHook.accept(event);
+      }
     }
 
     private List<MarketDataSubscriptionSpec> activatedSubscriptions() {
@@ -245,6 +281,10 @@ class ReplayMarketDataAdapterTest {
 
     private List<MarketDataSubscriptionSpec> deactivatedSubscriptions() {
       return deactivatedSubscriptions;
+    }
+
+    private void onPersist(java.util.function.Consumer<NormalizedQuoteEvent> persistHook) {
+      this.persistHook = persistHook;
     }
   }
 
