@@ -154,6 +154,31 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
     return getTimelineStatus(replayId);
   }
 
+  public synchronized ReplayTimelineStatus rehydrateTimeline(ReplayCursorSpec replayCursorSpec, String persistedStatus) {
+    MarketDataSubscriptionSpec subscriptionSpec = new MarketDataSubscriptionSpec(
+        timelineSubscriptionId(replayCursorSpec.replayId()),
+        provider(),
+        replayCursorSpec.symbol(),
+        sourceMode(),
+        "REPLAY",
+        replayCursorSpec.symbol()
+    );
+    boolean requiresActivation = registerActiveSubscription(subscriptionSpec, replayCursorSpec.replayId(), event -> {
+    });
+    ReplayStreamState streamState = new ReplayStreamState(subscriptionSpec, replayCursorSpec);
+    if ("PAUSED".equals(persistedStatus)) {
+      streamState.pause();
+    } else {
+      streamState.resume();
+    }
+    replayStreams.put(replayCursorSpec.replayId(), streamState);
+    if (requiresActivation) {
+      marketDataPersistencePort.activateSubscription(subscriptionSpec);
+    }
+    refreshMetrics();
+    return getTimelineStatus(replayCursorSpec.replayId());
+  }
+
   public synchronized ReplayTimelineStatus getTimelineStatus(String replayId) {
     ReplayStreamState streamState = replayStreams.get(replayId);
     if (streamState == null) {
