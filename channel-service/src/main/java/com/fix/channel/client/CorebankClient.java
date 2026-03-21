@@ -508,8 +508,25 @@ public class CorebankClient {
     formData.add("clOrdId", command.getClOrdId());
     formData.add("symbol", command.getSymbol());
     formData.add("side", command.getSide());
+    if (command.getOrderType() != null && !command.getOrderType().isBlank()) {
+      formData.add("orderType", command.getOrderType());
+    }
     formData.add("quantity", command.getQuantity().toPlainString());
-    formData.add("price", command.getPrice().toPlainString());
+    if (command.getPrice() != null) {
+      formData.add("price", command.getPrice().toPlainString());
+    }
+    if (command.getQuoteSnapshotId() != null && !command.getQuoteSnapshotId().isBlank()) {
+      formData.add("quoteSnapshotId", command.getQuoteSnapshotId());
+    }
+    if (command.getQuoteAsOf() != null) {
+      formData.add("quoteAsOf", command.getQuoteAsOf().toString());
+    }
+    if (command.getQuoteSourceMode() != null) {
+      formData.add("quoteSourceMode", command.getQuoteSourceMode().name());
+    }
+    if (command.getPreTradePrice() != null) {
+      formData.add("preTradePrice", command.getPreTradePrice().toPlainString());
+    }
     return formData;
   }
 

@@ -22,6 +22,8 @@ import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.AdminOrderReplayCommand;
 import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryResult;
+import com.fix.channel.vo.OrderExecuteCommand;
+import com.fix.channel.vo.OrderExecuteResult;
 import com.fix.channel.vo.OrderReplayResult;
 import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
@@ -97,6 +99,62 @@ class CorebankClientTest {
         .isInstanceOf(BusinessException.class)
         .extracting(ex -> ((BusinessException) ex).getErrorCode())
         .isEqualTo(ErrorCode.CORE_DEPENDENCY_UNAVAILABLE);
+  }
+
+  @Test
+  void shouldForwardMarketExecutionPayloadWithoutPrice() {
+    wireMockServer.stubFor(post(urlPathEqualTo("/internal/v1/orders"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "orderId": 91,
+                    "clOrdId": "123e4567-e89b-42d3-a456-426614174302",
+                    "status": "PENDING",
+                    "idempotent": false,
+                    "orderQuantity": 10.0000,
+                    "executionResult": "FILLED",
+                    "executedQty": 10.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": 72100.0000,
+                    "externalOrderId": "FEP-302",
+                    "externalSyncStatus": "CONFIRMED",
+                    "executedAt": "2026-03-21T00:00:01Z"
+                  }
+                }
+                """)));
+
+    OrderExecuteResult result = corebankClient.executeOrder(
+        OrderExecuteCommand.of(
+            ACCOUNT_ID,
+            "123e4567-e89b-42d3-a456-426614174302",
+            SYMBOL,
+            "BUY",
+            "MARKET",
+            java.math.BigDecimal.TEN,
+            null,
+            "qsnap-20260321-0002",
+            Instant.parse("2026-03-21T00:00:00Z"),
+            FepQuoteSourceMode.LIVE,
+            java.math.BigDecimal.valueOf(72100)
+        ),
+        "trace-market-302"
+    );
+
+    assertThat(result.getOrderId()).isEqualTo(91L);
+    assertThat(result.getExecutedPrice()).isEqualByComparingTo("72100.0000");
+
+    wireMockServer.verify(postRequestedFor(urlPathEqualTo("/internal/v1/orders"))
+        .withHeader("X-Internal-Secret", equalTo("test-secret"))
+        .withHeader("X-Correlation-Id", equalTo("trace-market-302"))
+        .withRequestBody(matching(".*orderType=MARKET.*"))
+        .withRequestBody(matching(".*quoteSnapshotId=qsnap-20260321-0002.*"))
+        .withRequestBody(matching(".*quoteAsOf=2026-03-21T00%3A00%3A00Z.*"))
+        .withRequestBody(matching(".*quoteSourceMode=LIVE.*"))
+        .withRequestBody(matching(".*preTradePrice=72100.*")));
   }
 
   @Test
