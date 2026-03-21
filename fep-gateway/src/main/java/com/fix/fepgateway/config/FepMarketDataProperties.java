@@ -170,6 +170,7 @@ public class FepMarketDataProperties {
   public static class Ws {
     private String trId = "H0STCNT0";
     private String custtype = "P";
+    private int reconnectGapFillCount = 2;
     private List<String> symbols = new ArrayList<>(List.of("005930"));
 
     public String getTrId() {
@@ -186,6 +187,14 @@ public class FepMarketDataProperties {
 
     public void setCusttype(String custtype) {
       this.custtype = custtype;
+    }
+
+    public int getReconnectGapFillCount() {
+      return reconnectGapFillCount;
+    }
+
+    public void setReconnectGapFillCount(int reconnectGapFillCount) {
+      this.reconnectGapFillCount = reconnectGapFillCount;
     }
 
     public List<String> getSymbols() {

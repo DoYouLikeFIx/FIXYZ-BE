@@ -76,6 +76,100 @@ class ReplayMarketDataAdapterTest {
     assertThat(first).containsExactlyElementsOf(second);
   }
 
+  @Test
+  void shouldRestartTimelineFromRequestedOffsetWithResetStatus() {
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    FakeReplayCursorPersistencePort cursorPersistencePort = new FakeReplayCursorPersistencePort();
+    ReplayMarketDataAdapter adapter = new ReplayMarketDataAdapter(
+        replayProperties(),
+        persistencePort,
+        cursorPersistencePort,
+        new ReplayQuoteEventGenerator()
+    );
+
+    adapter.startTimeline(new ReplayCursorSpec(
+        "timeline-005930",
+        "seed-1",
+        "005930",
+        5L,
+        new BigDecimal("1.0000")
+    ));
+    adapter.drainReplayEvents();
+
+    ReplayTimelineStatus reset = adapter.startTimeline(new ReplayCursorSpec(
+        "timeline-005930",
+        "seed-1",
+        "005930",
+        2L,
+        new BigDecimal("1.2500")
+    ));
+
+    assertThat(reset.cursorOffset()).isEqualTo(2L);
+    assertThat(reset.speedFactor()).isEqualByComparingTo("1.2500");
+    assertThat(reset.emittedCount()).isZero();
+    assertThat(reset.sequenceHash())
+        .isEqualTo("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  }
+
+  @Test
+  void shouldPauseAndResumeWithoutLosingFractionalEmissionCredit() {
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    FakeReplayCursorPersistencePort cursorPersistencePort = new FakeReplayCursorPersistencePort();
+    FepMarketDataProperties properties = replayProperties();
+    properties.getReplay().setSpeedFactor(new BigDecimal("1.5000"));
+    ReplayMarketDataAdapter adapter = new ReplayMarketDataAdapter(
+        properties,
+        persistencePort,
+        cursorPersistencePort,
+        new ReplayQuoteEventGenerator()
+    );
+
+    adapter.startTimeline(new ReplayCursorSpec(
+        "timeline-005930",
+        "seed-1",
+        "005930",
+        0L,
+        new BigDecimal("1.5000")
+    ));
+    adapter.drainReplayEvents();
+
+    ReplayTimelineStatus paused = adapter.pauseTimeline("timeline-005930");
+    adapter.drainReplayEvents();
+    ReplayTimelineStatus resumed = adapter.resumeTimeline("timeline-005930");
+    adapter.drainReplayEvents();
+
+    assertThat(paused.status()).isEqualTo("PAUSED");
+    assertThat(resumed.status()).isEqualTo("RUNNING");
+    assertThat(persistencePort.persistedEvents()).hasSize(3);
+  }
+
+  @Test
+  void shouldDropReplayTimelineWhenCursorDisappears() {
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    FakeReplayCursorPersistencePort cursorPersistencePort = new FakeReplayCursorPersistencePort();
+    ReplayMarketDataAdapter adapter = new ReplayMarketDataAdapter(
+        replayProperties(),
+        persistencePort,
+        cursorPersistencePort,
+        new ReplayQuoteEventGenerator()
+    );
+
+    adapter.startTimeline(new ReplayCursorSpec(
+        "timeline-005930",
+        "seed-1",
+        "005930",
+        0L,
+        new BigDecimal("1.0000")
+    ));
+    cursorPersistencePort.drop("timeline-005930");
+
+    adapter.drainReplayEvents();
+
+    assertThat(adapter.getTimelineStatus("timeline-005930")).isNull();
+    assertThat(persistencePort.deactivatedSubscriptions()).hasSize(1);
+    assertThat(persistencePort.persistedEvents()).isEmpty();
+  }
+
   private List<String> emittedSnapshotIds() {
     RecordingPersistencePort persistencePort = new RecordingPersistencePort();
     ReplayMarketDataAdapter adapter = new ReplayMarketDataAdapter(
@@ -148,6 +242,10 @@ class ReplayMarketDataAdapterTest {
     private List<NormalizedQuoteEvent> persistedEvents() {
       return persistedEvents;
     }
+
+    private List<MarketDataSubscriptionSpec> deactivatedSubscriptions() {
+      return deactivatedSubscriptions;
+    }
   }
 
   private static final class FakeReplayCursorPersistencePort implements ReplayCursorPersistencePort {
@@ -163,8 +261,18 @@ class ReplayMarketDataAdapterTest {
     }
 
     @Override
+    public ReplayCursorSpec reset(ReplayCursorSpec replayCursorSpec) {
+      cursors.put(replayCursorSpec.replayId(), replayCursorSpec);
+      lastReplayId = replayCursorSpec.replayId();
+      return replayCursorSpec;
+    }
+
+    @Override
     public ReplayCursorSpec advance(String replayId, long nextCursorOffset) {
       ReplayCursorSpec current = cursors.get(replayId);
+      if (current == null) {
+        throw new IllegalStateException("Replay cursor not found: " + replayId);
+      }
       ReplayCursorSpec advanced = new ReplayCursorSpec(
           current.replayId(),
           current.seed(),
@@ -175,6 +283,16 @@ class ReplayMarketDataAdapterTest {
       cursors.put(replayId, advanced);
       lastReplayId = replayId;
       return advanced;
+    }
+
+    @Override
+    public void pause(String replayId) {
+      lastReplayId = replayId;
+    }
+
+    @Override
+    public void resume(String replayId) {
+      lastReplayId = replayId;
     }
 
     @Override
@@ -189,6 +307,10 @@ class ReplayMarketDataAdapterTest {
 
     private java.util.Optional<ReplayCursorSpec> findByReplayId(String replayId) {
       return find(replayId);
+    }
+
+    private void drop(String replayId) {
+      cursors.remove(replayId);
     }
 
     private String lastReplayId() {
