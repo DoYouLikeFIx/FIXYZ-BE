@@ -154,6 +154,31 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
     return getTimelineStatus(replayId);
   }
 
+  public synchronized ReplayTimelineStatus rehydrateTimeline(ReplayCursorSpec replayCursorSpec, String persistedStatus) {
+    MarketDataSubscriptionSpec subscriptionSpec = new MarketDataSubscriptionSpec(
+        timelineSubscriptionId(replayCursorSpec.replayId()),
+        provider(),
+        replayCursorSpec.symbol(),
+        sourceMode(),
+        "REPLAY",
+        replayCursorSpec.symbol()
+    );
+    boolean requiresActivation = registerActiveSubscription(subscriptionSpec, replayCursorSpec.replayId(), event -> {
+    });
+    ReplayStreamState streamState = new ReplayStreamState(subscriptionSpec, replayCursorSpec);
+    if ("PAUSED".equals(persistedStatus)) {
+      streamState.pause();
+    } else {
+      streamState.resume();
+    }
+    replayStreams.put(replayCursorSpec.replayId(), streamState);
+    if (requiresActivation) {
+      marketDataPersistencePort.activateSubscription(subscriptionSpec);
+    }
+    refreshMetrics();
+    return getTimelineStatus(replayCursorSpec.replayId());
+  }
+
   public synchronized ReplayTimelineStatus getTimelineStatus(String replayId) {
     ReplayStreamState streamState = replayStreams.get(replayId);
     if (streamState == null) {
@@ -241,8 +266,12 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
     }
 
     for (EmissionBatch emissionBatch : emissionBatches) {
-      for (int emissionIndex = 0; emissionIndex < emissionBatch.emissionCount(); emissionIndex++) {
-        emitNextReplayEvent(emissionBatch.replayId(), emissionBatch.representativeSpec());
+      int emittedCount = 0;
+      for (; emittedCount < emissionBatch.emissionCount(); emittedCount++) {
+        if (!emitNextReplayEvent(emissionBatch.replayId(), emissionBatch.representativeSpec())) {
+          restoreQueuedEmissions(emissionBatch.replayId(), emissionBatch.emissionCount() - emittedCount);
+          break;
+        }
       }
     }
   }
@@ -258,14 +287,17 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
     refreshMetrics();
   }
 
-  private void emitNextReplayEvent(String replayId, MarketDataSubscriptionSpec representativeSpec) {
+  private synchronized boolean emitNextReplayEvent(String replayId, MarketDataSubscriptionSpec representativeSpec) {
     ReplayStreamState streamState = replayStreams.get(replayId);
     if (streamState == null) {
-      return;
+      return false;
+    }
+    if (!streamState.isRunning()) {
+      return false;
     }
     if (replayCursorPersistencePort.find(replayId).isEmpty()) {
       removeOrphanedReplayStream(replayId, representativeSpec);
-      return;
+      return false;
     }
 
     try {
@@ -275,18 +307,29 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
       marketDataPersistencePort.persistSnapshot(representativeSpec, event);
       dispatchToSinks(replayId, event);
       ReplayCursorSpec advancedCursor = replayCursorPersistencePort.advance(replayId, currentCursor.cursorOffset() + 1);
-      synchronized (this) {
-        ReplayStreamState state = replayStreams.get(replayId);
-        if (state != null) {
-          state.recordEmission(snapshotId);
-          state.cursorSpec = advancedCursor;
-        }
+      ReplayStreamState state = replayStreams.get(replayId);
+      if (state != null) {
+        state.recordEmission(snapshotId);
+        state.cursorSpec = advancedCursor;
       }
+      return true;
     } catch (IllegalStateException exception) {
       removeOrphanedReplayStream(replayId, representativeSpec);
       log.info("Dropped replay market-data timeline after cursor disappeared. replayId={}", replayId);
+      return false;
     } catch (RuntimeException exception) {
       log.warn("Failed to emit replay market-data event. replayId={}", replayId, exception);
+      return false;
+    }
+  }
+
+  private synchronized void restoreQueuedEmissions(String replayId, int emissionCount) {
+    if (emissionCount <= 0) {
+      return;
+    }
+    ReplayStreamState streamState = replayStreams.get(replayId);
+    if (streamState != null) {
+      streamState.restoreEmissionCount(emissionCount);
     }
   }
 
@@ -409,6 +452,10 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
       return emissionCount;
     }
 
+    private void restoreEmissionCount(int emissionCount) {
+      emissionCredit = emissionCredit.add(BigDecimal.valueOf(emissionCount));
+    }
+
     private ReplayCursorSpec cursorSpec() {
       return cursorSpec;
     }
@@ -427,6 +474,10 @@ public class ReplayMarketDataAdapter implements MarketDataSourceAdapter, Disposa
 
     private String status() {
       return status;
+    }
+
+    private boolean isRunning() {
+      return "RUNNING".equals(status);
     }
 
     private void pause() {

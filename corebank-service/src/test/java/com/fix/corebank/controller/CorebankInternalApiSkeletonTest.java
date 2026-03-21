@@ -743,6 +743,57 @@ class CorebankInternalApiSkeletonTest {
   }
 
   @Test
+  void shouldRejectMarketOrderWhenQuoteContextIsMissing() throws Exception {
+    mockMvc.perform(post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("accountId", "1")
+            .param("clOrdId", CORE_CL_ORD_ID_2)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("orderType", "MARKET")
+            .param("quantity", "2.0000"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+
+    org.assertj.core.api.Assertions.assertThat(corebankOrderService.createOrderCalls()).isZero();
+  }
+
+  @Test
+  void shouldAcceptMarketOrderRequestWithQuoteContext() throws Exception {
+    corebankOrderService.setCreateOrderResult(InternalOrderResult.execution(
+        77L,
+        CORE_CL_ORD_ID_2,
+        "PENDING",
+        "CONFIRMED",
+        false,
+        BigDecimal.valueOf(2),
+        "FILLED",
+        BigDecimal.valueOf(2),
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(70100),
+        "FEP-77",
+        Instant.parse("2026-03-21T00:00:01Z")
+    ));
+
+    mockMvc.perform(post("/internal/v1/orders")
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .param("accountId", "1")
+            .param("clOrdId", CORE_CL_ORD_ID_2)
+            .param("symbol", "005930")
+            .param("side", "BUY")
+            .param("orderType", "MARKET")
+            .param("quantity", "2.0000")
+            .param("quoteSnapshotId", "qsnap-20260321-0003")
+            .param("quoteAsOf", "2026-03-21T00:00:00Z")
+            .param("quoteSourceMode", "LIVE")
+            .param("preTradePrice", "70100.0000"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    org.assertj.core.api.Assertions.assertThat(corebankOrderService.createOrderCalls()).isEqualTo(1);
+  }
+
+  @Test
   void shouldReturn422WhenProvisioningPayloadMissesMemberId() throws Exception {
     accountProvisioningService.setProvisioningFailure(new BusinessException(
         ErrorCode.CONTRACT_VALIDATION_FAILED,

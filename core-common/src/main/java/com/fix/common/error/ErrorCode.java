@@ -66,6 +66,7 @@ public enum ErrorCode {
   ORDER_SESSION_EXECUTION_IN_PROGRESS("ORD-010", "Order execution already in progress", 409),
   ORDER_SESSION_TOTP_REQUIRED("ORD-011", "TOTP enrollment required", 403),
   ORD_ACCOUNT_STATUS_BLOCKED("ORD-012", "Account status blocked", 422),
+  ORD_NO_LIQUIDITY("ORD-013", "No opposite-side liquidity", 422),
   RATE_LIMIT_EXCEEDED("RATE_001", "Rate limit exceeded", 429),
   CONTRACT_RATE_LIMIT_EXCEEDED("RATE-001", "Rate limit exceeded", 429),
   FEP_GATEWAY_UNAVAILABLE("FEP-001", "Exchange service unavailable", 503),

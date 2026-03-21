@@ -66,10 +66,31 @@ public class FepGatewayReplayTimelineService {
 
   public GatewayReplayTimelineResult resumeTimeline(String replayId) {
     ReplayTimelineStatus status = replayMarketDataAdapter.resumeTimeline(replayId);
-    if (status == null) {
+    if (status != null) {
+      return toResult(status);
+    }
+
+    ReplayCursor replayCursor = replayCursorRepository.findByReplayId(replayId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "active replay timeline not found"));
+    if ("STOPPED".equals(replayCursor.getStatus())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "active replay timeline not found");
     }
-    return toResult(status);
+
+    replayMarketDataAdapter.rehydrateTimeline(
+        new ReplayCursorSpec(
+            replayCursor.getReplayId(),
+            replayCursor.getSeed(),
+            replayCursor.getSymbol(),
+            replayCursor.getCursorOffset(),
+            replayCursor.getSpeedFactor()
+        ),
+        replayCursor.getStatus()
+    );
+    ReplayTimelineStatus resumed = replayMarketDataAdapter.resumeTimeline(replayId);
+    if (resumed == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "active replay timeline not found");
+    }
+    return toResult(resumed);
   }
 
   private GatewayReplayTimelineResult toResult(ReplayTimelineStatus status) {

@@ -1,25 +1,9 @@
 package com.fix.corebank.service;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
+import com.fix.common.fep.FepOrderType;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.corebank.domain.AccountStatus;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.AccountStatusEvent;
@@ -43,7 +27,18 @@ import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
-
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.CannotAcquireLockException;
@@ -78,6 +73,8 @@ public class CorebankOrderPersistenceService {
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
   private final PositionLockMetrics positionLockMetrics;
+  private final CorebankOppositeBookQueryService oppositeBookQueryService;
+  private final MarketOrderSweepMatcher marketOrderSweepMatcher;
   private final OrderPreparationLockHook orderPreparationLockHook;
   private final OrderPostingTransactionHook orderPostingTransactionHook;
   private Clock limitWindowClock = Clock.systemUTC();
@@ -133,6 +130,11 @@ public class CorebankOrderPersistenceService {
     }
 
     String side = normalizeSide(command.getSide());
+    String orderType = normalizeOrderType(command.getOrderType());
+    if (FepOrderType.MARKET.name().equals(orderType)) {
+      return prepareMarketOrderSubmission(command, side);
+    }
+
     long waitStartedAtNanos = System.nanoTime();
     Position position;
     try {
@@ -177,13 +179,21 @@ public class CorebankOrderPersistenceService {
       }
     }
 
+    BigDecimal orderPrice = resolveOrderPrice(orderType, command);
+    BigDecimal referencePrice = resolveReferencePrice(orderType, command);
+
     Order candidateOrder = Order.accepted(
         command.getAccountId(),
         command.getClOrdId(),
         command.getSymbol(),
         side,
+        orderType,
         command.getQuantity(),
-        command.getPrice()
+        orderPrice,
+        command.getPreTradePrice(),
+        command.getQuoteSnapshotId(),
+        command.getQuoteAsOf(),
+        command.getQuoteSourceMode()
     );
     Order savedOrder = orderRepository.saveAndFlush(candidateOrder);
     if (savedOrder == null) {
@@ -192,7 +202,7 @@ public class CorebankOrderPersistenceService {
 
     Instant executedAt = Instant.now();
     BigDecimal executedQty = normalizeMoney(command.getQuantity());
-    BigDecimal executedPrice = normalizeMoney(command.getPrice());
+    BigDecimal executedPrice = normalizeMoney(referencePrice);
     BigDecimal leavesQty = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     BigDecimal grossAmount = calculateGrossAmount(executedQty, executedPrice);
 
@@ -204,6 +214,9 @@ public class CorebankOrderPersistenceService {
         savedOrder.getSide(),
         executedQty,
         executedPrice,
+        savedOrder.getQuoteSnapshotId(),
+        savedOrder.getQuoteAsOf(),
+        savedOrder.getQuoteSourceMode(),
         executedAt
     ));
 
@@ -220,6 +233,154 @@ public class CorebankOrderPersistenceService {
     appendExecutionPosting(savedOrder, grossAmount);
     orderRepository.flush();
     return PendingOrderSubmission.from(savedOrder, account);
+  }
+
+  private PendingOrderSubmission prepareMarketOrderSubmission(
+      InternalOrderCreateCommand command,
+      String side
+  ) {
+    List<Order> makerOrders = oppositeBookQueryService.lockRestingLimitOrders(command.getSymbol(), side);
+    MarketOrderSweepMatcher.MarketSweepMatchResult matchResult = marketOrderSweepMatcher.match(
+        command.getQuantity(),
+        makerOrders.stream()
+            .map(oppositeBookQueryService::toEntry)
+            .toList()
+    );
+    if (matchResult.rejected()) {
+      throw noLiquidity(command.getSymbol(), side, command.getQuantity());
+    }
+
+    MarketParticipantLocks participantLocks = lockMarketParticipants(command, matchResult, makerOrders);
+    Account takerAccount = participantLocks.requireAccount(command.getAccountId());
+    Position takerPosition = participantLocks.requirePosition(command.getAccountId(), command.getSymbol());
+    orderPreparationLockHook.afterPositionLock(command.getAccountId(), command.getSymbol());
+    ensureOrderEligibleAccountStatus(takerAccount);
+
+    BigDecimal availableQty = resolveAvailableQuantity(takerPosition);
+    BigDecimal todaySellQty = executionRepository.sumSellQuantityByAccountAndSymbolBetween(
+        command.getAccountId(),
+        command.getSymbol(),
+        startOfLimitWindowDay(),
+        startOfNextLimitWindowDay()
+    );
+    if ("SELL".equals(side)) {
+      if (command.getQuantity().compareTo(availableQty) > 0) {
+        throw new InsufficientPositionException(
+            command.getAccountId(),
+            command.getSymbol(),
+            availableQty,
+            command.getQuantity()
+        );
+      }
+      BigDecimal afterSell = todaySellQty.add(command.getQuantity());
+      if (afterSell.compareTo(takerAccount.getDailySellLimit()) > 0) {
+        throw new DailySellLimitExceededException(
+            command.getAccountId(),
+            command.getSymbol(),
+            command.getQuantity(),
+            todaySellQty,
+            takerAccount.getDailySellLimit()
+        );
+      }
+    }
+
+    Order takerOrder = orderRepository.saveAndFlush(Order.accepted(
+        command.getAccountId(),
+        command.getClOrdId(),
+        command.getSymbol(),
+        side,
+        "MARKET",
+        command.getQuantity(),
+        null,
+        command.getPreTradePrice(),
+        command.getQuoteSnapshotId(),
+        command.getQuoteAsOf(),
+        command.getQuoteSourceMode()
+    ));
+    if (takerOrder == null) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "failed to persist market taker order");
+    }
+
+    Instant executedAt = Instant.now();
+    BigDecimal totalGross = zeroMoney();
+    for (MarketOrderSweepMatcher.MarketSweepFill fill : matchResult.fills()) {
+      Order makerOrder = requireMatchedOrder(makerOrders, fill.makerOrderId());
+      Account makerAccount = participantLocks.requireAccount(makerOrder.getAccountId());
+      Position makerPosition = participantLocks.requirePosition(makerOrder.getAccountId(), makerOrder.getSymbol());
+      BigDecimal fillQty = normalizeMoney(fill.executedQty());
+      BigDecimal fillPrice = normalizeMoney(fill.executedPrice());
+      BigDecimal fillGross = calculateGrossAmount(fillQty, fillPrice);
+
+      applyCanonicalPosting(takerAccount, takerPosition, side, fillQty, fillPrice, fillGross);
+      applyCanonicalPosting(makerAccount, makerPosition, makerOrder.getSide(), fillQty, fillPrice, fillGross);
+
+      saveExecutionFill(takerOrder, fillQty, fillPrice, executedAt);
+      saveExecutionFill(makerOrder, fillQty, fillPrice, executedAt);
+
+      applyMatchSummary(makerOrder, fillQty, fillPrice, fill.remainingMakerQty(), executedAt);
+      orderPostingTransactionHook.afterPostingMutation(makerOrder, makerAccount, makerPosition);
+      appendExecutionPosting(makerOrder, fillGross);
+      totalGross = totalGross.add(fillGross).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    takerOrder.completeExecution(
+        LOCAL_EXECUTION_STATUS,
+        matchResult.executionResult(),
+        matchResult.executedQty(),
+        matchResult.leavesQty(),
+        matchResult.executedPrice(),
+        executedAt
+    );
+    orderPostingTransactionHook.afterPostingMutation(takerOrder, takerAccount, takerPosition);
+    appendExecutionPosting(takerOrder, totalGross);
+    orderRepository.flush();
+    return PendingOrderSubmission.from(takerOrder, takerAccount);
+  }
+
+  private MarketParticipantLocks lockMarketParticipants(
+      InternalOrderCreateCommand command,
+      MarketOrderSweepMatcher.MarketSweepMatchResult matchResult,
+      List<Order> makerOrders
+  ) {
+    long waitStartedAtNanos = System.nanoTime();
+    Map<Long, Account> lockedAccounts = new LinkedHashMap<>();
+    Map<ParticipantPositionKey, Position> lockedPositions = new LinkedHashMap<>();
+    try {
+      List<Long> accountIds = java.util.stream.Stream.concat(
+              java.util.stream.Stream.of(command.getAccountId()),
+              matchResult.fills().stream().map(MarketOrderSweepMatcher.MarketSweepFill::makerAccountId)
+          )
+          .distinct()
+          .sorted()
+          .toList();
+      for (Long accountId : accountIds) {
+        Account account = accountRepository.findByIdForUpdate(accountId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found"));
+        lockedAccounts.put(accountId, account);
+      }
+
+      List<ParticipantPositionKey> positionKeys = java.util.stream.Stream.concat(
+              java.util.stream.Stream.of(new ParticipantPositionKey(command.getAccountId(), command.getSymbol())),
+              matchResult.fills().stream()
+                  .map(fill -> requireMatchedOrder(makerOrders, fill.makerOrderId()))
+                  .map(order -> new ParticipantPositionKey(order.getAccountId(), order.getSymbol()))
+          )
+          .distinct()
+          .sorted(Comparator
+              .comparing(ParticipantPositionKey::accountId)
+              .thenComparing(ParticipantPositionKey::symbol))
+          .toList();
+      for (ParticipantPositionKey positionKey : positionKeys) {
+        lockedPositions.put(
+            positionKey,
+            lockPositionForUpdate(positionKey.accountId(), positionKey.symbol())
+        );
+      }
+    } finally {
+      positionLockMetrics.recordWait(waitStartedAtNanos);
+    }
+    positionLockMetrics.recordHoldOnTransactionCompletion(System.nanoTime());
+    return new MarketParticipantLocks(lockedAccounts, lockedPositions);
   }
 
   @Transactional
@@ -330,6 +491,44 @@ public class CorebankOrderPersistenceService {
     saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_POSITION, LEDGER_DIRECTION_CREDIT, grossAmount, order.getClOrdId());
   }
 
+  private void saveExecutionFill(Order order, BigDecimal executedQty, BigDecimal executedPrice, Instant executedAt) {
+    executionRepository.saveAndFlush(Execution.of(
+        order.getId(),
+        order.getAccountId(),
+        order.getClOrdId(),
+        order.getSymbol(),
+        order.getSide(),
+        executedQty,
+        executedPrice,
+        order.getQuoteSnapshotId(),
+        order.getQuoteAsOf(),
+        order.getQuoteSourceMode(),
+        executedAt
+    ));
+  }
+
+  private void applyMatchSummary(
+      Order order,
+      BigDecimal fillQty,
+      BigDecimal fillPrice,
+      BigDecimal leavesQty,
+      Instant executedAt
+  ) {
+    BigDecimal currentExecutedQty = zeroIfNull(order.getExecutedQty());
+    BigDecimal nextExecutedQty = currentExecutedQty.add(fillQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    BigDecimal nextExecutedPrice = weightedAveragePrice(currentExecutedQty, order.getExecutedPrice(), fillQty, fillPrice);
+    BigDecimal normalizedLeavesQty = normalizeMoney(leavesQty);
+    String executionResult = normalizedLeavesQty.signum() == 0 ? "FILLED" : "PARTIALLY_FILLED";
+    order.completeExecution(
+        executionResult,
+        executionResult,
+        nextExecutedQty,
+        normalizedLeavesQty,
+        nextExecutedPrice,
+        executedAt
+    );
+  }
+
   private Position lockPositionForUpdate(Long accountId, String symbol) {
     try {
       return findOrCreatePositionForUpdate(accountId, symbol);
@@ -425,11 +624,54 @@ public class CorebankOrderPersistenceService {
     return normalizeMoney(quantity.multiply(price));
   }
 
+  private BigDecimal weightedAveragePrice(
+      BigDecimal currentExecutedQty,
+      BigDecimal currentExecutedPrice,
+      BigDecimal fillQty,
+      BigDecimal fillPrice
+  ) {
+    if (currentExecutedQty == null || currentExecutedQty.signum() == 0) {
+      return normalizeMoney(fillPrice);
+    }
+    BigDecimal currentGross = currentExecutedQty.multiply(normalizeMoney(currentExecutedPrice));
+    BigDecimal fillGross = fillQty.multiply(fillPrice);
+    BigDecimal totalQty = currentExecutedQty.add(fillQty);
+    return normalizeMoney(currentGross.add(fillGross).divide(totalQty, MONEY_SCALE, RoundingMode.HALF_UP));
+  }
+
   private BigDecimal normalizeMoney(BigDecimal value) {
     if (value == null) {
-      return BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+      return zeroMoney();
     }
     return value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal zeroMoney() {
+    return BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal zeroIfNull(BigDecimal value) {
+    return value == null ? zeroMoney() : normalizeMoney(value);
+  }
+
+  private Order requireMatchedOrder(List<Order> makerOrders, Long makerOrderId) {
+    return makerOrders.stream()
+        .filter(order -> makerOrderId.equals(order.getId()))
+        .findFirst()
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "matched maker order not found"));
+  }
+
+  private BusinessException noLiquidity(String symbol, String side, BigDecimal orderQty) {
+    LinkedHashMap<String, Object> details = new LinkedHashMap<>();
+    details.put("symbol", symbol);
+    details.put("side", side);
+    details.put("orderQty", normalizeMoney(orderQty));
+    return new BusinessException(
+        ErrorCode.ORD_NO_LIQUIDITY,
+        ErrorCode.ORD_NO_LIQUIDITY.defaultMessage(),
+        new ErrorMetadata("error.order.no_liquidity", "NO_LIQUIDITY"),
+        details
+    );
   }
 
   private BigDecimal resolveAvailableQuantity(Position position) {
@@ -437,6 +679,25 @@ public class CorebankOrderPersistenceService {
       return BigDecimal.ZERO;
     }
     return position.getQty();
+  }
+
+  private String normalizeOrderType(String rawOrderType) {
+    if (rawOrderType == null || rawOrderType.isBlank()) {
+      return FepOrderType.LIMIT.name();
+    }
+    String normalized = rawOrderType.trim().toUpperCase(Locale.ROOT);
+    if (!FepOrderType.LIMIT.name().equals(normalized) && !FepOrderType.MARKET.name().equals(normalized)) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "orderType must be LIMIT or MARKET");
+    }
+    return normalized;
+  }
+
+  private BigDecimal resolveOrderPrice(String orderType, InternalOrderCreateCommand command) {
+    return "MARKET".equals(orderType) ? null : command.getPrice();
+  }
+
+  private BigDecimal resolveReferencePrice(String orderType, InternalOrderCreateCommand command) {
+    return "MARKET".equals(orderType) ? command.getPreTradePrice() : command.getPrice();
   }
 
   private String normalizeSide(String side) {
@@ -491,8 +752,13 @@ public class CorebankOrderPersistenceService {
       String clOrdId,
       String symbol,
       String side,
+      String orderType,
       BigDecimal orderQty,
       BigDecimal orderPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      com.fix.common.fep.FepQuoteSourceMode quoteSourceMode,
+      BigDecimal preTradePrice,
       String status
   ) {
     private static PendingOrderSubmission from(Order order, Account account) {
@@ -504,11 +770,40 @@ public class CorebankOrderPersistenceService {
           order.getClOrdId(),
           order.getSymbol(),
           order.getSide(),
+          order.getOrderType(),
           order.getOrderQty(),
           order.getOrderPrice(),
+          order.getQuoteSnapshotId(),
+          order.getQuoteAsOf(),
+          order.getQuoteSourceMode(),
+          order.getPreTradePrice(),
           order.getStatus()
       );
       }
+  }
+
+  private record ParticipantPositionKey(Long accountId, String symbol) {
+  }
+
+  private record MarketParticipantLocks(
+      Map<Long, Account> accounts,
+      Map<ParticipantPositionKey, Position> positions
+  ) {
+    private Account requireAccount(Long accountId) {
+      Account account = accounts.get(accountId);
+      if (account == null) {
+        throw new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "account not found");
+      }
+      return account;
+    }
+
+    private Position requirePosition(Long accountId, String symbol) {
+      Position position = positions.get(new ParticipantPositionKey(accountId, symbol));
+      if (position == null) {
+        throw new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "position not found");
+      }
+      return position;
+    }
   }
 
   public record AccountOrderHistoryRow(
@@ -537,9 +832,14 @@ public class CorebankOrderPersistenceService {
       String clOrdId,
       String symbol,
       String side,
+      String orderType,
       String status,
       BigDecimal orderQty,
       BigDecimal orderPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      com.fix.common.fep.FepQuoteSourceMode quoteSourceMode,
+      BigDecimal preTradePrice,
       String externalSyncStatus,
       String fepReferenceId,
       String failureReason,
@@ -557,9 +857,14 @@ public class CorebankOrderPersistenceService {
           order.getClOrdId(),
           order.getSymbol(),
           order.getSide(),
+          order.getOrderType(),
           order.getStatus(),
           order.getOrderQty(),
           order.getOrderPrice(),
+          order.getQuoteSnapshotId(),
+          order.getQuoteAsOf(),
+          order.getQuoteSourceMode(),
+          order.getPreTradePrice(),
           order.getExternalSyncStatus(),
           order.getFepReferenceId(),
           order.getFailureReason(),

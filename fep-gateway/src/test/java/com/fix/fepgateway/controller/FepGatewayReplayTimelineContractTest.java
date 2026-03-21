@@ -7,8 +7,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fix.common.web.CommonHeaders;
+import com.fix.fepgateway.entity.ReplayCursor;
 import com.fix.fepgateway.repository.ReplayCursorRepository;
 import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -127,6 +129,33 @@ class FepGatewayReplayTimelineContractTest {
             .header(CommonHeaders.X_CORRELATION_ID, "corr-replay-resume"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.status").value("RUNNING"));
+  }
+
+  @Test
+  void shouldResumePersistedPausedTimelineWithoutActiveRuntimeStream() throws Exception {
+    String replayId = replayIdFor("timeline-seed-004", "005930");
+    ReplayCursor replayCursor = ReplayCursor.running(
+        replayId,
+        "timeline-seed-004",
+        "005930",
+        new BigDecimal("1.2500")
+    );
+    replayCursor.moveTo(7L);
+    replayCursor.changeStatus("PAUSED");
+    replayCursorRepository.saveAndFlush(replayCursor);
+
+    mockMvc.perform(post("/fep-internal/v1/market-data/replay/timelines/{replayId}/resume", replayId)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
+            .header(CommonHeaders.X_CORRELATION_ID, "corr-replay-resume-persisted"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "corr-replay-resume-persisted"))
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.replayId").value(replayId))
+        .andExpect(jsonPath("$.data.cursorOffset").value(7))
+        .andExpect(jsonPath("$.data.speedFactor").value(1.25))
+        .andExpect(jsonPath("$.data.status").value("RUNNING"))
+        .andExpect(jsonPath("$.data.emittedCount").value(0))
+        .andExpect(jsonPath("$.data.sequenceHash").value(EMPTY_SEQUENCE_HASH));
   }
 
   private String replayIdFor(String seed, String symbol) {

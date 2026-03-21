@@ -47,6 +47,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -392,6 +393,7 @@ public class CorebankOrderService {
 
   private InternalOrderResult createFreshOrder(InternalOrderCreateCommand command) {
     try {
+      validateFreshMarketQuote(command);
       CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder;
       try {
         pendingOrder = orderPersistenceService.prepareOrderSubmission(command);
@@ -486,8 +488,13 @@ public class CorebankOrderService {
   ) {
     if (!existingOrder.symbol().equals(command.getSymbol())
         || !existingOrder.side().equals(normalizeSide(command.getSide()))
+        || !normalizeOrderType(existingOrder.orderType()).equals(normalizeOrderType(command.getOrderType()))
         || compareNumeric(existingOrder.orderQty(), command.getQuantity()) != 0
-        || compareNumeric(existingOrder.orderPrice(), command.getPrice()) != 0) {
+        || compareNumeric(existingOrder.orderPrice(), command.getPrice()) != 0
+        || compareNumeric(existingOrder.preTradePrice(), command.getPreTradePrice()) != 0
+        || !Objects.equals(existingOrder.quoteSnapshotId(), command.getQuoteSnapshotId())
+        || !Objects.equals(existingOrder.quoteAsOf(), command.getQuoteAsOf())
+        || !Objects.equals(existingOrder.quoteSourceMode(), command.getQuoteSourceMode())) {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "clOrdId replay payload mismatch");
     }
   }
@@ -688,13 +695,13 @@ public class CorebankOrderService {
         pendingOrder.symbol(),
         FepSecurityExchange.KRX,
         FepSide.valueOf(pendingOrder.side()),
-        FepOrderType.LIMIT,
+        FepOrderType.valueOf(pendingOrder.orderType()),
         pendingOrder.orderQty().longValueExact(),
-        pendingOrder.orderPrice().longValueExact(),
-        null,
-        null,
-        null,
-        null,
+        pendingOrder.orderPrice() == null ? null : pendingOrder.orderPrice().longValueExact(),
+        pendingOrder.quoteSnapshotId(),
+        pendingOrder.quoteAsOf(),
+        pendingOrder.quoteSourceMode(),
+        pendingOrder.preTradePrice() == null ? null : pendingOrder.preTradePrice().longValueExact(),
         pendingOrder.currency(),
         pendingOrder.clOrdId()
     );
@@ -759,6 +766,17 @@ public class CorebankOrderService {
       return null;
     }
     return side.trim().toUpperCase(java.util.Locale.ROOT);
+  }
+
+  private String normalizeOrderType(String orderType) {
+    if (orderType == null || orderType.isBlank()) {
+      return FepOrderType.LIMIT.name();
+    }
+    String normalized = orderType.trim().toUpperCase(java.util.Locale.ROOT);
+    if (!FepOrderType.LIMIT.name().equals(normalized) && !FepOrderType.MARKET.name().equals(normalized)) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "orderType must be LIMIT or MARKET");
+    }
+    return normalized;
   }
 
   private String failureReason(BusinessException ex) {
@@ -828,6 +846,35 @@ public class CorebankOrderService {
       }
       throw ex;
     }
+  }
+
+  private void validateFreshMarketQuote(InternalOrderCreateCommand command) {
+    if (!FepOrderType.MARKET.name().equals(normalizeOrderType(command.getOrderType()))) {
+      return;
+    }
+    if (command.getQuoteAsOf() == null) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "quoteAsOf is required for MARKET orders");
+    }
+    QuoteFreshnessDecision decision = quoteFreshnessPolicy.evaluate(command.getQuoteAsOf());
+    if (!decision.stale()) {
+      return;
+    }
+    java.util.LinkedHashMap<String, Object> details = new java.util.LinkedHashMap<>();
+    details.put("symbol", command.getSymbol());
+    details.put("snapshotAgeMs", decision.snapshotAgeMs());
+    if (command.getQuoteSnapshotId() != null) {
+      details.put("quoteSnapshotId", command.getQuoteSnapshotId());
+    }
+    details.put("quoteAsOf", command.getQuoteAsOf().toString());
+    if (command.getQuoteSourceMode() != null) {
+      details.put("quoteSourceMode", command.getQuoteSourceMode().name());
+    }
+    throw new BusinessException(
+        ErrorCode.STALE_QUOTE,
+        ErrorCode.STALE_QUOTE.defaultMessage(),
+        new ErrorMetadata("error.quote.stale", "STALE_QUOTE"),
+        details
+    );
   }
 
   private BusinessException translateQuoteSnapshotFailure(String symbol, BusinessException ex) {
