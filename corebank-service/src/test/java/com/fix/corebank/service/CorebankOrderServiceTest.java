@@ -1526,6 +1526,32 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldRejectUnsupportedOrderTypeBeforePersistence() {
+    when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        IDEMPOTENT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "STOP",
+        new BigDecimal("3.0000"),
+        new BigDecimal("70200.0000"),
+        null,
+        null,
+        null,
+        null
+    )))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST);
+          assertThat(ex.getMessage()).contains("orderType must be LIMIT or MARKET");
+        });
+
+    verify(orderRepository, times(1)).findByClOrdId(IDEMPOTENT_CL_ORD_ID);
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
   void shouldNotTranslateAccountRowLockFailureToCore003() {
     lenient().when(orderRepository.findByClOrdId(IDEMPOTENT_CL_ORD_ID)).thenReturn(Optional.empty());
     lenient().when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(persistedAccount()));

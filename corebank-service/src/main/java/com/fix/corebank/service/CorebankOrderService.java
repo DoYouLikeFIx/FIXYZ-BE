@@ -772,7 +772,11 @@ public class CorebankOrderService {
     if (orderType == null || orderType.isBlank()) {
       return FepOrderType.LIMIT.name();
     }
-    return orderType.trim().toUpperCase(java.util.Locale.ROOT);
+    String normalized = orderType.trim().toUpperCase(java.util.Locale.ROOT);
+    if (!FepOrderType.LIMIT.name().equals(normalized) && !FepOrderType.MARKET.name().equals(normalized)) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "orderType must be LIMIT or MARKET");
+    }
+    return normalized;
   }
 
   private String failureReason(BusinessException ex) {

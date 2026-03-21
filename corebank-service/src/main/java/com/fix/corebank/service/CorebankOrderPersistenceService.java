@@ -1,5 +1,6 @@
 package com.fix.corebank.service;
 
+import com.fix.common.fep.FepOrderType;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
@@ -603,9 +604,13 @@ public class CorebankOrderPersistenceService {
 
   private String normalizeOrderType(String rawOrderType) {
     if (rawOrderType == null || rawOrderType.isBlank()) {
-      return "LIMIT";
+      return FepOrderType.LIMIT.name();
     }
-    return rawOrderType.trim().toUpperCase(Locale.ROOT);
+    String normalized = rawOrderType.trim().toUpperCase(Locale.ROOT);
+    if (!FepOrderType.LIMIT.name().equals(normalized) && !FepOrderType.MARKET.name().equals(normalized)) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "orderType must be LIMIT or MARKET");
+    }
+    return normalized;
   }
 
   private BigDecimal resolveOrderPrice(String orderType, InternalOrderCreateCommand command) {
