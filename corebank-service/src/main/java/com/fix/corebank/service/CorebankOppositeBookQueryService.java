@@ -25,13 +25,18 @@ public class CorebankOppositeBookQueryService {
 
   @Transactional
   public List<OppositeBookEntry> findSweepCandidates(String symbol, String aggressorSide) {
-    String oppositeSide = resolveOppositeSide(aggressorSide);
-    return orderRepository.findRestingLimitOrdersForSweep(symbol, oppositeSide, ACTIVE_BOOK_STATUSES).stream()
+    return lockRestingLimitOrders(symbol, aggressorSide).stream()
         .map(this::toEntry)
         .toList();
   }
 
-  private OppositeBookEntry toEntry(Order order) {
+  @Transactional
+  public List<Order> lockRestingLimitOrders(String symbol, String aggressorSide) {
+    String oppositeSide = resolveOppositeSide(aggressorSide);
+    return orderRepository.findRestingLimitOrdersForSweep(symbol, oppositeSide, ACTIVE_BOOK_STATUSES);
+  }
+
+  OppositeBookEntry toEntry(Order order) {
     return new OppositeBookEntry(
         order.getId(),
         order.getAccountId(),

@@ -393,6 +393,7 @@ public class CorebankOrderService {
 
   private InternalOrderResult createFreshOrder(InternalOrderCreateCommand command) {
     try {
+      validateFreshMarketQuote(command);
       CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder;
       try {
         pendingOrder = orderPersistenceService.prepareOrderSubmission(command);
@@ -841,6 +842,35 @@ public class CorebankOrderService {
       }
       throw ex;
     }
+  }
+
+  private void validateFreshMarketQuote(InternalOrderCreateCommand command) {
+    if (!FepOrderType.MARKET.name().equals(normalizeOrderType(command.getOrderType()))) {
+      return;
+    }
+    if (command.getQuoteAsOf() == null) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "quoteAsOf is required for MARKET orders");
+    }
+    QuoteFreshnessDecision decision = quoteFreshnessPolicy.evaluate(command.getQuoteAsOf());
+    if (!decision.stale()) {
+      return;
+    }
+    java.util.LinkedHashMap<String, Object> details = new java.util.LinkedHashMap<>();
+    details.put("symbol", command.getSymbol());
+    details.put("snapshotAgeMs", decision.snapshotAgeMs());
+    if (command.getQuoteSnapshotId() != null) {
+      details.put("quoteSnapshotId", command.getQuoteSnapshotId());
+    }
+    details.put("quoteAsOf", command.getQuoteAsOf().toString());
+    if (command.getQuoteSourceMode() != null) {
+      details.put("quoteSourceMode", command.getQuoteSourceMode().name());
+    }
+    throw new BusinessException(
+        ErrorCode.STALE_QUOTE,
+        ErrorCode.STALE_QUOTE.defaultMessage(),
+        new ErrorMetadata("error.quote.stale", "STALE_QUOTE"),
+        details
+    );
   }
 
   private BusinessException translateQuoteSnapshotFailure(String symbol, BusinessException ex) {

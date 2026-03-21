@@ -1,25 +1,8 @@
 package com.fix.corebank.service;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.corebank.domain.AccountStatus;
 import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.AccountStatusEvent;
@@ -43,7 +26,16 @@ import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.vo.AccountStatusTransitionCommand;
 import com.fix.corebank.vo.AccountStatusTransitionResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
-
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.CannotAcquireLockException;
@@ -78,6 +70,8 @@ public class CorebankOrderPersistenceService {
   private final LedgerEntryRepository ledgerEntryRepository;
   private final LedgerEntryRefRepository ledgerEntryRefRepository;
   private final PositionLockMetrics positionLockMetrics;
+  private final CorebankOppositeBookQueryService oppositeBookQueryService;
+  private final MarketOrderSweepMatcher marketOrderSweepMatcher;
   private final OrderPreparationLockHook orderPreparationLockHook;
   private final OrderPostingTransactionHook orderPostingTransactionHook;
   private Clock limitWindowClock = Clock.systemUTC();
@@ -178,6 +172,10 @@ public class CorebankOrderPersistenceService {
       }
     }
 
+    if ("MARKET".equals(orderType)) {
+      return prepareMarketOrderSubmission(command, account, position, side);
+    }
+
     BigDecimal orderPrice = resolveOrderPrice(orderType, command);
     BigDecimal referencePrice = resolveReferencePrice(orderType, command);
 
@@ -232,6 +230,77 @@ public class CorebankOrderPersistenceService {
     appendExecutionPosting(savedOrder, grossAmount);
     orderRepository.flush();
     return PendingOrderSubmission.from(savedOrder, account);
+  }
+
+  private PendingOrderSubmission prepareMarketOrderSubmission(
+      InternalOrderCreateCommand command,
+      Account takerAccount,
+      Position takerPosition,
+      String side
+  ) {
+    List<Order> makerOrders = oppositeBookQueryService.lockRestingLimitOrders(command.getSymbol(), side);
+    MarketOrderSweepMatcher.MarketSweepMatchResult matchResult = marketOrderSweepMatcher.match(
+        command.getQuantity(),
+        makerOrders.stream()
+            .map(oppositeBookQueryService::toEntry)
+            .toList()
+    );
+    if (matchResult.rejected()) {
+      throw noLiquidity(command.getSymbol(), side, command.getQuantity());
+    }
+
+    Order takerOrder = orderRepository.saveAndFlush(Order.accepted(
+        command.getAccountId(),
+        command.getClOrdId(),
+        command.getSymbol(),
+        side,
+        "MARKET",
+        command.getQuantity(),
+        null,
+        command.getPreTradePrice(),
+        command.getQuoteSnapshotId(),
+        command.getQuoteAsOf(),
+        command.getQuoteSourceMode()
+    ));
+    if (takerOrder == null) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "failed to persist market taker order");
+    }
+
+    Instant executedAt = Instant.now();
+    BigDecimal totalGross = zeroMoney();
+    for (MarketOrderSweepMatcher.MarketSweepFill fill : matchResult.fills()) {
+      Order makerOrder = requireMatchedOrder(makerOrders, fill.makerOrderId());
+      Account makerAccount = accountRepository.findByIdForUpdate(makerOrder.getAccountId())
+          .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "maker account not found"));
+      Position makerPosition = lockPositionForUpdate(makerOrder.getAccountId(), makerOrder.getSymbol());
+      BigDecimal fillQty = normalizeMoney(fill.executedQty());
+      BigDecimal fillPrice = normalizeMoney(fill.executedPrice());
+      BigDecimal fillGross = calculateGrossAmount(fillQty, fillPrice);
+
+      applyCanonicalPosting(takerAccount, takerPosition, side, fillQty, fillPrice, fillGross);
+      applyCanonicalPosting(makerAccount, makerPosition, makerOrder.getSide(), fillQty, fillPrice, fillGross);
+
+      saveExecutionFill(takerOrder, fillQty, fillPrice, executedAt);
+      saveExecutionFill(makerOrder, fillQty, fillPrice, executedAt);
+
+      applyMatchSummary(makerOrder, fillQty, fillPrice, fill.remainingMakerQty(), executedAt);
+      orderPostingTransactionHook.afterPostingMutation(makerOrder, makerAccount, makerPosition);
+      appendExecutionPosting(makerOrder, fillGross);
+      totalGross = totalGross.add(fillGross).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    takerOrder.completeExecution(
+        LOCAL_EXECUTION_STATUS,
+        matchResult.executionResult(),
+        matchResult.executedQty(),
+        matchResult.leavesQty(),
+        matchResult.executedPrice(),
+        executedAt
+    );
+    orderPostingTransactionHook.afterPostingMutation(takerOrder, takerAccount, takerPosition);
+    appendExecutionPosting(takerOrder, totalGross);
+    orderRepository.flush();
+    return PendingOrderSubmission.from(takerOrder, takerAccount);
   }
 
   @Transactional
@@ -342,6 +411,44 @@ public class CorebankOrderPersistenceService {
     saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_POSITION, LEDGER_DIRECTION_CREDIT, grossAmount, order.getClOrdId());
   }
 
+  private void saveExecutionFill(Order order, BigDecimal executedQty, BigDecimal executedPrice, Instant executedAt) {
+    executionRepository.saveAndFlush(Execution.of(
+        order.getId(),
+        order.getAccountId(),
+        order.getClOrdId(),
+        order.getSymbol(),
+        order.getSide(),
+        executedQty,
+        executedPrice,
+        order.getQuoteSnapshotId(),
+        order.getQuoteAsOf(),
+        order.getQuoteSourceMode(),
+        executedAt
+    ));
+  }
+
+  private void applyMatchSummary(
+      Order order,
+      BigDecimal fillQty,
+      BigDecimal fillPrice,
+      BigDecimal leavesQty,
+      Instant executedAt
+  ) {
+    BigDecimal currentExecutedQty = zeroIfNull(order.getExecutedQty());
+    BigDecimal nextExecutedQty = currentExecutedQty.add(fillQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    BigDecimal nextExecutedPrice = weightedAveragePrice(currentExecutedQty, order.getExecutedPrice(), fillQty, fillPrice);
+    BigDecimal normalizedLeavesQty = normalizeMoney(leavesQty);
+    String executionResult = normalizedLeavesQty.signum() == 0 ? "FILLED" : "PARTIALLY_FILLED";
+    order.completeExecution(
+        executionResult,
+        executionResult,
+        nextExecutedQty,
+        normalizedLeavesQty,
+        nextExecutedPrice,
+        executedAt
+    );
+  }
+
   private Position lockPositionForUpdate(Long accountId, String symbol) {
     try {
       return findOrCreatePositionForUpdate(accountId, symbol);
@@ -437,11 +544,54 @@ public class CorebankOrderPersistenceService {
     return normalizeMoney(quantity.multiply(price));
   }
 
+  private BigDecimal weightedAveragePrice(
+      BigDecimal currentExecutedQty,
+      BigDecimal currentExecutedPrice,
+      BigDecimal fillQty,
+      BigDecimal fillPrice
+  ) {
+    if (currentExecutedQty == null || currentExecutedQty.signum() == 0) {
+      return normalizeMoney(fillPrice);
+    }
+    BigDecimal currentGross = currentExecutedQty.multiply(normalizeMoney(currentExecutedPrice));
+    BigDecimal fillGross = fillQty.multiply(fillPrice);
+    BigDecimal totalQty = currentExecutedQty.add(fillQty);
+    return normalizeMoney(currentGross.add(fillGross).divide(totalQty, MONEY_SCALE, RoundingMode.HALF_UP));
+  }
+
   private BigDecimal normalizeMoney(BigDecimal value) {
     if (value == null) {
-      return BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+      return zeroMoney();
     }
     return value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal zeroMoney() {
+    return BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal zeroIfNull(BigDecimal value) {
+    return value == null ? zeroMoney() : normalizeMoney(value);
+  }
+
+  private Order requireMatchedOrder(List<Order> makerOrders, Long makerOrderId) {
+    return makerOrders.stream()
+        .filter(order -> makerOrderId.equals(order.getId()))
+        .findFirst()
+        .orElseThrow(() -> new BusinessException(ErrorCode.CORE_RESOURCE_NOT_FOUND, "matched maker order not found"));
+  }
+
+  private BusinessException noLiquidity(String symbol, String side, BigDecimal orderQty) {
+    LinkedHashMap<String, Object> details = new LinkedHashMap<>();
+    details.put("symbol", symbol);
+    details.put("side", side);
+    details.put("orderQty", normalizeMoney(orderQty));
+    return new BusinessException(
+        ErrorCode.ORD_NO_LIQUIDITY,
+        ErrorCode.ORD_NO_LIQUIDITY.defaultMessage(),
+        new ErrorMetadata("error.order.no_liquidity", "NO_LIQUIDITY"),
+        details
+    );
   }
 
   private BigDecimal resolveAvailableQuantity(Position position) {
