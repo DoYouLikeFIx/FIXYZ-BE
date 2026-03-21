@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
@@ -172,6 +173,51 @@ class KisLiveMarketDataAdapterTest {
   }
 
   @Test
+  void shouldReserveGapFillOffsetsBeforeImmediateReconnectedLiveFrames() {
+    FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    FixedMarketDataSubscriptionProgressPort progressPort = new FixedMarketDataSubscriptionProgressPort();
+    progressPort.put("000660", new MarketDataSubscriptionProgress(40L, Instant.parse("2026-03-19T00:30:00Z")));
+    progressPort.put("005930", new MarketDataSubscriptionProgress(10L, Instant.parse("2026-03-19T00:31:00Z")));
+    KisLiveMarketDataAdapter adapter = newAdapter(
+        sessionClient,
+        persistencePort,
+        progressPort,
+        new SimpleMeterRegistry()
+    );
+
+    adapter.start(subscription("sub-005930", "005930"), event -> {
+    });
+    adapter.start(subscription("sub-000660", "000660"), event -> {
+    });
+    sessionClient.session().disconnectUnexpectedly();
+    sessionClient.onNextSessionCreated(session -> {
+      AtomicBoolean emitted = new AtomicBoolean(false);
+      session.onSend(payload -> {
+        if (emitted.compareAndSet(false, true)) {
+          session.emit(
+              "0|H0STCNT0|001|" + recordPayload("000660", "093500", "112000", "112100", "111900", "20260319")
+          );
+        }
+      });
+    });
+
+    assertThat(adapter.reconnectIfNecessary()).isTrue();
+
+    assertThat(persistencePort.persistedEvents()).hasSize(5);
+    assertThat(persistencePort.persistedEvents()).extracting(NormalizedQuoteEvent::sourceMode)
+        .containsExactly(
+            FepQuoteSourceMode.REPLAY,
+            FepQuoteSourceMode.REPLAY,
+            FepQuoteSourceMode.REPLAY,
+            FepQuoteSourceMode.REPLAY,
+            FepQuoteSourceMode.LIVE
+        );
+    assertThat(persistencePort.persistedEvents()).extracting(NormalizedQuoteEvent::streamOffset)
+        .containsExactly(41L, 42L, 11L, 12L, 43L);
+  }
+
+  @Test
   void shouldClearSessionWhenCloseFailsDuringDestroy() {
     FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
     KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, new RecordingPersistencePort());
@@ -297,11 +343,17 @@ class KisLiveMarketDataAdapterTest {
     private final List<URI> connectedUris = new ArrayList<>();
     private final List<FakeKisWebSocketSession> sessions = new ArrayList<>();
     private final AtomicReference<FakeKisWebSocketSession> session = new AtomicReference<>();
+    private java.util.function.Consumer<FakeKisWebSocketSession> nextSessionCreatedHook;
 
     @Override
     public KisWebSocketSession connect(URI uri, java.util.function.Consumer<String> inboundTextHandler) {
       connectedUris.add(uri);
       FakeKisWebSocketSession fakeSession = new FakeKisWebSocketSession(inboundTextHandler);
+      if (nextSessionCreatedHook != null) {
+        java.util.function.Consumer<FakeKisWebSocketSession> hook = nextSessionCreatedHook;
+        nextSessionCreatedHook = null;
+        hook.accept(fakeSession);
+      }
       sessions.add(fakeSession);
       session.set(fakeSession);
       return fakeSession;
@@ -318,6 +370,10 @@ class KisLiveMarketDataAdapterTest {
     private List<FakeKisWebSocketSession> sessions() {
       return sessions;
     }
+
+    private void onNextSessionCreated(java.util.function.Consumer<FakeKisWebSocketSession> hook) {
+      this.nextSessionCreatedHook = hook;
+    }
   }
 
   private static final class FakeKisWebSocketSession implements KisWebSocketSession {
@@ -327,6 +383,7 @@ class KisLiveMarketDataAdapterTest {
     private boolean open = true;
     private boolean closed;
     private RuntimeException closeFailure;
+    private java.util.function.Consumer<String> sendHook;
 
     private FakeKisWebSocketSession(java.util.function.Consumer<String> inboundTextHandler) {
       this.inboundTextHandler = inboundTextHandler;
@@ -335,6 +392,9 @@ class KisLiveMarketDataAdapterTest {
     @Override
     public void sendText(String payload) {
       sentPayloads.add(payload);
+      if (sendHook != null) {
+        sendHook.accept(payload);
+      }
     }
 
     @Override
@@ -369,6 +429,10 @@ class KisLiveMarketDataAdapterTest {
 
     private void failOnClose(RuntimeException closeFailure) {
       this.closeFailure = closeFailure;
+    }
+
+    private void onSend(java.util.function.Consumer<String> sendHook) {
+      this.sendHook = sendHook;
     }
   }
 

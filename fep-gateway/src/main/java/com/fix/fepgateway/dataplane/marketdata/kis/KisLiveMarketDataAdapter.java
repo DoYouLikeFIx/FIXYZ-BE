@@ -234,8 +234,9 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
       URI websocketUri = URI.create(KisApiEndpointResolver.resolveWebSocketBaseUrl(properties.getKis().getEnv()));
       session = sessionClient.connect(websocketUri, this::handleInboundText);
       if (recovery) {
-        ArrayList<MarketDataSubscriptionSpec> recoveredSubscriptions = resubscribeActiveRemoteSubscriptions();
+        ArrayList<MarketDataSubscriptionSpec> recoveredSubscriptions = recoverActiveRemoteSubscriptions();
         backfillRecoveredSubscriptions(recoveredSubscriptions);
+        resubscribeRecoveredSubscriptions(recoveredSubscriptions);
         marketDataMetrics.recordReconnectSuccess(provider());
       }
     } catch (RuntimeException exception) {
@@ -362,7 +363,7 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
     refreshMetrics();
   }
 
-  private ArrayList<MarketDataSubscriptionSpec> resubscribeActiveRemoteSubscriptions() {
+  private ArrayList<MarketDataSubscriptionSpec> recoverActiveRemoteSubscriptions() {
     ArrayList<MarketDataSubscriptionSpec> uniqueSubscriptions = new ArrayList<>();
     ArrayList<RemoteSubscriptionKey> registeredKeys = new ArrayList<>();
 
@@ -377,8 +378,11 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
           }
         });
 
-    uniqueSubscriptions.forEach(this::sendSubscribe);
     return uniqueSubscriptions;
+  }
+
+  private void resubscribeRecoveredSubscriptions(ArrayList<MarketDataSubscriptionSpec> uniqueSubscriptions) {
+    uniqueSubscriptions.forEach(this::sendSubscribe);
   }
 
   private void backfillRecoveredSubscriptions(ArrayList<MarketDataSubscriptionSpec> uniqueSubscriptions) {
@@ -387,6 +391,7 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
       return;
     }
 
+    ArrayList<RecoveredGapFill> recoveredGapFills = new ArrayList<>();
     long maxRecoveredOffset = Long.MIN_VALUE;
     for (MarketDataSubscriptionSpec subscriptionSpec : uniqueSubscriptions) {
       Optional<MarketDataSubscriptionProgress> progress = marketDataSubscriptionProgressPort.findProgress(
@@ -403,13 +408,14 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
       long baseOffset = progress.get().lastEventOffset();
       for (int gapIndex = 1; gapIndex <= gapFillCount; gapIndex++) {
         long recoveredOffset = baseOffset + gapIndex;
-        NormalizedQuoteEvent replayGapFillEvent = replayGapFillEvent(
-            subscriptionSpec.symbol(),
-            progress.get().lastQuoteAsOf().plusSeconds(gapIndex),
-            recoveredOffset
-        );
-        liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, replayGapFillEvent);
-        publishToMatchingSinks(subscriptionSpec.symbol(), subscriptionSpec.trId(), replayGapFillEvent);
+        recoveredGapFills.add(new RecoveredGapFill(
+            subscriptionSpec,
+            replayGapFillEvent(
+                subscriptionSpec.symbol(),
+                progress.get().lastQuoteAsOf().plusSeconds(gapIndex),
+                recoveredOffset
+            )
+        ));
         maxRecoveredOffset = Math.max(maxRecoveredOffset, recoveredOffset);
       }
     }
@@ -418,6 +424,18 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
       long nextStreamOffset = maxRecoveredOffset + 1;
       streamOffsetSequence.updateAndGet(current -> Math.max(current, nextStreamOffset));
     }
+
+    recoveredGapFills.forEach(recoveredGapFill -> {
+      liveMarketDataPersistencePort.persistSnapshot(
+          recoveredGapFill.subscriptionSpec(),
+          recoveredGapFill.event()
+      );
+      publishToMatchingSinks(
+          recoveredGapFill.subscriptionSpec().symbol(),
+          recoveredGapFill.subscriptionSpec().trId(),
+          recoveredGapFill.event()
+      );
+    });
   }
 
   private NormalizedQuoteEvent replayGapFillEvent(String symbol, java.time.Instant quoteAsOf, long recoveredOffset) {
@@ -496,5 +514,11 @@ public class KisLiveMarketDataAdapter implements MarketDataSourceAdapter, Dispos
   }
 
   private record RemoteSubscriptionKey(String trId, String trKey) {
+  }
+
+  private record RecoveredGapFill(
+      MarketDataSubscriptionSpec subscriptionSpec,
+      NormalizedQuoteEvent event
+  ) {
   }
 }
