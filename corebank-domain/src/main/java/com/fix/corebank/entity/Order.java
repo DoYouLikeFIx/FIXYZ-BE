@@ -179,7 +179,7 @@ public class Order extends BaseTimeEntity {
         quoteSnapshotId,
         quoteAsOf,
         quoteSourceMode,
-        "ACCEPTED",
+        "NEW",
         null,
         null,
         null,
