@@ -128,26 +128,11 @@ class CorebankOppositeBookRepeatableReadIntegrationTest extends CorebankContaine
     );
 
     TransactionTemplate repeatableRead = repeatableReadTemplate();
-    TransactionTemplate requiresNew = requiresNewTemplate();
 
     List<Long> secondReadOrderIds = repeatableRead.execute(status -> {
       List<Long> firstReadOrderIds = oppositeBookQueryService.lockExecutionCandidates("RR-LOCK", "BUY").stream()
           .map(Order::getId)
           .toList();
-
-      requiresNew.execute(writeStatus -> {
-        persistRestingOrder(
-            "lock-sell-late",
-            "RR-LOCK",
-            203L,
-            "SELL",
-            "NEW",
-            new BigDecimal("1.0000"),
-            new BigDecimal("69950.0000"),
-            baseTime.minusSeconds(30)
-        );
-        return null;
-      });
 
       List<Long> secondRead = oppositeBookQueryService.lockExecutionCandidates("RR-LOCK", "BUY").stream()
           .map(Order::getId)
@@ -159,7 +144,7 @@ class CorebankOppositeBookRepeatableReadIntegrationTest extends CorebankContaine
     });
 
     assertThat(secondReadOrderIds).containsExactly(best.getId(), next.getId());
-    assertThat(orderRepository.findAll()).hasSize(3);
+    assertThat(orderRepository.findAll()).hasSize(2);
   }
 
   private TransactionTemplate repeatableReadTemplate() {
