@@ -156,6 +156,7 @@ class CorebankOppositeBookRepeatableReadIntegrationTest extends CorebankContaine
   private TransactionTemplate requiresNewTemplate() {
     TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
     transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
     return transactionTemplate;
   }
 
@@ -182,6 +183,7 @@ class CorebankOppositeBookRepeatableReadIntegrationTest extends CorebankContaine
   }
 
   private void persistRemainingQuantity(Long orderId, BigDecimal leavesQty) {
+    // Intentionally bypass the domain model to simulate legacy rows with pre-populated leaves_qty.
     jdbcTemplate.update("UPDATE orders SET leaves_qty = ? WHERE id = ?", leavesQty, orderId);
   }
 }
