@@ -39,7 +39,21 @@ public class OrderCustomRepositoryImpl implements OrderCustomRepository {
   }
 
   @Override
-  public List<Order> findRestingLimitOrdersForSweep(String symbol, String side, List<String> statuses) {
+  public List<Order> findPreviewRestingLimitOrdersForSweep(String symbol, String side, List<String> statuses) {
+    return findRestingLimitOrdersForSweep(symbol, side, statuses, false);
+  }
+
+  @Override
+  public List<Order> lockExecutionRestingLimitOrdersForSweep(String symbol, String side, List<String> statuses) {
+    return findRestingLimitOrdersForSweep(symbol, side, statuses, true);
+  }
+
+  private List<Order> findRestingLimitOrdersForSweep(
+      String symbol,
+      String side,
+      List<String> statuses,
+      boolean lockForExecution
+  ) {
     JPAQuery<Order> query = queryFactory.selectFrom(ORDER)
         .where(
             ORDER.symbol.eq(symbol),
@@ -49,11 +63,13 @@ public class OrderCustomRepositoryImpl implements OrderCustomRepository {
             ORDER.status.in(statuses),
             remainingQuantityPositive()
         )
-        .orderBy(orderSpecifiersFor(side))
-        .setLockMode(LockModeType.PESSIMISTIC_WRITE);
+        .orderBy(orderSpecifiersFor(side));
 
-    if (bookLockTimeoutMillis >= 0) {
-      query.setHint(JAKARTA_LOCK_TIMEOUT_HINT, bookLockTimeoutMillis);
+    if (lockForExecution) {
+      query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
+      if (bookLockTimeoutMillis >= 0) {
+        query.setHint(JAKARTA_LOCK_TIMEOUT_HINT, bookLockTimeoutMillis);
+      }
     }
 
     return query.fetch();

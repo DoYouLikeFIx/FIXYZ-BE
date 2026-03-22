@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -19,21 +20,27 @@ public class CorebankOppositeBookQueryService {
 
   private static final int MONEY_SCALE = 4;
   private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-  private static final List<String> ACTIVE_BOOK_STATUSES = List.of("ACCEPTED", "NEW", "PENDING_NEW", "PARTIALLY_FILLED");
+  private static final List<String> MATCHABLE_BOOK_STATUSES = List.of("NEW", "PARTIALLY_FILLED");
 
   private final OrderRepository orderRepository;
 
-  @Transactional
-  public List<OppositeBookEntry> findSweepCandidates(String symbol, String aggressorSide) {
-    return lockRestingLimitOrders(symbol, aggressorSide).stream()
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+  public List<OppositeBookEntry> findPreviewCandidates(String symbol, String aggressorSide) {
+    return findPreviewRestingLimitOrders(symbol, aggressorSide).stream()
         .map(this::toEntry)
         .toList();
   }
 
-  @Transactional
-  public List<Order> lockRestingLimitOrders(String symbol, String aggressorSide) {
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+  public List<Order> findPreviewRestingLimitOrders(String symbol, String aggressorSide) {
     String oppositeSide = resolveOppositeSide(aggressorSide);
-    return orderRepository.findRestingLimitOrdersForSweep(symbol, oppositeSide, ACTIVE_BOOK_STATUSES);
+    return orderRepository.findPreviewRestingLimitOrdersForSweep(symbol, oppositeSide, MATCHABLE_BOOK_STATUSES);
+  }
+
+  @Transactional(isolation = Isolation.REPEATABLE_READ)
+  public List<Order> lockExecutionCandidates(String symbol, String aggressorSide) {
+    String oppositeSide = resolveOppositeSide(aggressorSide);
+    return orderRepository.lockExecutionRestingLimitOrdersForSweep(symbol, oppositeSide, MATCHABLE_BOOK_STATUSES);
   }
 
   OppositeBookEntry toEntry(Order order) {

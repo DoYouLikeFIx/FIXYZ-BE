@@ -6,5 +6,7 @@ import java.util.List;
 public interface OrderCustomRepository {
   boolean existsByClOrdId(String clOrdId);
 
-  List<Order> findRestingLimitOrdersForSweep(String symbol, String side, List<String> statuses);
+  List<Order> findPreviewRestingLimitOrdersForSweep(String symbol, String side, List<String> statuses);
+
+  List<Order> lockExecutionRestingLimitOrdersForSweep(String symbol, String side, List<String> statuses);
 }
