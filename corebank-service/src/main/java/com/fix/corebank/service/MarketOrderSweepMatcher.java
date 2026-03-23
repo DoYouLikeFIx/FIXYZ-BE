@@ -3,76 +3,67 @@ package com.fix.corebank.service;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class MarketOrderSweepMatcher {
 
-  private static final int MONEY_SCALE = 4;
-  private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+  private final CorebankMatchingEngine matchingEngine;
 
   public MarketSweepMatchResult match(
       BigDecimal requestedQty,
       List<CorebankOppositeBookQueryService.OppositeBookEntry> oppositeBook
   ) {
-    BigDecimal normalizedRequestedQty = normalizePositive(requestedQty, "requestedQty is required");
-    if (oppositeBook == null || oppositeBook.isEmpty()) {
-      return MarketSweepMatchResult.rejected(normalizedRequestedQty, ErrorCode.ORD_NO_LIQUIDITY);
+    CorebankMatchingEngine.MatchResult result = matchingEngine.match(
+        CorebankMatchingEngine.MatchRequest.market(
+            requestedQty,
+            oppositeBook == null
+                ? List.of()
+                : oppositeBook.stream()
+                    .map(this::toEntry)
+                    .toList()
+        )
+    );
+    if (result.rejected()) {
+      return MarketSweepMatchResult.rejected(result.leavesQty(), result.rejectCode());
     }
-
-    BigDecimal remainingQty = normalizedRequestedQty;
-    BigDecimal grossNotional = ZERO;
-    List<MarketSweepFill> fills = new ArrayList<>();
-
-    for (CorebankOppositeBookQueryService.OppositeBookEntry candidate : oppositeBook) {
-      if (remainingQty.signum() == 0) {
-        break;
-      }
-
-      BigDecimal candidateRemainingQty = normalizePositive(candidate.remainingQty(), "candidate remainingQty is required");
-      BigDecimal candidatePrice = normalizePositive(candidate.limitPrice(), "candidate limitPrice is required");
-      BigDecimal fillQty = remainingQty.min(candidateRemainingQty);
-      BigDecimal remainingMakerQty = candidateRemainingQty.subtract(fillQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-
-      fills.add(new MarketSweepFill(
-          candidate.orderId(),
-          candidate.accountId(),
-          candidate.clOrdId(),
-          candidate.symbol(),
-          candidate.side(),
-          fillQty,
-          candidatePrice,
-          remainingMakerQty,
-          candidate.priorityTime()
-      ));
-
-      remainingQty = remainingQty.subtract(fillQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-      grossNotional = grossNotional.add(fillQty.multiply(candidatePrice)).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-    }
-
-    if (fills.isEmpty()) {
-      return MarketSweepMatchResult.rejected(normalizedRequestedQty, ErrorCode.ORD_NO_LIQUIDITY);
-    }
-
-    BigDecimal executedQty = normalizedRequestedQty.subtract(remainingQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-    BigDecimal executedPrice = grossNotional.divide(executedQty, MONEY_SCALE, RoundingMode.HALF_UP);
-    String executionResult = remainingQty.signum() == 0 ? "FILLED" : "PARTIALLY_FILLED";
-    return MarketSweepMatchResult.executed(fills, executionResult, executedQty, remainingQty, executedPrice);
+    return MarketSweepMatchResult.executed(
+        result.fills().stream()
+            .map(fill -> new MarketSweepFill(
+                fill.makerOrderId(),
+                fill.makerAccountId(),
+                fill.makerClOrdId(),
+                fill.symbol(),
+                fill.side(),
+                fill.executedQty(),
+                fill.executedPrice(),
+                fill.remainingMakerQty(),
+                fill.priorityTime()
+            ))
+            .toList(),
+        result.executionResult(),
+        result.totalExecutedQty(),
+        result.leavesQty(),
+        result.weightedAvgPrice()
+    );
   }
 
-  private BigDecimal normalizePositive(BigDecimal value, String nullMessage) {
-    if (value == null) {
-      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, nullMessage);
-    }
-    BigDecimal normalized = value.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-    if (normalized.signum() <= 0) {
-      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, nullMessage);
-    }
-    return normalized;
+  private CorebankMatchingEngine.MatchBookEntry toEntry(CorebankOppositeBookQueryService.OppositeBookEntry candidate) {
+    return new CorebankMatchingEngine.MatchBookEntry(
+        candidate.orderId(),
+        candidate.accountId(),
+        candidate.clOrdId(),
+        candidate.symbol(),
+        candidate.side(),
+        candidate.remainingQty(),
+        candidate.limitPrice(),
+        candidate.priorityTime(),
+        candidate.status()
+    );
   }
 
   public record MarketSweepFill(
@@ -96,6 +87,8 @@ public class MarketOrderSweepMatcher {
       BigDecimal executedPrice,
       ErrorCode rejectCode
   ) {
+    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(4);
+
     private static MarketSweepMatchResult rejected(BigDecimal requestedQty, ErrorCode rejectCode) {
       return new MarketSweepMatchResult(List.of(), "REJECTED", ZERO, requestedQty, null, rejectCode);
     }

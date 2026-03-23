@@ -17,7 +17,7 @@ class MarketOrderSweepMatcherTest {
 
   @BeforeEach
   void setUp() {
-    matcher = new MarketOrderSweepMatcher();
+    matcher = new MarketOrderSweepMatcher(new CorebankMatchingEngine());
   }
 
   @Test
@@ -83,7 +83,7 @@ class MarketOrderSweepMatcherTest {
     assertThatThrownBy(() -> matcher.match(BigDecimal.ZERO, List.of()))
         .isInstanceOfSatisfying(BusinessException.class, ex -> {
           assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST);
-          assertThat(ex.getMessage()).contains("requestedQty is required");
+          assertThat(ex.getMessage()).contains("orderQty is required");
         });
   }
 
