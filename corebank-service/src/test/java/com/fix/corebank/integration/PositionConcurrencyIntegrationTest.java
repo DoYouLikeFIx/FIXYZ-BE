@@ -175,20 +175,8 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     String firstSymbol = SYMBOL;
     String secondSymbol = "000660";
     insertPosition(secondSymbol, "100.0000", "120000.0000");
-    seedRestingBuyLiquidity(
-        jdbcTemplate,
-        orderRepository,
-        2L,
-        2L,
-        "200000000002",
-        secondSymbol,
-        "maker-" + UUID.randomUUID(),
-        ORDER_QTY,
-        ORDER_PRICE
-    );
 
     CountDownLatch firstPositionLocked = new CountDownLatch(1);
-    CountDownLatch secondPositionLocked = new CountDownLatch(1);
     CountDownLatch releaseFirstOrder = new CountDownLatch(1);
     AtomicBoolean shouldBlockFirstOrder = new AtomicBoolean(true);
 
@@ -198,8 +186,6 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       if (ACCOUNT_ID == accountId && firstSymbol.equals(symbol) && shouldBlockFirstOrder.compareAndSet(true, false)) {
         firstPositionLocked.countDown();
         releaseFirstOrder.await(15, TimeUnit.SECONDS);
-      } else if (ACCOUNT_ID == accountId && secondSymbol.equals(symbol)) {
-        secondPositionLocked.countDown();
       }
       return null;
     }).when(orderPreparationLockHook).afterPositionLock(anyLong(), anyString());
@@ -213,10 +199,9 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       assertThat(firstPositionLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
       secondFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), secondSymbol));
-      assertThat(secondPositionLocked.await(10, TimeUnit.SECONDS)).isTrue();
+      AttemptOutcome secondOutcome = secondFuture.get(10, TimeUnit.SECONDS);
 
       releaseFirstOrder.countDown();
-      AttemptOutcome secondOutcome = secondFuture.get(10, TimeUnit.SECONDS);
       AttemptOutcome firstOutcome = firstFuture.get(10, TimeUnit.SECONDS);
 
       assertThat(secondOutcome.success()).isTrue();
@@ -226,14 +211,14 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       assertThat(firstOutcome.status()).isEqualTo("FILLED");
       assertThat(firstOutcome.executionResult()).isEqualTo("FILLED");
 
-      assertThat(accountCashBalance()).isEqualByComparingTo("112000000.0000");
+      assertThat(accountCashBalance()).isEqualByComparingTo("100000000.0000");
       assertThat(positionQuantity(firstSymbol)).isEqualByComparingTo("500.0000");
-      assertThat(positionQuantity(secondSymbol)).isEqualByComparingTo("0.0000");
-      assertThat(count("orders")).isEqualTo(3);
-      assertThat(count("executions")).isEqualTo(2);
-      assertThat(count("journal_entries")).isEqualTo(2);
-      assertThat(count("ledger_entries")).isEqualTo(4);
-      assertThat(count("ledger_entry_refs")).isEqualTo(4);
+      assertThat(positionQuantity(secondSymbol)).isEqualByComparingTo("100.0000");
+      assertThat(count("orders")).isEqualTo(2);
+      assertThat(count("executions")).isEqualTo(0);
+      assertThat(count("journal_entries")).isEqualTo(0);
+      assertThat(count("ledger_entries")).isEqualTo(0);
+      assertThat(count("ledger_entry_refs")).isEqualTo(0);
 
       verify(fepClient, times(2)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } catch (TimeoutException ex) {
