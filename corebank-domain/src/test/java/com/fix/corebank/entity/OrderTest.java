@@ -12,6 +12,20 @@ import org.junit.jupiter.api.Test;
 class OrderTest {
 
   @Test
+  void shouldInitializeAcceptedOrderAsNew() {
+    Order order = Order.accepted(
+        1L,
+        "123e4567-e89b-42d3-a456-426614174261",
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000")
+    );
+
+    assertThat(order.getStatus()).isEqualTo("NEW");
+  }
+
+  @Test
   void shouldCompleteExecutionAndClearFailureReason() {
     Order order = Order.accepted(
         1L,
