@@ -210,6 +210,55 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
   }
 
   @Test
+  void shouldExposeRecoveryAuditEntriesThroughCanonicalOrderRecoveryFilter() throws Exception {
+    resetStores();
+    Member admin = createMember("M-ADMIN-013", "admin13@fixyz.com", "ROLE_ADMIN");
+    Member target = createMember("M-USER-013", "user13@fixyz.com", "ROLE_USER");
+
+    String adminSessionId = createAuthenticatedSession(admin, "ROLE_ADMIN");
+
+    auditLogService.record(AuditLog.ofOrderSession(
+        target.getId(),
+        77L,
+        "ORDER_SESSION_RECOVERY_ATTEMPT",
+        "ORDER_SESSION",
+        "recovery-target-1",
+        "clOrdId=CL-REC-1, attemptCount=3, outcome=ESCALATED, note=IllegalStateException: corebank unavailable",
+        "127.0.0.1",
+        "junit",
+        "corr-rec-1"
+    ));
+    auditLogService.record(AuditLog.ofOrderSession(
+        target.getId(),
+        78L,
+        AuditAction.ORDER_SESSION_EXECUTED,
+        "ORDER_SESSION",
+        "recovery-target-2",
+        "clOrdId=CL-REC-1, result=FILLED",
+        "127.0.0.1",
+        "junit",
+        "corr-rec-2"
+    ));
+
+    mockMvc.perform(get("/api/v1/admin/audit-logs")
+            .cookie(sessionCookie(adminSessionId))
+            .param("page", "0")
+            .param("size", "10")
+            .param("memberId", String.valueOf(target.getId()))
+            .param("eventType", "ORDER_RECOVERY"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.content.length()").value(1))
+        .andExpect(jsonPath("$.data.content[0].eventType").value("ORDER_RECOVERY"))
+        .andExpect(jsonPath("$.data.content[0].clOrdId").value("CL-REC-1"))
+        .andExpect(jsonPath("$.data.content[0].orderSessionId").value(77))
+        .andExpect(jsonPath("$.data.content[0].description").value(
+            "clOrdId=CL-REC-1, attemptCount=3, outcome=ESCALATED, note=IllegalStateException: corebank unavailable"
+        ));
+  }
+
+  @Test
   void shouldRejectAuditQueryWhenFromIsAfterTo() throws Exception {
     String from = Instant.now().plusSeconds(3600).toString();
     String to = Instant.now().minusSeconds(3600).toString();
