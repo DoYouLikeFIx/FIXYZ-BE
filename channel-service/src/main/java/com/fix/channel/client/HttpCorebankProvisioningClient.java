@@ -7,9 +7,13 @@ import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.TraceparentSupport;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -23,16 +27,31 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
   private final RestClient restClient;
   private final String internalSecret;
 
+  @Autowired
   public HttpCorebankProvisioningClient(
       RestClient.Builder restClientBuilder,
       @Value("${corebank.internal.base-url:${corebank.base-url:http://localhost:8081}}") String corebankBaseUrl,
-      @Value("${corebank.internal.secret:${internal.secret:${INTERNAL_SECRET:local-internal-secret}}}") String internalSecret
+      @Value("${corebank.internal.secret:}") String corebankInternalSecret,
+      @Value("${internal.secret:}") String internalSecret,
+      Environment environment
   ) {
     this.restClient = restClientBuilder
         .baseUrl(corebankBaseUrl)
         .requestFactory(new SimpleClientHttpRequestFactory())
         .build();
-    this.internalSecret = internalSecret;
+    this.internalSecret = resolveInternalSecret(corebankInternalSecret, internalSecret, environment);
+  }
+
+  HttpCorebankProvisioningClient(
+      RestClient.Builder restClientBuilder,
+      String corebankBaseUrl,
+      String internalSecret
+  ) {
+    this.restClient = restClientBuilder
+        .baseUrl(corebankBaseUrl)
+        .requestFactory(new SimpleClientHttpRequestFactory())
+        .build();
+    this.internalSecret = resolveInternalSecret("", internalSecret);
   }
 
   @Override
@@ -95,6 +114,29 @@ public class HttpCorebankProvisioningClient implements CorebankProvisioningClien
       return ChannelCorrelationIdSupport.currentOrGenerate();
     }
     return ChannelCorrelationIdSupport.normalize(correlationId);
+  }
+
+  private static String resolveInternalSecret(String corebankInternalSecret, String internalSecret) {
+    if (StringUtils.hasText(corebankInternalSecret)) {
+      return corebankInternalSecret;
+    }
+    if (StringUtils.hasText(internalSecret)) {
+      return internalSecret;
+    }
+    throw new IllegalStateException("corebank.internal.secret or internal.secret must be configured");
+  }
+
+  private static String resolveInternalSecret(String corebankInternalSecret, String internalSecret, Environment environment) {
+    if (StringUtils.hasText(corebankInternalSecret)) {
+      return corebankInternalSecret;
+    }
+    if (StringUtils.hasText(internalSecret)) {
+      return internalSecret;
+    }
+    if (environment != null && environment.acceptsProfiles(Profiles.of("prod", "staging"))) {
+      throw new IllegalStateException("corebank.internal.secret or internal.secret must be configured");
+    }
+    return "local-internal-secret";
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
