@@ -1,5 +1,6 @@
 package com.fix.corebank.integration;
 
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingBuyLiquidity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -17,6 +18,7 @@ import com.fix.common.fep.FepOrdStatus;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
+import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.OrderPreparationLockHook;
 import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
@@ -64,6 +66,9 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
   @Autowired
   private JdbcTemplate jdbcTemplate;
 
+  @Autowired
+  private OrderRepository orderRepository;
+
   @MockBean
   private FepClient fepClient;
 
@@ -97,6 +102,17 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
   @Test
   @Timeout(20)
   void shouldAllowExactlyFiveFilledSellOrdersWithoutOversellUnderTenThreadLoad() throws Exception {
+    seedRestingBuyLiquidity(
+        jdbcTemplate,
+        orderRepository,
+        2L,
+        2L,
+        "200000000002",
+        SYMBOL,
+        "maker-" + UUID.randomUUID(),
+        new BigDecimal("500.0000"),
+        ORDER_PRICE
+    );
     CountDownLatch ready = new CountDownLatch(THREAD_COUNT);
     CountDownLatch start = new CountDownLatch(1);
     ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
@@ -140,11 +156,11 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       assertThat(accountCashBalance()).isEqualByComparingTo("136000000.0000");
       assertThat(positionQuantity(SYMBOL)).isEqualByComparingTo("0.0000");
       assertThat(positionQuantity(SYMBOL).signum()).isNotNegative();
-      assertThat(count("orders")).isEqualTo(5);
-      assertThat(count("executions")).isEqualTo(5);
-      assertThat(count("journal_entries")).isEqualTo(5);
-      assertThat(count("ledger_entries")).isEqualTo(10);
-      assertThat(count("ledger_entry_refs")).isEqualTo(10);
+      assertThat(count("orders")).isEqualTo(6);
+      assertThat(count("executions")).isEqualTo(10);
+      assertThat(count("journal_entries")).isEqualTo(10);
+      assertThat(count("ledger_entries")).isEqualTo(20);
+      assertThat(count("ledger_entry_refs")).isEqualTo(20);
 
       verify(fepClient, times(5)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {
@@ -159,6 +175,28 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     String firstSymbol = SYMBOL;
     String secondSymbol = "000660";
     insertPosition(secondSymbol, "100.0000", "120000.0000");
+    seedRestingBuyLiquidity(
+        jdbcTemplate,
+        orderRepository,
+        2L,
+        2L,
+        "200000000002",
+        firstSymbol,
+        "maker-" + UUID.randomUUID(),
+        ORDER_QTY,
+        ORDER_PRICE
+    );
+    seedRestingBuyLiquidity(
+        jdbcTemplate,
+        orderRepository,
+        3L,
+        3L,
+        "200000000003",
+        secondSymbol,
+        "maker-" + UUID.randomUUID(),
+        ORDER_QTY,
+        ORDER_PRICE
+    );
 
     CountDownLatch firstPositionLocked = new CountDownLatch(1);
     CountDownLatch releaseFirstOrder = new CountDownLatch(1);
