@@ -1,5 +1,6 @@
 package com.fix.corebank.dto.request;
 
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.common.validation.ContractPatterns;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -9,8 +10,13 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Locale;
 
 public class InternalOrderCreateRequest {
+
+  private static final String LIMIT_ORDER_TYPE = "LIMIT";
+  private static final String MARKET_ORDER_TYPE = "MARKET";
 
   @NotNull
   private Long accountId;
@@ -29,9 +35,19 @@ public class InternalOrderCreateRequest {
   @DecimalMin("0.0001")
   private BigDecimal quantity;
 
-  @NotNull
   @DecimalMin("0.0001")
   private BigDecimal price;
+
+  private String orderType;
+
+  private String quoteSnapshotId;
+
+  private Instant quoteAsOf;
+
+  private FepQuoteSourceMode quoteSourceMode;
+
+  @DecimalMin("0.0001")
+  private BigDecimal preTradePrice;
 
   @Schema(hidden = true)
   @AssertTrue(message = "quantity must be a whole number")
@@ -45,8 +61,44 @@ public class InternalOrderCreateRequest {
     return isWholeNumber(price);
   }
 
+  @Schema(hidden = true)
+  @AssertTrue(message = "preTradePrice must be a whole number")
+  public boolean isPreTradePriceWholeNumber() {
+    return isWholeNumber(preTradePrice);
+  }
+
+  @Schema(hidden = true)
+  @AssertTrue(message = "orderType contract is invalid")
+  public boolean isOrderTypeContractValid() {
+    String normalizedOrderType = normalizedOrderType();
+    if (!LIMIT_ORDER_TYPE.equals(normalizedOrderType) && !MARKET_ORDER_TYPE.equals(normalizedOrderType)) {
+      return false;
+    }
+    if (LIMIT_ORDER_TYPE.equals(normalizedOrderType)) {
+      return price != null;
+    }
+    return price == null
+        && quoteSnapshotId != null
+        && !quoteSnapshotId.isBlank()
+        && quoteAsOf != null
+        && quoteSourceMode != null
+        && preTradePrice != null;
+  }
+
   public InternalOrderCreateCommand toVo() {
-    return InternalOrderCreateCommand.of(accountId, clOrdId, symbol, side, quantity, price);
+    return InternalOrderCreateCommand.of(
+        accountId,
+        clOrdId,
+        symbol,
+        side,
+        normalizedOrderType(),
+        quantity,
+        price,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode,
+        preTradePrice
+    );
   }
 
   public Long getAccountId() {
@@ -97,7 +149,54 @@ public class InternalOrderCreateRequest {
     this.price = price;
   }
 
+  public String getOrderType() {
+    return orderType;
+  }
+
+  public void setOrderType(String orderType) {
+    this.orderType = orderType;
+  }
+
+  public String getQuoteSnapshotId() {
+    return quoteSnapshotId;
+  }
+
+  public void setQuoteSnapshotId(String quoteSnapshotId) {
+    this.quoteSnapshotId = quoteSnapshotId;
+  }
+
+  public Instant getQuoteAsOf() {
+    return quoteAsOf;
+  }
+
+  public void setQuoteAsOf(Instant quoteAsOf) {
+    this.quoteAsOf = quoteAsOf;
+  }
+
+  public FepQuoteSourceMode getQuoteSourceMode() {
+    return quoteSourceMode;
+  }
+
+  public void setQuoteSourceMode(FepQuoteSourceMode quoteSourceMode) {
+    this.quoteSourceMode = quoteSourceMode;
+  }
+
+  public BigDecimal getPreTradePrice() {
+    return preTradePrice;
+  }
+
+  public void setPreTradePrice(BigDecimal preTradePrice) {
+    this.preTradePrice = preTradePrice;
+  }
+
   private boolean isWholeNumber(BigDecimal value) {
     return value == null || value.stripTrailingZeros().scale() <= 0;
+  }
+
+  private String normalizedOrderType() {
+    if (orderType == null || orderType.isBlank()) {
+      return LIMIT_ORDER_TYPE;
+    }
+    return orderType.trim().toUpperCase(Locale.ROOT);
   }
 }

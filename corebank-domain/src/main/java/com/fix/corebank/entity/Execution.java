@@ -1,8 +1,11 @@
 package com.fix.corebank.entity;
 
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -39,6 +42,16 @@ public class Execution extends BaseTimeEntity {
   @Column(name = "exec_price", nullable = false, precision = 19, scale = 4)
   private BigDecimal execPrice;
 
+  @Column(name = "quote_snapshot_id", length = 64)
+  private String quoteSnapshotId;
+
+  @Column(name = "quote_as_of")
+  private Instant quoteAsOf;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "quote_source_mode", length = 16)
+  private FepQuoteSourceMode quoteSourceMode;
+
   @Column(name = "executed_at", nullable = false)
   private Instant executedAt;
 
@@ -53,6 +66,9 @@ public class Execution extends BaseTimeEntity {
       String side,
       BigDecimal execQty,
       BigDecimal execPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode,
       Instant executedAt
   ) {
     this.orderId = orderId;
@@ -62,6 +78,9 @@ public class Execution extends BaseTimeEntity {
     this.side = side;
     this.execQty = execQty;
     this.execPrice = execPrice;
+    this.quoteSnapshotId = quoteSnapshotId;
+    this.quoteAsOf = quoteAsOf;
+    this.quoteSourceMode = quoteSourceMode;
     this.executedAt = executedAt;
   }
 
@@ -74,7 +93,7 @@ public class Execution extends BaseTimeEntity {
       BigDecimal execQty,
       BigDecimal execPrice
   ) {
-    return new Execution(orderId, accountId, clOrdId, symbol, side, execQty, execPrice, Instant.now());
+    return new Execution(orderId, accountId, clOrdId, symbol, side, execQty, execPrice, null, null, null, Instant.now());
   }
 
   public static Execution of(
@@ -87,7 +106,35 @@ public class Execution extends BaseTimeEntity {
       BigDecimal execPrice,
       Instant executedAt
   ) {
-    return new Execution(orderId, accountId, clOrdId, symbol, side, execQty, execPrice, executedAt);
+    return new Execution(orderId, accountId, clOrdId, symbol, side, execQty, execPrice, null, null, null, executedAt);
+  }
+
+  public static Execution of(
+      Long orderId,
+      Long accountId,
+      String clOrdId,
+      String symbol,
+      String side,
+      BigDecimal execQty,
+      BigDecimal execPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode,
+      Instant executedAt
+  ) {
+    return new Execution(
+        orderId,
+        accountId,
+        clOrdId,
+        symbol,
+        side,
+        execQty,
+        execPrice,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode,
+        executedAt
+    );
   }
 
   public Long getId() {
@@ -120,6 +167,18 @@ public class Execution extends BaseTimeEntity {
 
   public BigDecimal getExecPrice() {
     return execPrice;
+  }
+
+  public String getQuoteSnapshotId() {
+    return quoteSnapshotId;
+  }
+
+  public Instant getQuoteAsOf() {
+    return quoteAsOf;
+  }
+
+  public FepQuoteSourceMode getQuoteSourceMode() {
+    return quoteSourceMode;
   }
 
   public Instant getExecutedAt() {

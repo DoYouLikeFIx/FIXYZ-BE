@@ -19,6 +19,7 @@ import org.springframework.web.client.RestClient;
 
 import com.fix.channel.client.CorebankClient;
 import com.fix.channel.entity.OrderSession;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
 import com.fix.channel.vo.OrderSessionResult;
@@ -170,6 +171,70 @@ class OrderExecutionServiceTest {
     verify(channelScaffoldService, never()).bootstrapNotification(any(), any(), any());
   }
 
+  @Test
+  void shouldForwardMarketQuoteContextFromSession() {
+    OrderSession authedSession = OrderSession.initiated(
+        1L,
+        101L,
+        "123e4567-e89b-42d3-a456-426614174261",
+        "fingerprint-market",
+        "005930",
+        "BUY",
+        "MARKET",
+        BigDecimal.TEN,
+        null,
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plusSeconds(300),
+        "qsnap-20260321-0001",
+        Instant.parse("2026-03-21T00:00:00Z"),
+        FepQuoteSourceMode.LIVE,
+        BigDecimal.valueOf(72100)
+    );
+    OrderSession completedSession = createAuthedSession();
+    when(orderSessionService.requireOwnedSession(1L, authedSession.getOrderSessionId())).thenReturn(authedSession);
+    when(orderSessionService.beginExecution(authedSession)).thenReturn(authedSession);
+    corebankClient.willReturn(OrderExecuteResult.of(
+        1003L,
+        authedSession.getClOrdId(),
+        "FILLED",
+        false,
+        BigDecimal.TEN,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72100),
+        "EXT-MARKET",
+        "CONFIRMED",
+        Instant.parse("2026-03-21T00:00:01Z")
+    ));
+    when(orderSessionService.completeExecution(
+        eq(authedSession),
+        any(),
+        any(),
+        any(),
+        any(),
+        any(),
+        any(),
+        any()
+    )).thenReturn(completedSession);
+    when(orderSessionService.toResult(completedSession, false, false)).thenReturn(mockResult());
+
+    orderExecutionService.execute(1L, authedSession.getOrderSessionId());
+
+    assert corebankClient.lastCommand != null;
+    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getOrderType()).isEqualTo("MARKET");
+    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getPrice()).isNull();
+    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteSnapshotId())
+        .isEqualTo("qsnap-20260321-0001");
+    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteAsOf())
+        .isEqualTo(Instant.parse("2026-03-21T00:00:00Z"));
+    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteSourceMode())
+        .isEqualTo(FepQuoteSourceMode.LIVE);
+    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getPreTradePrice())
+        .isEqualByComparingTo("72100");
+  }
+
   private OrderSession createAuthedSession() {
     return OrderSession.initiated(
         1L,
@@ -225,6 +290,7 @@ class OrderExecutionServiceTest {
 
     private OrderExecuteResult nextResult;
     private RuntimeException nextFailure;
+    private OrderExecuteCommand lastCommand;
 
     private FakeCorebankClient() {
       super(RestClient.create(), "test-secret");
@@ -242,6 +308,7 @@ class OrderExecutionServiceTest {
 
     @Override
     public OrderExecuteResult executeOrder(OrderExecuteCommand command, String correlationId) {
+      this.lastCommand = command;
       if (nextFailure != null) {
         throw nextFailure;
       }

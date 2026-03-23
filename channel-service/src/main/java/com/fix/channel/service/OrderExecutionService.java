@@ -112,8 +112,13 @@ public class OrderExecutionService {
         session.getClOrdId(),
         session.getSymbol(),
         session.getSide(),
+        session.getOrderType(),
         session.getQty(),
-        session.getPrice()
+        session.getPrice(),
+        session.getQuoteSnapshotId(),
+        session.getQuoteAsOf(),
+        session.getQuoteSourceMode(),
+        session.getPreTradePrice()
     );
   }
 

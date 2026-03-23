@@ -1,5 +1,6 @@
 package com.fix.corebank.dto.response;
 
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.corebank.vo.AccountPositionResult;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,6 +17,10 @@ public class InternalAccountPositionResponse {
   private final BigDecimal availableBalance;
   private final String currency;
   private final Instant asOf;
+  private final BigDecimal marketPrice;
+  private final String quoteSnapshotId;
+  private final Instant quoteAsOf;
+  private final FepQuoteSourceMode quoteSourceMode;
 
   private InternalAccountPositionResponse(
       Long accountId,
@@ -27,7 +32,11 @@ public class InternalAccountPositionResponse {
       BigDecimal balance,
       BigDecimal availableBalance,
       String currency,
-      Instant asOf
+      Instant asOf,
+      BigDecimal marketPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode
   ) {
     this.accountId = accountId;
     this.memberId = memberId;
@@ -39,6 +48,10 @@ public class InternalAccountPositionResponse {
     this.availableBalance = availableBalance;
     this.currency = currency;
     this.asOf = asOf;
+    this.marketPrice = marketPrice;
+    this.quoteSnapshotId = quoteSnapshotId;
+    this.quoteAsOf = quoteAsOf;
+    this.quoteSourceMode = quoteSourceMode;
   }
 
   public static InternalAccountPositionResponse from(AccountPositionResult result) {
@@ -52,7 +65,11 @@ public class InternalAccountPositionResponse {
         result.getBalance(),
         result.getBalance(),
         result.getCurrency(),
-        result.getAsOf()
+        result.getAsOf(),
+        result.getMarketPrice(),
+        result.getQuoteSnapshotId(),
+        result.getQuoteAsOf(),
+        result.getQuoteSourceMode()
     );
   }
 
@@ -94,6 +111,22 @@ public class InternalAccountPositionResponse {
 
   public Instant getAsOf() {
     return asOf;
+  }
+
+  public BigDecimal getMarketPrice() {
+    return marketPrice;
+  }
+
+  public String getQuoteSnapshotId() {
+    return quoteSnapshotId;
+  }
+
+  public Instant getQuoteAsOf() {
+    return quoteAsOf;
+  }
+
+  public FepQuoteSourceMode getQuoteSourceMode() {
+    return quoteSourceMode;
   }
 }
 

@@ -1,10 +1,13 @@
 package com.fix.corebank.entity;
 
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.entity.BaseTimeEntity;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -42,8 +45,24 @@ public class Order extends BaseTimeEntity {
   @Column(name = "order_qty", nullable = false, precision = 19, scale = 4)
   private BigDecimal orderQty;
 
-  @Column(name = "order_price", nullable = false, precision = 19, scale = 4)
+  @Column(name = "order_type", nullable = false, length = 16)
+  private String orderType;
+
+  @Column(name = "order_price", precision = 19, scale = 4)
   private BigDecimal orderPrice;
+
+  @Column(name = "pre_trade_price", precision = 19, scale = 4)
+  private BigDecimal preTradePrice;
+
+  @Column(name = "quote_snapshot_id", length = 64)
+  private String quoteSnapshotId;
+
+  @Column(name = "quote_as_of")
+  private Instant quoteAsOf;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "quote_source_mode", length = 16)
+  private FepQuoteSourceMode quoteSourceMode;
 
   @Column(name = "status", nullable = false, length = 32)
   private String status;
@@ -83,8 +102,13 @@ public class Order extends BaseTimeEntity {
       String clOrdId,
       String symbol,
       String side,
+      String orderType,
       BigDecimal orderQty,
       BigDecimal orderPrice,
+      BigDecimal preTradePrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode,
       String status,
       String externalSyncStatus,
       String fepReferenceId,
@@ -100,8 +124,13 @@ public class Order extends BaseTimeEntity {
     this.clOrdId = clOrdId;
     this.symbol = symbol;
     this.side = side;
+    this.orderType = orderType;
     this.orderQty = orderQty;
     this.orderPrice = orderPrice;
+    this.preTradePrice = preTradePrice;
+    this.quoteSnapshotId = quoteSnapshotId;
+    this.quoteAsOf = quoteAsOf;
+    this.quoteSourceMode = quoteSourceMode;
     this.status = status;
     this.externalSyncStatus = externalSyncStatus;
     this.fepReferenceId = fepReferenceId;
@@ -122,14 +151,35 @@ public class Order extends BaseTimeEntity {
       BigDecimal orderQty,
       BigDecimal orderPrice
   ) {
+    return accepted(accountId, clOrdId, symbol, side, "LIMIT", orderQty, orderPrice, null, null, null, null);
+  }
+
+  public static Order accepted(
+      Long accountId,
+      String clOrdId,
+      String symbol,
+      String side,
+      String orderType,
+      BigDecimal orderQty,
+      BigDecimal orderPrice,
+      BigDecimal preTradePrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode
+  ) {
     return new Order(
         accountId,
         clOrdId,
         symbol,
         side,
+        orderType,
         orderQty,
         orderPrice,
-        "ACCEPTED",
+        preTradePrice,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode,
+        "NEW",
         null,
         null,
         null,
@@ -166,8 +216,28 @@ public class Order extends BaseTimeEntity {
     return orderQty;
   }
 
+  public String getOrderType() {
+    return orderType;
+  }
+
   public BigDecimal getOrderPrice() {
     return orderPrice;
+  }
+
+  public BigDecimal getPreTradePrice() {
+    return preTradePrice;
+  }
+
+  public String getQuoteSnapshotId() {
+    return quoteSnapshotId;
+  }
+
+  public Instant getQuoteAsOf() {
+    return quoteAsOf;
+  }
+
+  public FepQuoteSourceMode getQuoteSourceMode() {
+    return quoteSourceMode;
   }
 
   public String getStatus() {

@@ -7,7 +7,13 @@ public interface ReplayCursorPersistencePort {
 
   ReplayCursorSpec activate(ReplayCursorSpec replayCursorSpec);
 
+  ReplayCursorSpec reset(ReplayCursorSpec replayCursorSpec);
+
   ReplayCursorSpec advance(String replayId, long nextCursorOffset);
+
+  void pause(String replayId);
+
+  void resume(String replayId);
 
   void stop(String replayId);
 

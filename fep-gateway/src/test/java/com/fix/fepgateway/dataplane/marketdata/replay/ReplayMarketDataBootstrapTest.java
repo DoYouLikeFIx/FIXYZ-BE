@@ -90,8 +90,21 @@ class ReplayMarketDataBootstrapTest {
     }
 
     @Override
+    public ReplayCursorSpec reset(ReplayCursorSpec replayCursorSpec) {
+      return replayCursorSpec;
+    }
+
+    @Override
     public ReplayCursorSpec advance(String replayId, long nextCursorOffset) {
       return new ReplayCursorSpec(replayId, "seed-1", "005930", nextCursorOffset, new BigDecimal("1.0000"));
+    }
+
+    @Override
+    public void pause(String replayId) {
+    }
+
+    @Override
+    public void resume(String replayId) {
     }
 
     @Override

@@ -17,6 +17,7 @@ import com.fix.channel.vo.AccountSummaryQueryCommand;
 import com.fix.channel.vo.OrderSessionCreateCommand;
 import com.fix.channel.vo.OrderSessionOtpVerifyCommand;
 import com.fix.channel.vo.OrderSessionQueryCommand;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import java.math.BigDecimal;
@@ -131,6 +132,10 @@ class OrderSessionServiceTest {
     assertThat(result.getOrderType()).isEqualTo("LIMIT");
     assertThat(result.getQty()).isEqualByComparingTo("10");
     assertThat(result.getPrice()).isEqualByComparingTo("72000");
+    assertThat(result.getQuoteSnapshotId()).isNull();
+    assertThat(result.getQuoteAsOf()).isNull();
+    assertThat(result.getQuoteSourceMode()).isNull();
+    assertThat(result.getPreTradePrice()).isNull();
     assertThat(result.getRemainingSeconds()).isBetween(1L, 3600L);
     assertThat(result.getExpiresAt()).isNotNull();
     assertThat(result.getCreatedAt()).isNotNull();
@@ -143,6 +148,77 @@ class OrderSessionServiceTest {
           assertThat(session.getSymbol()).isEqualTo("005930");
           assertThat(session.isChallengeRequired()).isTrue();
           assertThat(session.getAuthorizationReason()).isEqualTo("ELEVATED_ORDER_RISK");
+          assertThat(session.getQuoteSnapshotId()).isNull();
+          assertThat(session.getQuoteAsOf()).isNull();
+          assertThat(session.getQuoteSourceMode()).isNull();
+          assertThat(session.getPreTradePrice()).isNull();
+        });
+  }
+
+  @Test
+  void shouldPopulateQuoteContextWhenCreatingMarketBuySession() {
+    var result = orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174275",
+        "005930",
+        "BUY",
+        "MARKET",
+        BigDecimal.TEN,
+        null
+    ));
+
+    assertThat(result.getOrderType()).isEqualTo("MARKET");
+    assertThat(result.getPrice()).isNull();
+    assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap_005930_live_001");
+    assertThat(result.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-20T00:00:00Z"));
+    assertThat(result.getQuoteSourceMode()).isEqualTo("LIVE");
+    assertThat(result.getPreTradePrice()).isEqualByComparingTo("72050.0000");
+    assertThat(orderSessionRepository.findByOrderSessionId(result.getOrderSessionId()))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getQuoteSnapshotId()).isEqualTo("qsnap_005930_live_001");
+          assertThat(session.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-20T00:00:00Z"));
+          assertThat(session.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+          assertThat(session.getPreTradePrice()).isEqualByComparingTo("72050.0000");
+        });
+  }
+
+  @Test
+  void shouldRecordAuditAndRejectWhenMarketQuoteIsStale() {
+    accountPositionService.failNextWith(new BusinessException(
+        ErrorCode.STALE_QUOTE,
+        ErrorCode.STALE_QUOTE.defaultMessage(),
+        null,
+        Map.of(
+            "symbol", "005930",
+            "snapshotAgeMs", 6000,
+            "quoteSourceMode", "LIVE",
+            "quoteSnapshotId", "qsnap_005930_live_999"
+        )
+    ));
+
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174276",
+        "005930",
+        "BUY",
+        "MARKET",
+        BigDecimal.TEN,
+        null
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.STALE_QUOTE));
+
+    assertThat(orderSessionRepository.findByClOrdId("123e4567-e89b-42d3-a456-426614174276")).isEmpty();
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_FAILED");
+          assertThat(log.getTargetId()).isEqualTo("123e4567-e89b-42d3-a456-426614174276");
+          assertThat(log.getDetail()).contains("reason=STALE_QUOTE");
+          assertThat(log.getDetail()).contains("symbol=005930");
+          assertThat(log.getDetail()).contains("snapshotAgeMs=6000");
+          assertThat(log.getDetail()).contains("quoteSourceMode=LIVE");
         });
   }
 
@@ -862,7 +938,11 @@ class OrderSessionServiceTest {
         OrderSessionCreateCommand command,
         boolean challengeRequired,
         String authorizationReason,
-        Instant expiresAt
+        Instant expiresAt,
+        String quoteSnapshotId,
+        Instant quoteAsOf,
+        FepQuoteSourceMode quoteSourceMode,
+        BigDecimal preTradePrice
     ) {
       if (failNextCreateWithDuplicateWithoutInsert) {
         failNextCreateWithDuplicateWithoutInsert = false;
@@ -872,7 +952,16 @@ class OrderSessionServiceTest {
         failNextCreateWithDuplicateAfterInsert = false;
         OrderSession concurrentSession =
             requiresNewTransactionTemplate.execute(
-                status -> super.createSession(command, challengeRequired, authorizationReason, expiresAt)
+                status -> super.createSession(
+                    command,
+                    challengeRequired,
+                    authorizationReason,
+                    expiresAt,
+                    quoteSnapshotId,
+                    quoteAsOf,
+                    quoteSourceMode,
+                    preTradePrice
+                )
             );
         if (concurrentSession == null) {
           throw new IllegalStateException("simulated duplicate create race did not persist a session");
@@ -880,7 +969,16 @@ class OrderSessionServiceTest {
         orderSessionTtlStore.activate(concurrentSession.getOrderSessionId(), concurrentSession.getExpiresAt());
         throw new DataIntegrityViolationException("simulated duplicate create race");
       }
-      return super.createSession(command, challengeRequired, authorizationReason, expiresAt);
+      return super.createSession(
+          command,
+          challengeRequired,
+          authorizationReason,
+          expiresAt,
+          quoteSnapshotId,
+          quoteAsOf,
+          quoteSourceMode,
+          preTradePrice
+      );
     }
 
     @Override
@@ -950,6 +1048,11 @@ class OrderSessionServiceTest {
     private Long memberId = 0L;
     private BigDecimal availableBalance = BigDecimal.valueOf(5_000_000);
     private BigDecimal availableQuantity = BigDecimal.valueOf(500);
+    private BigDecimal marketPrice = BigDecimal.valueOf(72050).setScale(4);
+    private String quoteSnapshotId = "qsnap_005930_live_001";
+    private Instant quoteAsOf = Instant.parse("2026-03-20T00:00:00Z");
+    private FepQuoteSourceMode quoteSourceMode = FepQuoteSourceMode.LIVE;
+    private RuntimeException failure;
 
     StubAccountPositionService() {
       super(null);
@@ -971,15 +1074,24 @@ class OrderSessionServiceTest {
 
     @Override
     public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command) {
+      if (failure != null) {
+        RuntimeException nextFailure = failure;
+        failure = null;
+        throw nextFailure;
+      }
       return AccountPositionResult.of(
           command.getAccountId(),
           command.getMemberId(),
           command.getSymbol(),
           availableQuantity,
           availableQuantity,
-          BigDecimal.ZERO,
+          availableBalance,
           "KRW",
-          Instant.now()
+          Instant.now(),
+          marketPrice,
+          quoteSnapshotId,
+          quoteAsOf,
+          quoteSourceMode
       );
     }
 
@@ -988,6 +1100,11 @@ class OrderSessionServiceTest {
       this.memberId = memberId;
       this.availableBalance = BigDecimal.valueOf(5_000_000);
       this.availableQuantity = BigDecimal.valueOf(500);
+      this.marketPrice = BigDecimal.valueOf(72050).setScale(4);
+      this.quoteSnapshotId = "qsnap_005930_live_001";
+      this.quoteAsOf = Instant.parse("2026-03-20T00:00:00Z");
+      this.quoteSourceMode = FepQuoteSourceMode.LIVE;
+      this.failure = null;
     }
 
     void setAvailableBalance(BigDecimal availableBalance) {
@@ -996,6 +1113,10 @@ class OrderSessionServiceTest {
 
     void setAvailableQuantity(BigDecimal availableQuantity) {
       this.availableQuantity = availableQuantity;
+    }
+
+    void failNextWith(RuntimeException failure) {
+      this.failure = failure;
     }
   }
 }
