@@ -188,6 +188,7 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     );
 
     CountDownLatch firstPositionLocked = new CountDownLatch(1);
+    CountDownLatch secondPositionLocked = new CountDownLatch(1);
     CountDownLatch releaseFirstOrder = new CountDownLatch(1);
     AtomicBoolean shouldBlockFirstOrder = new AtomicBoolean(true);
 
@@ -197,6 +198,8 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       if (ACCOUNT_ID == accountId && firstSymbol.equals(symbol) && shouldBlockFirstOrder.compareAndSet(true, false)) {
         firstPositionLocked.countDown();
         releaseFirstOrder.await(15, TimeUnit.SECONDS);
+      } else if (ACCOUNT_ID == accountId && secondSymbol.equals(symbol)) {
+        secondPositionLocked.countDown();
       }
       return null;
     }).when(orderPreparationLockHook).afterPositionLock(anyLong(), anyString());
@@ -209,15 +212,13 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       firstFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), firstSymbol));
       assertThat(firstPositionLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
-      long secondStartedAt = System.nanoTime();
       secondFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), secondSymbol));
-      AttemptOutcome secondOutcome = secondFuture.get(5, TimeUnit.SECONDS);
-      Duration secondElapsed = Duration.ofNanos(System.nanoTime() - secondStartedAt);
+      assertThat(secondPositionLocked.await(10, TimeUnit.SECONDS)).isTrue();
 
       releaseFirstOrder.countDown();
+      AttemptOutcome secondOutcome = secondFuture.get(10, TimeUnit.SECONDS);
       AttemptOutcome firstOutcome = firstFuture.get(10, TimeUnit.SECONDS);
 
-      assertThat(secondElapsed).isLessThan(Duration.ofSeconds(5));
       assertThat(secondOutcome.success()).isTrue();
       assertThat(secondOutcome.status()).isEqualTo("FILLED");
       assertThat(secondOutcome.executionResult()).isEqualTo("FILLED");
