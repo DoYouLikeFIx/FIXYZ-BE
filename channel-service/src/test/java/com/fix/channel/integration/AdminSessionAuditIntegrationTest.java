@@ -259,6 +259,42 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
   }
 
   @Test
+  void shouldExposeReconciliationAuditEntriesThroughCanonicalOrderReconciliationFilter() throws Exception {
+    resetStores();
+    Member admin = createMember("M-ADMIN-014", "admin14@fixyz.com", "ROLE_ADMIN");
+    Member target = createMember("M-USER-014", "user14@fixyz.com", "ROLE_USER");
+
+    String adminSessionId = createAuthenticatedSession(admin, "ROLE_ADMIN");
+
+    auditLogService.record(AuditLog.ofOrderSession(
+        target.getId(),
+        88L,
+        "ORDER_SESSION_RECONCILIATION",
+        "ORDER_SESSION",
+        "reconcile-target-1",
+        "clOrdId=CL-RECNC-1, outcome=MISMATCH, mismatchType=ACCOUNT_MISMATCH, sourceSystems=CHANNEL|COREBANK|FEP",
+        "127.0.0.1",
+        "junit",
+        "corr-rec-3"
+    ));
+
+    mockMvc.perform(get("/api/v1/admin/audit-logs")
+            .cookie(sessionCookie(adminSessionId))
+            .param("page", "0")
+            .param("size", "10")
+            .param("eventType", "ORDER_RECONCILIATION"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.content.length()").value(1))
+        .andExpect(jsonPath("$.data.content[0].eventType").value("ORDER_RECONCILIATION"))
+        .andExpect(jsonPath("$.data.content[0].clOrdId").value("CL-RECNC-1"))
+        .andExpect(jsonPath("$.data.content[0].description").value(
+            "clOrdId=CL-RECNC-1, outcome=MISMATCH, mismatchType=ACCOUNT_MISMATCH, sourceSystems=CHANNEL|COREBANK|FEP"
+        ));
+  }
+
+  @Test
   void shouldRejectAuditQueryWhenFromIsAfterTo() throws Exception {
     String from = Instant.now().plusSeconds(3600).toString();
     String to = Instant.now().minusSeconds(3600).toString();

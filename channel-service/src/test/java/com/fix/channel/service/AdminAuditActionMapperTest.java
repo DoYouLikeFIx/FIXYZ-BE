@@ -27,6 +27,7 @@ class AdminAuditActionMapperTest {
         "ORDER_EXECUTE",
         "ORDER_CANCEL",
         "ORDER_RECOVERY",
+        "ORDER_RECONCILIATION",
         "MANUAL_REPLAY",
         "TOTP_ENROLL",
         "TOTP_CONFIRM"
@@ -40,6 +41,7 @@ class AdminAuditActionMapperTest {
     assertThat(mapper.canonicalize("ORDER_SESSION_OTP_FAILED")).isEqualTo("ORDER_OTP_FAIL");
     assertThat(mapper.canonicalize("ORDER_SESSION_OTP_REPLAYED")).isEqualTo("ORDER_OTP_FAIL");
     assertThat(mapper.canonicalize("ORDER_SESSION_RECOVERY_ATTEMPT")).isEqualTo("ORDER_RECOVERY");
+    assertThat(mapper.canonicalize("ORDER_SESSION_RECONCILIATION")).isEqualTo("ORDER_RECONCILIATION");
     assertThat(mapper.canonicalize("MANUAL_REPLAY")).isEqualTo("MANUAL_REPLAY");
     assertThat(mapper.canonicalize("AUTH_TOTP_ENROLLMENT_CONFIRMED")).isEqualTo("TOTP_CONFIRM");
   }
@@ -50,6 +52,8 @@ class AdminAuditActionMapperTest {
         .containsExactly("ORDER_SESSION_OTP_FAILED", "ORDER_SESSION_OTP_RATE_LIMITED", "ORDER_SESSION_OTP_REPLAYED");
     assertThat(mapper.storedActionsForCanonical("order_recovery"))
         .containsExactly("ORDER_SESSION_RECOVERY_ATTEMPT");
+    assertThat(mapper.storedActionsForCanonical("order_reconciliation"))
+        .containsExactly("ORDER_SESSION_RECONCILIATION");
     assertThat(mapper.storedActionsForCanonical("manual_replay"))
         .containsExactly("MANUAL_REPLAY");
   }

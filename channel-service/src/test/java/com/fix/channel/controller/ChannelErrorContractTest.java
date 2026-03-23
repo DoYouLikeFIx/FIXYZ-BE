@@ -952,6 +952,19 @@ class ChannelErrorContractTest {
 
   @Test
   @WithMockUser(username = "qa-user")
+  void shouldRequireAdminRoleForOrderIdempotencyReconciliationBoundary() throws Exception {
+    mockMvc.perform(post("/api/v1/admin/orders/{clOrdId}/idempotency-reconciliation", "CL-NON-ADMIN-TARGET")
+            .with(csrf())
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-reconcile-access-denied"))
+        .andExpect(status().isForbidden())
+        .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
+        .andExpect(jsonPath("$.code").value("AUTH-006"))
+        .andExpect(jsonPath("$.message").value("Access denied."))
+        .andExpect(jsonPath("$.path").value("/api/v1/admin/orders/CL-NON-ADMIN-TARGET/idempotency-reconciliation"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
   void shouldReturnAuthRequiredWhenSessionDoesNotContainMemberId() throws Exception {
     mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
             .param("symbol", "005930"))
