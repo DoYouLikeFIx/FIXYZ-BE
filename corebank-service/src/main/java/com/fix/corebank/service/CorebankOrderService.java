@@ -35,6 +35,7 @@ import com.fix.corebank.vo.AccountOrderHistoryItemResult;
 import com.fix.corebank.vo.AccountOrderHistoryQueryCommand;
 import com.fix.corebank.vo.AccountOrderHistoryResult;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
+import com.fix.corebank.vo.InternalOrderSnapshotResult;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.InternalOrderResult;
 import com.fix.corebank.vo.PortfolioQueryCommand;
@@ -288,6 +289,18 @@ public class CorebankOrderService {
     return orderPersistenceService.findOrder(command.getClOrdId())
         .map(existing -> resolveIdempotentReplay(existing, command))
         .orElseGet(() -> createFreshOrder(command));
+  }
+
+  public InternalOrderSnapshotResult getOrderSnapshot(String clOrdId) {
+    CorebankOrderPersistenceService.OrderSnapshot order = orderPersistenceService.getRequiredOrder(clOrdId);
+    return InternalOrderSnapshotResult.of(
+        order.orderId(),
+        order.accountId(),
+        order.clOrdId(),
+        order.status(),
+        order.externalSyncStatus(),
+        order.fepReferenceId()
+    );
   }
 
   public InternalOrderResult requeryOrder(InternalOrderRequeryCommand command) {
