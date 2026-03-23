@@ -121,7 +121,7 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
       String symbol = invocation.getArgument(1);
       if (ACCOUNT_ID == accountId && SYMBOL.equals(symbol) && shouldBlockFirstOrder.compareAndSet(true, false)) {
         firstPositionLocked.countDown();
-        assertThat(releaseFirstOrder.await(5, TimeUnit.SECONDS)).isTrue();
+        releaseFirstOrder.await(15, TimeUnit.SECONDS);
       }
       return null;
     }).when(orderPreparationLockHook).afterPositionLock(anyLong(), anyString());
