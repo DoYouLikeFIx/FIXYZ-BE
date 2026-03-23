@@ -1201,6 +1201,134 @@
                 }
             }
         },
+        "/api/v1/admin/orders/{clOrdId}/idempotency-reconciliation": {
+            "post": {
+                "tags": [
+                    "admin-controller"
+                ],
+                "summary": "Reconcile Order Idempotency",
+                "operationId": "reconcileOrderIdempotency",
+                "parameters": [
+                    {
+                        "name": "clOrdId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminOrderIdempotencyReconciliationResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized; Authentication required or session is no longer valid",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden; Authenticated user lacks the required role",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "headers": {
+                            "Retry-After": {
+                                "description": "Seconds until the rate-limit window resets",
+                                "style": "simple",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/notifications/{notificationId}/read": {
             "patch": {
                 "tags": [
@@ -3628,6 +3756,66 @@
                     },
                     "data": {
                         "$ref": "#/components/schemas/AdminOrderReplayResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "AdminOrderIdempotencyReconciliationResponse": {
+                "type": "object",
+                "properties": {
+                    "clOrdId": {
+                        "type": "string"
+                    },
+                    "orderSessionId": {
+                        "type": "string"
+                    },
+                    "outcome": {
+                        "type": "string"
+                    },
+                    "mismatchType": {
+                        "type": "string"
+                    },
+                    "externalOrderId": {
+                        "type": "string"
+                    },
+                    "externalSyncStatus": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "scanned": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "restored": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "mismatched": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "failed": {
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                }
+            },
+            "ApiResponseAdminOrderIdempotencyReconciliationResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AdminOrderIdempotencyReconciliationResponse"
                     },
                     "error": {
                         "$ref": "#/components/schemas/ApiErrorResponse"
