@@ -53,7 +53,13 @@ import org.springframework.util.StringUtils;
       throw new IllegalStateException("auth.totp.vault.base-url must be configured for non-local profiles");
     }
 
-    URI uri = URI.create(vault.getBaseUrl());
+    URI uri;
+    try {
+      uri = URI.create(vault.getBaseUrl());
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalStateException("auth.totp.vault.base-url must be a valid URI for non-local profiles", ex);
+    }
+
     String scheme = uri.getScheme();
     String host = uri.getHost();
 

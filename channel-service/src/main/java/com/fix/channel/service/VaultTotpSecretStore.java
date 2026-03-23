@@ -24,6 +24,7 @@ import java.util.Optional;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 import org.apache.hc.core5.util.Timeout;
+import org.apache.hc.core5.http.ssl.TLS;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
@@ -65,6 +66,7 @@ public class VaultTotpSecretStore implements TotpSecretStore {
         .setSSLSocketFactory(
             SSLConnectionSocketFactoryBuilder.create()
                 .setSslContext(sslContext)
+                .setTlsVersions(TLS.V_1_3, TLS.V_1_2)
                 .setHostnameVerifier(new DefaultHostnameVerifier())
                 .build()
         );
