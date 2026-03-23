@@ -10,6 +10,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,6 +32,11 @@ class LiveMarketDataPersistenceServiceTest {
   @Autowired
   private MeterRegistry meterRegistry;
 
+  @BeforeEach
+  void setUp() {
+    cleanUp();
+  }
+
   @AfterEach
   void cleanUp() {
     quoteSnapshotRepository.deleteAllInBatch();
@@ -41,6 +47,7 @@ class LiveMarketDataPersistenceServiceTest {
   void shouldPersistLiveSnapshotAndAdvanceSubscriptionProgress() {
     MarketDataSubscriptionSpec subscriptionSpec = liveSubscription("bootstrap-005930", "005930");
     NormalizedQuoteEvent event = liveEvent("005930", 18L, Instant.parse("2026-03-19T00:30:02Z"));
+    long snapshotCountBefore = quoteSnapshotRepository.count();
     Counter counterBefore = meterRegistry.find("fep.marketdata.snapshots.persisted")
         .tags("provider", "KIS", "source_mode", "LIVE")
         .counter();
@@ -49,7 +56,7 @@ class LiveMarketDataPersistenceServiceTest {
     liveMarketDataPersistencePort.activateSubscription(subscriptionSpec);
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
 
-    assertThat(quoteSnapshotRepository.findAll()).hasSize(1);
+    assertThat(quoteSnapshotRepository.count()).isEqualTo(snapshotCountBefore + 1L);
     MarketDataSubscription subscription = marketDataSubscriptionRepository.findByProviderAndSymbolAndSourceMode(
         "KIS",
         "005930",
@@ -70,6 +77,7 @@ class LiveMarketDataPersistenceServiceTest {
   void shouldSkipDuplicateQuoteSnapshotIdAndKeepSingleRow() {
     MarketDataSubscriptionSpec subscriptionSpec = liveSubscription("bootstrap-005930", "005930");
     NormalizedQuoteEvent event = liveEvent("005930", 17L, Instant.parse("2026-03-19T00:30:01Z"));
+    long snapshotCountBefore = quoteSnapshotRepository.count();
     Counter counterBefore = meterRegistry.find("fep.marketdata.snapshots.persisted")
         .tags("provider", "KIS", "source_mode", "LIVE")
         .counter();
@@ -78,7 +86,7 @@ class LiveMarketDataPersistenceServiceTest {
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
 
-    assertThat(quoteSnapshotRepository.findAll()).hasSize(1);
+    assertThat(quoteSnapshotRepository.count()).isEqualTo(snapshotCountBefore + 1L);
     assertThat(meterRegistry.get("fep.marketdata.snapshots.persisted")
         .tag("provider", "KIS")
         .tag("source_mode", "LIVE")
