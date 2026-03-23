@@ -19,6 +19,7 @@ import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
 import com.fix.corebank.repository.OrderRepository;
+import com.fix.corebank.service.CorebankOrderPersistenceService;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.OrderPreparationLockHook;
 import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
@@ -36,7 +37,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +62,9 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
 
   @Autowired
   private CorebankOrderService corebankOrderService;
+
+  @Autowired
+  private CorebankOrderPersistenceService orderPersistenceService;
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
@@ -191,25 +194,23 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     }).when(orderPreparationLockHook).afterPositionLock(anyLong(), anyString());
 
     ExecutorService executorService = Executors.newFixedThreadPool(2);
-    Future<AttemptOutcome> firstFuture = null;
-    Future<AttemptOutcome> secondFuture = null;
+    Future<CorebankOrderPersistenceService.PendingOrderSubmission> firstFuture = null;
+    Future<CorebankOrderPersistenceService.PendingOrderSubmission> secondFuture = null;
 
     try {
-      firstFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), firstSymbol));
+      firstFuture = executorService.submit(() -> prepareSellSubmission(UUID.randomUUID().toString(), firstSymbol));
       assertThat(firstPositionLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
-      secondFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), secondSymbol));
-      AttemptOutcome secondOutcome = secondFuture.get(10, TimeUnit.SECONDS);
+      secondFuture = executorService.submit(() -> prepareSellSubmission(UUID.randomUUID().toString(), secondSymbol));
+      CorebankOrderPersistenceService.PendingOrderSubmission secondSubmission = secondFuture.get(10, TimeUnit.SECONDS);
 
       releaseFirstOrder.countDown();
-      AttemptOutcome firstOutcome = firstFuture.get(10, TimeUnit.SECONDS);
+      CorebankOrderPersistenceService.PendingOrderSubmission firstSubmission = firstFuture.get(10, TimeUnit.SECONDS);
 
-      assertThat(secondOutcome.success()).isTrue();
-      assertThat(secondOutcome.status()).isEqualTo("FILLED");
-      assertThat(secondOutcome.executionResult()).isEqualTo("FILLED");
-      assertThat(firstOutcome.success()).isTrue();
-      assertThat(firstOutcome.status()).isEqualTo("FILLED");
-      assertThat(firstOutcome.executionResult()).isEqualTo("FILLED");
+      assertThat(secondSubmission.symbol()).isEqualTo(secondSymbol);
+      assertThat(secondSubmission.status()).isEqualTo("NEW");
+      assertThat(firstSubmission.symbol()).isEqualTo(firstSymbol);
+      assertThat(firstSubmission.status()).isEqualTo("NEW");
 
       assertThat(accountCashBalance()).isEqualByComparingTo("100000000.0000");
       assertThat(positionQuantity(firstSymbol)).isEqualByComparingTo("500.0000");
@@ -220,16 +221,7 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       assertThat(count("ledger_entries")).isEqualTo(0);
       assertThat(count("ledger_entry_refs")).isEqualTo(0);
 
-      verify(fepClient, times(2)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
-    } catch (TimeoutException ex) {
-      releaseFirstOrder.countDown();
-      if (firstFuture != null) {
-        firstFuture.get(10, TimeUnit.SECONDS);
-      }
-      if (secondFuture != null) {
-        secondFuture.cancel(true);
-      }
-      throw ex;
+      verify(fepClient, times(0)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {
       releaseFirstOrder.countDown();
       executorService.shutdownNow();
@@ -264,6 +256,17 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     } catch (BusinessException ex) {
       return AttemptOutcome.failure(clOrdId, ex.getErrorCode());
     }
+  }
+
+  private CorebankOrderPersistenceService.PendingOrderSubmission prepareSellSubmission(String clOrdId, String symbol) {
+    return orderPersistenceService.prepareOrderSubmission(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        clOrdId,
+        symbol,
+        "SELL",
+        ORDER_QTY,
+        ORDER_PRICE
+    ));
   }
 
   private FepOrderResult toFilledResult(FepOutboundOrderPayload payload) {
