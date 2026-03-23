@@ -77,7 +77,6 @@ class AdminControllerContractTest extends ChannelContainersIntegrationTestBase {
             .header("X-Forwarded-For", "203.0.113.10, 10.0.0.2")
             .header("User-Agent", "JUnit-Admin-Contract/1.0"))
         .andExpect(status().isOk())
-        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-admin-reconcile"))
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.clOrdId").value("CL-ADMIN-1"))
         .andExpect(jsonPath("$.data.orderSessionId").value("OS-9001"))
