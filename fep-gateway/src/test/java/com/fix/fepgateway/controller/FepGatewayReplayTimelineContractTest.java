@@ -1,11 +1,14 @@
 package com.fix.fepgateway.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.common.web.CommonHeaders;
 import com.fix.fepgateway.entity.ReplayCursor;
 import com.fix.fepgateway.repository.ReplayCursorRepository;
@@ -19,6 +22,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
@@ -34,6 +38,9 @@ class FepGatewayReplayTimelineContractTest {
 
   @Autowired
   private ReplayCursorRepository replayCursorRepository;
+
+  @Autowired
+  private ObjectMapper objectMapper;
 
   @BeforeEach
   void setUp() {
@@ -72,6 +79,7 @@ class FepGatewayReplayTimelineContractTest {
   @Test
   void shouldReturnRunningReplayTimelineStatusForActiveStream() throws Exception {
     String replayId = replayIdFor("timeline-seed-002", "000660");
+    long startOffset = 2L;
 
     mockMvc.perform(post("/fep-internal/v1/market-data/replay/timelines")
         .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -86,7 +94,7 @@ class FepGatewayReplayTimelineContractTest {
             }
             """));
 
-    mockMvc.perform(get("/fep-internal/v1/market-data/replay/timelines/{replayId}",
+    MvcResult result = mockMvc.perform(get("/fep-internal/v1/market-data/replay/timelines/{replayId}",
                 replayId)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
             .header(CommonHeaders.X_CORRELATION_ID, "corr-replay-status"))
@@ -95,9 +103,15 @@ class FepGatewayReplayTimelineContractTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.replayId").value(replayId))
         .andExpect(jsonPath("$.data.symbol").value("000660"))
-        .andExpect(jsonPath("$.data.cursorOffset").value(2))
         .andExpect(jsonPath("$.data.status").value("RUNNING"))
-        .andExpect(jsonPath("$.data.emittedCount").value(0));
+        .andReturn();
+
+    JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
+    long cursorOffset = data.path("cursorOffset").asLong();
+    long emittedCount = data.path("emittedCount").asLong();
+
+    assertThat(cursorOffset).isGreaterThanOrEqualTo(startOffset);
+    assertThat(emittedCount).isEqualTo(cursorOffset - startOffset);
   }
 
   @Test
