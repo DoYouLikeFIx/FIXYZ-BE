@@ -239,7 +239,7 @@ public class CorebankOrderPersistenceService {
       InternalOrderCreateCommand command,
       String side
   ) {
-    List<Order> makerOrders = oppositeBookQueryService.lockRestingLimitOrders(command.getSymbol(), side);
+    List<Order> makerOrders = oppositeBookQueryService.lockExecutionCandidates(command.getSymbol(), side);
     MarketOrderSweepMatcher.MarketSweepMatchResult matchResult = marketOrderSweepMatcher.match(
         command.getQuantity(),
         makerOrders.stream()

@@ -106,7 +106,7 @@ class MarketOrderSweepMatcherTest {
         new BigDecimal(remainingQty),
         new BigDecimal(limitPrice),
         Instant.parse(priorityTime),
-        "ACCEPTED"
+        "NEW"
     );
   }
 }
