@@ -94,6 +94,45 @@ class OrderExecutionServiceTest {
   }
 
   @Test
+  void shouldForwardCanonicalClOrdIdToCorebankCommand() {
+    OrderSession authedSession = createAuthedSession();
+    OrderSession completedSession = createAuthedSession();
+    when(orderSessionService.requireOwnedSession(1L, authedSession.getOrderSessionId())).thenReturn(authedSession);
+    when(orderSessionService.beginExecution(authedSession)).thenReturn(authedSession);
+    corebankClient.willReturn(OrderExecuteResult.of(
+        1004L,
+        authedSession.getClOrdId(),
+        "FILLED",
+        false,
+        BigDecimal.TEN,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "EXT-CLORD",
+        "CONFIRMED",
+        Instant.parse("2026-03-21T00:00:02Z")
+    ));
+    when(orderSessionService.completeExecution(
+        eq(authedSession),
+        any(),
+        any(),
+        any(),
+        any(),
+        any(),
+        any(),
+        any()
+    )).thenReturn(completedSession);
+    when(orderSessionService.toResult(completedSession, false, false)).thenReturn(mockResult());
+
+    orderExecutionService.execute(1L, authedSession.getOrderSessionId());
+
+    assert corebankClient.lastCommand != null;
+    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getClOrdId())
+        .isEqualTo(authedSession.getClOrdId());
+  }
+
+  @Test
   void shouldPersistFailedNotificationWhenExecutionThrowsNonEscalationError() {
     OrderSession authedSession = createAuthedSession();
     when(orderSessionService.requireOwnedSession(1L, authedSession.getOrderSessionId())).thenReturn(authedSession);
@@ -169,6 +208,70 @@ class OrderExecutionServiceTest {
         eq(Instant.parse("2026-03-18T00:00:00Z"))
     );
     verify(channelScaffoldService, never()).bootstrapNotification(any(), any(), any());
+  }
+
+  @Test
+  void shouldEscalateWhenCorebankReturnsNonConfirmedNonFailedSyncStatus() {
+    OrderSession authedSession = createAuthedSession();
+    OrderSession escalatedSession = createAuthedSession();
+    escalatedSession.startExecuting();
+    escalatedSession.escalate(
+        OrderSession.ESCALATED_MANUAL_REVIEW,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "EXT-ESCALATED",
+        "PENDING_CONFIRMATION",
+        Instant.parse("2026-03-18T00:01:00Z")
+    );
+    when(orderSessionService.requireOwnedSession(1L, authedSession.getOrderSessionId())).thenReturn(authedSession);
+    when(orderSessionService.beginExecution(authedSession)).thenReturn(authedSession);
+    corebankClient.willReturn(OrderExecuteResult.of(
+        1005L,
+        authedSession.getClOrdId(),
+        "PENDING",
+        false,
+        BigDecimal.TEN,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "EXT-ESCALATED",
+        "PENDING_CONFIRMATION",
+        Instant.parse("2026-03-18T00:01:00Z")
+    ));
+    when(orderSessionService.markEscalated(
+        eq(authedSession),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("FILLED"),
+        eq(BigDecimal.TEN),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("EXT-ESCALATED"),
+        eq("PENDING_CONFIRMATION"),
+        eq(Instant.parse("2026-03-18T00:01:00Z"))
+    )).thenReturn(escalatedSession);
+    when(orderSessionService.toResult(escalatedSession, false, false)).thenReturn(mockResult());
+
+    orderExecutionService.execute(1L, authedSession.getOrderSessionId());
+
+    verify(orderSessionService).markEscalated(
+        eq(authedSession),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("FILLED"),
+        eq(BigDecimal.TEN),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("EXT-ESCALATED"),
+        eq("PENDING_CONFIRMATION"),
+        eq(Instant.parse("2026-03-18T00:01:00Z"))
+    );
+    verify(channelScaffoldService).bootstrapNotification(
+        eq(1L),
+        eq("ORDER"),
+        startsWith("orderSessionId=" + escalatedSession.getOrderSessionId() + " status=ESCALATED")
+    );
   }
 
   @Test
