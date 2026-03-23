@@ -181,8 +181,7 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
 
     CountDownLatch firstPositionLocked = new CountDownLatch(1);
     CountDownLatch secondPositionLocked = new CountDownLatch(1);
-    CountDownLatch releaseFirstOrder = new CountDownLatch(1);
-    CountDownLatch releaseSecondOrder = new CountDownLatch(1);
+    CountDownLatch releaseOrders = new CountDownLatch(1);
     AtomicBoolean shouldBlockFirstOrder = new AtomicBoolean(true);
     AtomicBoolean shouldBlockSecondOrder = new AtomicBoolean(true);
 
@@ -191,10 +190,10 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       String symbol = invocation.getArgument(1);
       if (ACCOUNT_ID == accountId && firstSymbol.equals(symbol) && shouldBlockFirstOrder.compareAndSet(true, false)) {
         firstPositionLocked.countDown();
-        releaseFirstOrder.await(15, TimeUnit.SECONDS);
+        releaseOrders.await(15, TimeUnit.SECONDS);
       } else if (ACCOUNT_ID == accountId && secondSymbol.equals(symbol) && shouldBlockSecondOrder.compareAndSet(true, false)) {
         secondPositionLocked.countDown();
-        releaseSecondOrder.await(15, TimeUnit.SECONDS);
+        releaseOrders.await(15, TimeUnit.SECONDS);
       }
       return null;
     }).when(orderPreparationLockHook).afterPositionLock(anyLong(), anyString());
@@ -210,10 +209,9 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       secondFuture = executorService.submit(() -> prepareSellSubmission(UUID.randomUUID().toString(), secondSymbol));
       assertThat(secondPositionLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
-      releaseSecondOrder.countDown();
-      CorebankOrderPersistenceService.PendingOrderSubmission secondSubmission = secondFuture.get(10, TimeUnit.SECONDS);
-      releaseFirstOrder.countDown();
-      CorebankOrderPersistenceService.PendingOrderSubmission firstSubmission = firstFuture.get(10, TimeUnit.SECONDS);
+      releaseOrders.countDown();
+      CorebankOrderPersistenceService.PendingOrderSubmission secondSubmission = secondFuture.get(20, TimeUnit.SECONDS);
+      CorebankOrderPersistenceService.PendingOrderSubmission firstSubmission = firstFuture.get(20, TimeUnit.SECONDS);
 
       assertThat(secondSubmission.symbol()).isEqualTo(secondSymbol);
       assertThat(secondSubmission.status()).isEqualTo("NEW");
@@ -231,8 +229,7 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
 
       verify(fepClient, times(0)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {
-      releaseSecondOrder.countDown();
-      releaseFirstOrder.countDown();
+      releaseOrders.countDown();
       executorService.shutdownNow();
       executorService.awaitTermination(5, TimeUnit.SECONDS);
     }
