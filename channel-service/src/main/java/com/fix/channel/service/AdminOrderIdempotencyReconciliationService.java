@@ -29,6 +29,7 @@ public class AdminOrderIdempotencyReconciliationService {
   private static final String SYNC_STATUS_CONFIRMED = "CONFIRMED";
   private static final String FAILURE_REASON_SESSION_NOT_EXECUTION_ELIGIBLE = "SESSION_NOT_EXECUTION_ELIGIBLE";
   private static final String FAILURE_REASON_DOWNSTREAM_SYNC_UNRESOLVED = "DOWNSTREAM_SYNC_UNRESOLVED";
+  private static final String DOWNSTREAM_CL_ORD_ID_MISMATCH = "DOWNSTREAM_CL_ORD_ID_MISMATCH";
 
   private final OrderSessionRepository orderSessionRepository;
   private final OrderSessionService orderSessionService;
@@ -248,10 +249,14 @@ public class AdminOrderIdempotencyReconciliationService {
     if (exception.getErrorCode() == ErrorCode.CORE_RESOURCE_NOT_FOUND) {
       return "COREBANK_ORDER_MISSING";
     }
+    if (exception.getMetadata() != null
+        && DOWNSTREAM_CL_ORD_ID_MISMATCH.equals(exception.getMetadata().operatorCode())) {
+      return DOWNSTREAM_CL_ORD_ID_MISMATCH;
+    }
     if (exception.getErrorCode() == ErrorCode.CONTRACT_VALIDATION_FAILED
         && exception.getMessage() != null
         && exception.getMessage().contains("clOrdId must match request")) {
-      return "DOWNSTREAM_CL_ORD_ID_MISMATCH";
+      return DOWNSTREAM_CL_ORD_ID_MISMATCH;
     }
     return null;
   }

@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import com.fix.channel.client.CorebankClient;
+import com.fix.channel.entity.AuditAction;
 import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.support.ChannelCorrelationIdSupport;
@@ -32,7 +33,7 @@ public class OrderSessionRecoveryService {
   private static final String MALFORMED_STATUS = "MALFORMED";
   private static final String NOTIFICATION_CHANNEL_ORDER = "ORDER";
   private static final String ORDER_SESSION_TARGET_TYPE = "ORDER_SESSION";
-  private static final String RECOVERY_AUDIT_ACTION = "ORDER_SESSION_RECOVERY_ATTEMPT";
+  private static final AuditAction RECOVERY_AUDIT_ACTION = AuditAction.ORDER_SESSION_RECOVERY_ATTEMPT;
 
   private final OrderSessionService orderSessionService;
   private final CorebankClient corebankClient;
@@ -379,29 +380,40 @@ public class OrderSessionRecoveryService {
       String note,
       String correlationId
   ) {
-    StringBuilder detail = new StringBuilder("clOrdId=")
-        .append(session.getClOrdId())
-        .append(", attemptCount=").append(attemptCount)
-        .append(", outcome=").append(outcome);
-    if (result != null) {
-      detail.append(", recoveryStatus=").append(result.getStatus())
-          .append(", externalSyncStatus=").append(result.getExternalSyncStatus())
-          .append(", executionResult=").append(result.getExecutionResult());
+    try {
+      StringBuilder detail = new StringBuilder("clOrdId=")
+          .append(session.getClOrdId())
+          .append(", attemptCount=").append(attemptCount)
+          .append(", outcome=").append(outcome);
+      if (result != null) {
+        detail.append(", recoveryStatus=").append(result.getStatus())
+            .append(", externalSyncStatus=").append(result.getExternalSyncStatus())
+            .append(", executionResult=").append(result.getExecutionResult());
+      }
+      if (note != null && !note.isBlank()) {
+        detail.append(", note=").append(note);
+      }
+      auditLogService.record(AuditLog.ofOrderSession(
+          session.getMemberId(),
+          session.getId(),
+          RECOVERY_AUDIT_ACTION,
+          ORDER_SESSION_TARGET_TYPE,
+          session.getOrderSessionId(),
+          detail.toString(),
+          null,
+          null,
+          correlationId
+      ));
+    } catch (RuntimeException ex) {
+      log.warn(
+          "Failed to record recovery attempt audit: sessionId={}, clOrdId={}, outcome={}, attemptCount={}",
+          session.getOrderSessionId(),
+          session.getClOrdId(),
+          outcome,
+          attemptCount,
+          ex
+      );
     }
-    if (note != null && !note.isBlank()) {
-      detail.append(", note=").append(note);
-    }
-    auditLogService.record(AuditLog.ofOrderSession(
-        session.getMemberId(),
-        session.getId(),
-        RECOVERY_AUDIT_ACTION,
-        ORDER_SESSION_TARGET_TYPE,
-        session.getOrderSessionId(),
-        detail.toString(),
-        null,
-        null,
-        correlationId
-    ));
   }
 
   private <T> T firstNonNull(T preferredValue, T fallbackValue) {
