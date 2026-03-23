@@ -53,7 +53,7 @@ class CorebankOppositeBookQueryServiceTest {
         "SWEEP-SELL",
         101L,
         "SELL",
-        "ACCEPTED",
+        "NEW",
         new BigDecimal("3.0000"),
         new BigDecimal("70000.0000"),
         tieTimestamp
@@ -63,7 +63,7 @@ class CorebankOppositeBookQueryServiceTest {
         "SWEEP-SELL",
         102L,
         "SELL",
-        "ACCEPTED",
+        "NEW",
         new BigDecimal("4.0000"),
         new BigDecimal("70000.0000"),
         tieTimestamp
@@ -84,7 +84,7 @@ class CorebankOppositeBookQueryServiceTest {
         "SWEEP-SELL",
         104L,
         "SELL",
-        "PENDING_NEW",
+        "NEW",
         new BigDecimal("2.0000"),
         new BigDecimal("70100.0000"),
         Instant.parse("2026-03-01T09:02:00Z")
@@ -95,7 +95,7 @@ class CorebankOppositeBookQueryServiceTest {
         "SWEEP-SELL",
         105L,
         "BUY",
-        "ACCEPTED",
+        "NEW",
         new BigDecimal("8.0000"),
         new BigDecimal("70200.0000"),
         Instant.parse("2026-03-01T09:03:00Z")
@@ -110,6 +110,26 @@ class CorebankOppositeBookQueryServiceTest {
         new BigDecimal("69900.0000"),
         Instant.parse("2026-03-01T08:59:00Z")
     );
+    persistRestingOrder(
+        "market-sell-accepted-excluded",
+        "SWEEP-SELL",
+        108L,
+        "SELL",
+        "ACCEPTED",
+        new BigDecimal("5.0000"),
+        new BigDecimal("69900.0000"),
+        Instant.parse("2026-03-01T08:57:00Z")
+    );
+    persistRestingOrder(
+        "market-sell-pending-excluded",
+        "SWEEP-SELL",
+        109L,
+        "SELL",
+        "PENDING_NEW",
+        new BigDecimal("5.0000"),
+        new BigDecimal("69950.0000"),
+        Instant.parse("2026-03-01T08:56:00Z")
+    );
     persistRestingMarketOrder(
         "market-sell-resting-market",
         "SWEEP-SELL",
@@ -121,7 +141,7 @@ class CorebankOppositeBookQueryServiceTest {
     );
 
     List<CorebankOppositeBookQueryService.OppositeBookEntry> result =
-        oppositeBookQueryService.findSweepCandidates("SWEEP-SELL", "BUY");
+        oppositeBookQueryService.findPreviewCandidates("SWEEP-SELL", "BUY");
 
     assertThat(result).extracting(CorebankOppositeBookQueryService.OppositeBookEntry::orderId)
         .containsExactly(first.getId(), second.getId(), partial.getId(), last.getId());
@@ -150,7 +170,7 @@ class CorebankOppositeBookQueryServiceTest {
         "SWEEP-BUY",
         201L,
         "BUY",
-        "ACCEPTED",
+        "NEW",
         new BigDecimal("3.0000"),
         new BigDecimal("70000.0000"),
         Instant.parse("2026-03-01T09:02:00Z")
@@ -160,7 +180,7 @@ class CorebankOppositeBookQueryServiceTest {
         "SWEEP-BUY",
         202L,
         "BUY",
-        "ACCEPTED",
+        "NEW",
         new BigDecimal("4.0000"),
         new BigDecimal("70200.0000"),
         Instant.parse("2026-03-01T09:00:00Z")
@@ -188,7 +208,7 @@ class CorebankOppositeBookQueryServiceTest {
     );
 
     List<CorebankOppositeBookQueryService.OppositeBookEntry> result =
-        oppositeBookQueryService.findSweepCandidates("SWEEP-BUY", "SELL");
+        oppositeBookQueryService.findPreviewCandidates("SWEEP-BUY", "SELL");
 
     assertThat(result).extracting(CorebankOppositeBookQueryService.OppositeBookEntry::orderId)
         .containsExactly(best.getId(), bestSecond.getId(), lower.getId(), tail.getId());
@@ -215,7 +235,7 @@ class CorebankOppositeBookQueryServiceTest {
         "SWEEP-LEGACY",
         301L,
         "SELL",
-        "ACCEPTED",
+        "NEW",
         new BigDecimal("2.0000"),
         new BigDecimal("70000.0000"),
         Instant.parse("2026-03-01T09:00:00Z")
@@ -231,7 +251,7 @@ class CorebankOppositeBookQueryServiceTest {
     );
 
     List<CorebankOppositeBookQueryService.OppositeBookEntry> result =
-        oppositeBookQueryService.findSweepCandidates("SWEEP-LEGACY", "BUY");
+        oppositeBookQueryService.findPreviewCandidates("SWEEP-LEGACY", "BUY");
 
     assertThat(result).extracting(CorebankOppositeBookQueryService.OppositeBookEntry::orderId)
         .containsExactly(active.getId());
@@ -241,11 +261,54 @@ class CorebankOppositeBookQueryServiceTest {
 
   @Test
   void shouldRejectUnsupportedAggressorSide() {
-    assertThatThrownBy(() -> oppositeBookQueryService.findSweepCandidates("SWEEP-SELL", "HOLD"))
+    assertThatThrownBy(() -> oppositeBookQueryService.findPreviewCandidates("SWEEP-SELL", "HOLD"))
         .isInstanceOfSatisfying(BusinessException.class, ex -> {
           assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST);
           assertThat(ex.getMessage()).contains("side must be BUY or SELL");
         });
+  }
+
+  @Test
+  void shouldApplySameStrictPriceTimeOrderingToExecutionLockQuery() {
+    Instant tieTimestamp = Instant.parse("2026-03-01T09:00:00Z");
+    Order best = persistRestingOrder(
+        "lock-sell-001",
+        "SWEEP-LOCK",
+        401L,
+        "SELL",
+        "NEW",
+        new BigDecimal("1.0000"),
+        new BigDecimal("70000.0000"),
+        tieTimestamp
+    );
+    Order next = persistRestingOrder(
+        "lock-sell-002",
+        "SWEEP-LOCK",
+        402L,
+        "SELL",
+        "PARTIALLY_FILLED",
+        new BigDecimal("1.5000"),
+        new BigDecimal("70000.0000"),
+        Instant.parse("2026-03-01T09:01:00Z")
+    );
+    persistRemainingQuantity(next.getId(), new BigDecimal("1.0000"));
+    Order tail = persistRestingOrder(
+        "lock-sell-003",
+        "SWEEP-LOCK",
+        403L,
+        "SELL",
+        "NEW",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70100.0000"),
+        Instant.parse("2026-03-01T09:02:00Z")
+    );
+
+    List<Order> locked = oppositeBookQueryService.lockExecutionCandidates("SWEEP-LOCK", "BUY");
+
+    assertThat(locked).extracting(Order::getId)
+        .containsExactly(best.getId(), next.getId(), tail.getId());
+    assertThat(locked).extracting(Order::getStatus)
+        .containsExactly("NEW", "PARTIALLY_FILLED", "NEW");
   }
 
   private Order persistRestingOrder(

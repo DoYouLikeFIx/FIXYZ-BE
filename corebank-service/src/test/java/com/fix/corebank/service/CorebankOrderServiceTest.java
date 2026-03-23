@@ -1167,7 +1167,7 @@ class CorebankOrderServiceTest {
     when(positionRepository.findByAccountIdAndSymbolForUpdate(2001L, "005930")).thenReturn(Optional.of(makerPosition));
     when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
         .thenReturn(BigDecimal.ZERO);
-    when(orderRepository.findRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+    when(orderRepository.lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
         .thenReturn(List.of(makerOrder));
     when(orderRepository.saveAndFlush(any(Order.class)))
         .thenAnswer(invocation -> {
@@ -1238,7 +1238,7 @@ class CorebankOrderServiceTest {
 
     when(orderRepository.findByClOrdId(MARKET_NO_LIQUIDITY_CL_ORD_ID)).thenReturn(Optional.empty());
     when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
-    when(orderRepository.findRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+    when(orderRepository.lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
         .thenReturn(List.of());
 
     assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
@@ -1322,7 +1322,7 @@ class CorebankOrderServiceTest {
     when(positionRepository.findByAccountIdAndSymbolForUpdate(2002L, "005930")).thenReturn(Optional.of(makerTwoPosition));
     when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
         .thenReturn(BigDecimal.ZERO);
-    when(orderRepository.findRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+    when(orderRepository.lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
         .thenReturn(List.of(makerOneOrder, makerTwoOrder));
     when(orderRepository.saveAndFlush(any(Order.class)))
         .thenAnswer(invocation -> {
@@ -1455,7 +1455,7 @@ class CorebankOrderServiceTest {
         .thenAnswer(invocation -> Optional.ofNullable(lockedPositions.get(invocation.getArgument(0))));
     when(executionRepository.sumSellQuantityByAccountAndSymbolBetween(eq(ACCOUNT_ID), eq("005930"), any(), any()))
         .thenReturn(BigDecimal.ZERO);
-    when(orderRepository.findRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+    when(orderRepository.lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
         .thenReturn(List.of(makerHighOrder, makerLowOrder));
     when(orderRepository.saveAndFlush(any(Order.class)))
         .thenAnswer(invocation -> {
