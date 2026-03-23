@@ -3,6 +3,7 @@ package com.fix.channel.service;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -127,8 +128,8 @@ class OrderExecutionServiceTest {
 
     orderExecutionService.execute(1L, authedSession.getOrderSessionId());
 
-    assert corebankClient.lastCommand != null;
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getClOrdId())
+    assertThat(corebankClient.lastCommand).isNotNull();
+    assertThat(corebankClient.lastCommand.getClOrdId())
         .isEqualTo(authedSession.getClOrdId());
   }
 
@@ -325,16 +326,16 @@ class OrderExecutionServiceTest {
 
     orderExecutionService.execute(1L, authedSession.getOrderSessionId());
 
-    assert corebankClient.lastCommand != null;
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getOrderType()).isEqualTo("MARKET");
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getPrice()).isNull();
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteSnapshotId())
+    assertThat(corebankClient.lastCommand).isNotNull();
+    assertThat(corebankClient.lastCommand.getOrderType()).isEqualTo("MARKET");
+    assertThat(corebankClient.lastCommand.getPrice()).isNull();
+    assertThat(corebankClient.lastCommand.getQuoteSnapshotId())
         .isEqualTo("qsnap-20260321-0001");
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteAsOf())
+    assertThat(corebankClient.lastCommand.getQuoteAsOf())
         .isEqualTo(Instant.parse("2026-03-21T00:00:00Z"));
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteSourceMode())
+    assertThat(corebankClient.lastCommand.getQuoteSourceMode())
         .isEqualTo(FepQuoteSourceMode.LIVE);
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getPreTradePrice())
+    assertThat(corebankClient.lastCommand.getPreTradePrice())
         .isEqualByComparingTo("72100");
   }
 

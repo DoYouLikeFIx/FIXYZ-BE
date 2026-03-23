@@ -19,6 +19,7 @@ import com.fix.channel.vo.CorebankOrderSnapshotResult;
 import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -318,6 +319,26 @@ class AdminOrderIdempotencyReconciliationServiceTest {
         .tag("result", "failed")
         .counter()
         .count()).isEqualTo(1.0d);
+  }
+
+  @Test
+  void shouldClassifyStructuredClOrdIdMismatchAsMismatch() {
+    OrderSession session = completedSession(CL_ORD_ID, null, "FAILED");
+    AdminActorContext actor = actor();
+    when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
+        .thenThrow(new BusinessException(
+            ErrorCode.CONTRACT_VALIDATION_FAILED,
+            "status response clOrdId must match request",
+            new ErrorMetadata(null, "DOWNSTREAM_CL_ORD_ID_MISMATCH")
+        ));
+
+    var result = reconciliationService.reconcile(CL_ORD_ID, actor);
+
+    verify(orderSessionService, never()).reconcileExternalLinkage(any(), any(), any());
+    assertThat(result.getOutcome()).isEqualTo("MISMATCH");
+    assertThat(result.getMismatchType()).isEqualTo("DOWNSTREAM_CL_ORD_ID_MISMATCH");
+    assertThat(result.getMismatched()).isEqualTo(1);
   }
 
   @Test
