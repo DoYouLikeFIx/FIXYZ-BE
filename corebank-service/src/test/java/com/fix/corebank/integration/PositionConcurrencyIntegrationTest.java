@@ -180,6 +180,7 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     insertPosition(secondSymbol, "100.0000", "120000.0000");
 
     CountDownLatch firstPositionLocked = new CountDownLatch(1);
+    CountDownLatch secondAttemptStarted = new CountDownLatch(1);
     CountDownLatch releaseFirstOrder = new CountDownLatch(1);
     AtomicBoolean shouldBlockFirstOrder = new AtomicBoolean(true);
 
@@ -201,10 +202,13 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       firstFuture = executorService.submit(() -> prepareSellSubmission(UUID.randomUUID().toString(), firstSymbol));
       assertThat(firstPositionLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
-      secondFuture = executorService.submit(() -> prepareSellSubmission(UUID.randomUUID().toString(), secondSymbol));
-      CorebankOrderPersistenceService.PendingOrderSubmission secondSubmission = secondFuture.get(10, TimeUnit.SECONDS);
-
+      secondFuture = executorService.submit(() -> {
+        secondAttemptStarted.countDown();
+        return prepareSellSubmission(UUID.randomUUID().toString(), secondSymbol);
+      });
+      assertThat(secondAttemptStarted.await(5, TimeUnit.SECONDS)).isTrue();
       releaseFirstOrder.countDown();
+      CorebankOrderPersistenceService.PendingOrderSubmission secondSubmission = secondFuture.get(10, TimeUnit.SECONDS);
       CorebankOrderPersistenceService.PendingOrderSubmission firstSubmission = firstFuture.get(10, TimeUnit.SECONDS);
 
       assertThat(secondSubmission.symbol()).isEqualTo(secondSymbol);
