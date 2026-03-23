@@ -305,6 +305,16 @@ public class Order extends BaseTimeEntity {
     this.executedAt = executedAt;
   }
 
+  public void markResting(BigDecimal leavesQty) {
+    this.status = "NEW";
+    this.failureReason = null;
+    this.executionResult = null;
+    this.executedQty = BigDecimal.ZERO.setScale(SCALE, RoundingMode.HALF_UP);
+    this.leavesQty = normalizeNonNegative(leavesQty, "leaves quantity is required");
+    this.executedPrice = null;
+    this.executedAt = null;
+  }
+
   public void completeExecution(
       String status,
       String executionResult,
