@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import com.fix.channel.client.CorebankClient;
+import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.OrderRequeryResult;
@@ -30,10 +31,13 @@ public class OrderSessionRecoveryService {
   private static final String PENDING_STATUS = "PENDING";
   private static final String MALFORMED_STATUS = "MALFORMED";
   private static final String NOTIFICATION_CHANNEL_ORDER = "ORDER";
+  private static final String ORDER_SESSION_TARGET_TYPE = "ORDER_SESSION";
+  private static final String RECOVERY_AUDIT_ACTION = "ORDER_SESSION_RECOVERY_ATTEMPT";
 
   private final OrderSessionService orderSessionService;
   private final CorebankClient corebankClient;
   private final ChannelScaffoldService channelScaffoldService;
+  private final AuditLogService auditLogService;
   private final ManualRecoveryQueueService manualRecoveryQueueService;
   private final OrderSessionRecoveryLockService recoveryLockService;
   private final OrderSessionRecoveryAttemptStore attemptStore;
@@ -49,6 +53,7 @@ public class OrderSessionRecoveryService {
       OrderSessionService orderSessionService,
       CorebankClient corebankClient,
       ChannelScaffoldService channelScaffoldService,
+      AuditLogService auditLogService,
       ManualRecoveryQueueService manualRecoveryQueueService,
       OrderSessionRecoveryLockService recoveryLockService,
       OrderSessionRecoveryAttemptStore attemptStore,
@@ -61,6 +66,7 @@ public class OrderSessionRecoveryService {
     this.orderSessionService = orderSessionService;
     this.corebankClient = corebankClient;
     this.channelScaffoldService = channelScaffoldService;
+    this.auditLogService = auditLogService;
     this.manualRecoveryQueueService = manualRecoveryQueueService;
     this.recoveryLockService = recoveryLockService;
     this.attemptStore = attemptStore;
@@ -138,16 +144,17 @@ public class OrderSessionRecoveryService {
         return;
       }
       int attemptCount = reservation.attemptCount();
+      String correlationId = ChannelCorrelationIdSupport.currentOrGenerate();
       requeryAttemptCounter.increment();
       OrderRequeryResult result;
       try {
         result = corebankClient.requeryOrder(
             session.getClOrdId(),
             attemptCount,
-            ChannelCorrelationIdSupport.currentOrGenerate()
+            correlationId
         );
       } catch (RuntimeException ex) {
-        handleRequeryFailure(session, attemptCount, ex);
+        handleRequeryFailure(session, attemptCount, correlationId, ex);
         return;
       }
 
@@ -164,6 +171,14 @@ public class OrderSessionRecoveryService {
         );
         attemptStore.clear(orderSessionId);
         convergenceSuccessCounter.increment();
+        recordRecoveryAttemptAudit(
+            completedSession,
+            resolveEffectiveAttemptCount(result, attemptCount),
+            "COMPLETED",
+            result,
+            null,
+            correlationId
+        );
         publishTerminalNotification(completedSession, "COMPLETED");
         return;
       }
@@ -182,6 +197,14 @@ public class OrderSessionRecoveryService {
         );
         attemptStore.clear(orderSessionId);
         convergenceSuccessCounter.increment();
+        recordRecoveryAttemptAudit(
+            canceledSession,
+            resolveEffectiveAttemptCount(result, attemptCount),
+            "CANCELED",
+            result,
+            null,
+            correlationId
+        );
         publishTerminalNotification(canceledSession, "CANCELED");
         return;
       }
@@ -201,8 +224,25 @@ public class OrderSessionRecoveryService {
         );
         attemptStore.clear(orderSessionId);
         convergenceEscalatedCounter.increment();
+        recordRecoveryAttemptAudit(
+            escalatedSession,
+            resolveEffectiveAttemptCount(result, attemptCount),
+            "ESCALATED",
+            result,
+            null,
+            correlationId
+        );
         publishTerminalNotification(escalatedSession, "ESCALATED");
+        return;
       }
+      recordRecoveryAttemptAudit(
+          session,
+          resolveEffectiveAttemptCount(result, attemptCount),
+          "RETRY_PENDING",
+          result,
+          null,
+          correlationId
+      );
     } catch (RuntimeException ex) {
       log.warn(
           "Order session recovery cycle failed for sessionId={}, clOrdId={}",
@@ -267,7 +307,12 @@ public class OrderSessionRecoveryService {
     return reportedMaxRetryCount;
   }
 
-  private void handleRequeryFailure(OrderSession session, int attemptCount, RuntimeException ex) {
+  private void handleRequeryFailure(
+      OrderSession session,
+      int attemptCount,
+      String correlationId,
+      RuntimeException ex
+  ) {
     if (attemptCount >= maxRetryCount) {
       OrderSession escalatedSession = orderSessionService.markEscalatedAndEnqueueManualRecovery(
           session,
@@ -283,6 +328,14 @@ public class OrderSessionRecoveryService {
       );
       attemptStore.clear(session.getOrderSessionId());
       convergenceEscalatedCounter.increment();
+      recordRecoveryAttemptAudit(
+          escalatedSession,
+          attemptCount,
+          "ESCALATED",
+          null,
+          ex.getClass().getSimpleName() + ": " + ex.getMessage(),
+          correlationId
+      );
       publishTerminalNotification(escalatedSession, "ESCALATED");
       log.warn(
           "Order session recovery requery failed and escalated after retry exhaustion: sessionId={}, clOrdId={}, attemptCount={}",
@@ -293,6 +346,14 @@ public class OrderSessionRecoveryService {
       );
       return;
     }
+    recordRecoveryAttemptAudit(
+        session,
+        attemptCount,
+        "ERROR_RETRY_PENDING",
+        null,
+        ex.getClass().getSimpleName() + ": " + ex.getMessage(),
+        correlationId
+    );
     log.warn(
         "Order session recovery requery failed: sessionId={}, clOrdId={}, attemptCount={}",
         session.getOrderSessionId(),
@@ -308,6 +369,39 @@ public class OrderSessionRecoveryService {
         NOTIFICATION_CHANNEL_ORDER,
         "orderSessionId=" + session.getOrderSessionId() + " status=" + terminalStatus
     );
+  }
+
+  private void recordRecoveryAttemptAudit(
+      OrderSession session,
+      int attemptCount,
+      String outcome,
+      OrderRequeryResult result,
+      String note,
+      String correlationId
+  ) {
+    StringBuilder detail = new StringBuilder("clOrdId=")
+        .append(session.getClOrdId())
+        .append(", attemptCount=").append(attemptCount)
+        .append(", outcome=").append(outcome);
+    if (result != null) {
+      detail.append(", recoveryStatus=").append(result.getStatus())
+          .append(", externalSyncStatus=").append(result.getExternalSyncStatus())
+          .append(", executionResult=").append(result.getExecutionResult());
+    }
+    if (note != null && !note.isBlank()) {
+      detail.append(", note=").append(note);
+    }
+    auditLogService.record(AuditLog.ofOrderSession(
+        session.getMemberId(),
+        session.getId(),
+        RECOVERY_AUDIT_ACTION,
+        ORDER_SESSION_TARGET_TYPE,
+        session.getOrderSessionId(),
+        detail.toString(),
+        null,
+        null,
+        correlationId
+    ));
   }
 
   private <T> T firstNonNull(T preferredValue, T fallbackValue) {

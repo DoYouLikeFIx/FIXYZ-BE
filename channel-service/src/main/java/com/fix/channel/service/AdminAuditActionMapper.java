@@ -23,6 +23,7 @@ public class AdminAuditActionMapper {
       ),
       Map.entry("ORDER_EXECUTE", Set.of("ORDER_SESSION_EXECUTED")),
       Map.entry("ORDER_CANCEL", Set.of("ORDER_SESSION_CANCELED")),
+      Map.entry("ORDER_RECOVERY", Set.of("ORDER_SESSION_RECOVERY_ATTEMPT")),
       Map.entry("MANUAL_REPLAY", Set.of("MANUAL_REPLAY")),
       Map.entry("TOTP_ENROLL", Set.of("AUTH_TOTP_ENROLLMENT_BOOTSTRAP")),
       Map.entry("TOTP_CONFIRM", Set.of("AUTH_TOTP_ENROLLMENT_CONFIRMED"))
