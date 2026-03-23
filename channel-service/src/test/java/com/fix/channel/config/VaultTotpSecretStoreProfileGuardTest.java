@@ -48,6 +48,19 @@ class VaultTotpSecretStoreProfileGuardTest {
   }
 
   @Test
+  void shouldRejectSyntacticallyInvalidVaultUrlForProductionAliasProfile() {
+    TotpProperties properties = vaultProperties("https://[broken", "runtime-token");
+    MockEnvironment environment = new MockEnvironment();
+    environment.setActiveProfiles("production");
+
+    VaultTotpSecretStoreProfileGuard guard = new VaultTotpSecretStoreProfileGuard(properties, environment);
+
+    assertThatThrownBy(guard::validate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("valid URI");
+  }
+
+  @Test
   void shouldRejectDockerHostAliasesForPreprodProfile() {
     TotpProperties properties = vaultProperties("https://host.docker.internal:8200", "runtime-token");
     MockEnvironment environment = new MockEnvironment();
