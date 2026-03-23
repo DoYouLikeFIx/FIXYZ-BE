@@ -112,17 +112,6 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
   void shouldReturnCore003WhenSameSymbolPositionLockContentionExceedsTimeout() throws Exception {
     String firstClOrdId = UUID.randomUUID().toString();
     String secondClOrdId = UUID.randomUUID().toString();
-    seedRestingBuyLiquidity(
-        jdbcTemplate,
-        orderRepository,
-        2L,
-        2L,
-        "200000000002",
-        SYMBOL,
-        "maker-" + firstClOrdId,
-        ORDER_QTY,
-        ORDER_PRICE
-    );
     CountDownLatch firstPositionLocked = new CountDownLatch(1);
     CountDownLatch releaseFirstOrder = new CountDownLatch(1);
     AtomicBoolean shouldBlockFirstOrder = new AtomicBoolean(true);
@@ -172,13 +161,13 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
       releaseFirstOrder.countDown();
       firstOrder.get(10, TimeUnit.SECONDS);
 
-      assertThat(accountCashBalance()).isEqualByComparingTo("107200000.0000");
-      assertThat(positionQuantity()).isEqualByComparingTo("400.0000");
-      assertThat(count("orders")).isEqualTo(2);
-      assertThat(count("executions")).isEqualTo(2);
-      assertThat(count("journal_entries")).isEqualTo(2);
-      assertThat(count("ledger_entries")).isEqualTo(4);
-      assertThat(count("ledger_entry_refs")).isEqualTo(4);
+      assertThat(accountCashBalance()).isEqualByComparingTo("100000000.0000");
+      assertThat(positionQuantity()).isEqualByComparingTo("500.0000");
+      assertThat(count("orders")).isEqualTo(1);
+      assertThat(count("executions")).isEqualTo(0);
+      assertThat(count("journal_entries")).isEqualTo(0);
+      assertThat(count("ledger_entries")).isEqualTo(0);
+      assertThat(count("ledger_entry_refs")).isEqualTo(0);
 
       Timer waitTimer = meterRegistry.find("corebank.order.position.lock.wait").timer();
       Timer holdTimer = meterRegistry.find("corebank.order.position.lock.hold").timer();

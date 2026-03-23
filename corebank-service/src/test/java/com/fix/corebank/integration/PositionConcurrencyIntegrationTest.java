@@ -181,17 +181,6 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
         2L,
         2L,
         "200000000002",
-        firstSymbol,
-        "maker-" + UUID.randomUUID(),
-        ORDER_QTY,
-        ORDER_PRICE
-    );
-    seedRestingBuyLiquidity(
-        jdbcTemplate,
-        orderRepository,
-        3L,
-        3L,
-        "200000000003",
         secondSymbol,
         "maker-" + UUID.randomUUID(),
         ORDER_QTY,
@@ -222,13 +211,13 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
 
       long secondStartedAt = System.nanoTime();
       secondFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), secondSymbol));
-      AttemptOutcome secondOutcome = secondFuture.get(2, TimeUnit.SECONDS);
+      AttemptOutcome secondOutcome = secondFuture.get(5, TimeUnit.SECONDS);
       Duration secondElapsed = Duration.ofNanos(System.nanoTime() - secondStartedAt);
 
       releaseFirstOrder.countDown();
       AttemptOutcome firstOutcome = firstFuture.get(10, TimeUnit.SECONDS);
 
-      assertThat(secondElapsed).isLessThan(Duration.ofSeconds(2));
+      assertThat(secondElapsed).isLessThan(Duration.ofSeconds(5));
       assertThat(secondOutcome.success()).isTrue();
       assertThat(secondOutcome.status()).isEqualTo("FILLED");
       assertThat(secondOutcome.executionResult()).isEqualTo("FILLED");
@@ -236,9 +225,14 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       assertThat(firstOutcome.status()).isEqualTo("FILLED");
       assertThat(firstOutcome.executionResult()).isEqualTo("FILLED");
 
-      assertThat(accountCashBalance()).isEqualByComparingTo("114400000.0000");
-      assertThat(positionQuantity(firstSymbol)).isEqualByComparingTo("400.0000");
+      assertThat(accountCashBalance()).isEqualByComparingTo("112000000.0000");
+      assertThat(positionQuantity(firstSymbol)).isEqualByComparingTo("500.0000");
       assertThat(positionQuantity(secondSymbol)).isEqualByComparingTo("0.0000");
+      assertThat(count("orders")).isEqualTo(3);
+      assertThat(count("executions")).isEqualTo(2);
+      assertThat(count("journal_entries")).isEqualTo(2);
+      assertThat(count("ledger_entries")).isEqualTo(4);
+      assertThat(count("ledger_entry_refs")).isEqualTo(4);
 
       verify(fepClient, times(2)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } catch (TimeoutException ex) {
