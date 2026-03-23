@@ -5,6 +5,7 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.validation.ContractPatterns;
 import java.time.Instant;
+import java.util.Objects;
 
 public record FepReplayResult(
     String clOrdId,
@@ -45,7 +46,7 @@ public record FepReplayResult(
   }
 
   private static void requireMatchingClOrdId(String expectedClOrdId, String actualClOrdId, String message) {
-    if (!expectedClOrdId.equals(actualClOrdId)) {
+    if (!Objects.equals(expectedClOrdId, actualClOrdId)) {
       throw new BusinessException(
           ErrorCode.CONTRACT_VALIDATION_FAILED,
           message,

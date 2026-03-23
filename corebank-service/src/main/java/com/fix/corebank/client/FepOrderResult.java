@@ -7,6 +7,7 @@ import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.validation.ContractPatterns;
 import java.time.Instant;
+import java.util.Objects;
 
 public record FepOrderResult(
     String clOrdId,
@@ -95,7 +96,7 @@ public record FepOrderResult(
   }
 
   private static void requireMatchingClOrdId(String expectedClOrdId, String actualClOrdId, String message) {
-    if (!expectedClOrdId.equals(actualClOrdId)) {
+    if (!Objects.equals(expectedClOrdId, actualClOrdId)) {
       throw new BusinessException(
           ErrorCode.CONTRACT_VALIDATION_FAILED,
           message,
