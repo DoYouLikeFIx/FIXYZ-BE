@@ -12,6 +12,7 @@ import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryItemResult;
 import com.fix.channel.vo.AccountOrderHistoryResult;
 import com.fix.channel.vo.AdminOrderReplayCommand;
+import com.fix.channel.vo.CorebankOrderSnapshotResult;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
 import com.fix.channel.vo.OrderReplayResult;
@@ -44,6 +45,7 @@ import org.springframework.web.client.ResourceAccessException;
 public class CorebankClient {
 
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
+  private static final String COREBANK_ORDER_SNAPSHOT_PATH = "/internal/v1/orders/{clOrdId}";
   private static final String COREBANK_ORDER_REQUERY_PATH = "/internal/v1/orders/{clOrdId}/requery";
   private static final String COREBANK_ORDER_REPLAY_PATH = "/internal/v1/orders/{clOrdId}/replay";
   private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
@@ -105,6 +107,32 @@ public class CorebankClient {
           responseBody.externalOrderId(),
           responseBody.externalSyncStatus(),
           responseBody.executedAt()
+      );
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public CorebankOrderSnapshotResult getOrderSnapshot(String clOrdId, String correlationId) {
+    try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
+      CorebankApiResponse<CorebankOrderSnapshotResponse> response = restClient.get()
+          .uri(COREBANK_ORDER_SNAPSHOT_PATH, clOrdId)
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankOrderSnapshotResponse responseBody = extractBody(response);
+      return CorebankOrderSnapshotResult.of(
+          responseBody.orderId(),
+          responseBody.accountId(),
+          responseBody.clOrdId(),
+          responseBody.status(),
+          responseBody.externalSyncStatus(),
+          responseBody.externalOrderId()
       );
     } catch (RestClientException ex) {
       throw translateFailure(ex);
@@ -593,6 +621,17 @@ public class CorebankClient {
       String externalOrderId,
       String externalSyncStatus,
       Instant executedAt
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankOrderSnapshotResponse(
+      Long orderId,
+      Long accountId,
+      String clOrdId,
+      String status,
+      String externalSyncStatus,
+      String externalOrderId
   ) {
   }
 
