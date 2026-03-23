@@ -261,6 +261,7 @@ class CorebankInternalApiSkeletonTest {
         "CONFIRMED",
         "FEP-KRX-" + CORE_CL_ORD_ID_1
     ));
+    corebankOrderService.expectOrderSnapshotClOrdId(CORE_CL_ORD_ID_1);
     corebankOrderService.setAccountStatusTransitionResult(AccountStatusTransitionResult.of(
         1L,
         301L,
@@ -907,6 +908,7 @@ class CorebankInternalApiSkeletonTest {
     private RuntimeException accountOrderHistoryFailure;
     private InternalOrderResult createOrderResult;
     private InternalOrderSnapshotResult orderSnapshotResult;
+    private String expectedOrderSnapshotClOrdId;
     private InternalOrderResult requeryOrderResult;
     private RuntimeException createOrderFailure;
     private int createOrderCalls;
@@ -1003,6 +1005,9 @@ class CorebankInternalApiSkeletonTest {
 
     @Override
     public InternalOrderSnapshotResult getOrderSnapshot(String clOrdId) {
+      if (expectedOrderSnapshotClOrdId != null) {
+        org.assertj.core.api.Assertions.assertThat(clOrdId).isEqualTo(expectedOrderSnapshotClOrdId);
+      }
       return orderSnapshotResult;
     }
 
@@ -1068,6 +1073,10 @@ class CorebankInternalApiSkeletonTest {
 
     private void setOrderSnapshotResult(InternalOrderSnapshotResult orderSnapshotResult) {
       this.orderSnapshotResult = orderSnapshotResult;
+    }
+
+    private void expectOrderSnapshotClOrdId(String expectedOrderSnapshotClOrdId) {
+      this.expectedOrderSnapshotClOrdId = expectedOrderSnapshotClOrdId;
     }
 
     private void setRequeryOrderResult(InternalOrderResult requeryOrderResult) {
