@@ -159,6 +159,7 @@ class CorebankExternalErrorFlowIntegrationTest {
 
   @Test
   void shouldTranslateMappedExternalGatewayTimeoutThroughInternalApi() throws Exception {
+    seedRestingSellLiquidity(2L, 2L, "200000000002", "maker-timeout", "2.0000", "70100.0000");
     WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(canonicalGatewayError(504, "9004", "cancel acknowledgement timed out")));
 
@@ -186,15 +187,17 @@ class CorebankExternalErrorFlowIntegrationTest {
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-core-timeout")));
 
     Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_TIMEOUT).orElseThrow();
-    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(persistedOrder.getStatus()).isEqualTo("FILLED");
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_FAILED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("TIMEOUT");
+    assertThat(persistedOrder.getExecutionResult()).isEqualTo("FILLED");
     assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
     assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
   }
 
   @Test
   void shouldFallbackUnknownExternalCodeThroughInternalApi() throws Exception {
+    seedRestingSellLiquidity(2L, 2L, "200000000002", "maker-unknown", "2.0000", "70100.0000");
     WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(canonicalGatewayError(502, "9555", "unclassified upstream failure")));
 
@@ -216,9 +219,10 @@ class CorebankExternalErrorFlowIntegrationTest {
         .andExpect(jsonPath("$.timestamp").isNotEmpty());
 
     Order persistedOrder = orderRepository.findByClOrdId(CL_ORD_ID_UNKNOWN).orElseThrow();
-    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(persistedOrder.getStatus()).isEqualTo("FILLED");
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("UNKNOWN_EXTERNAL_9555");
+    assertThat(persistedOrder.getExecutionResult()).isEqualTo("FILLED");
     assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
     assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
   }
@@ -226,6 +230,7 @@ class CorebankExternalErrorFlowIntegrationTest {
   @Test
   void shouldEscalateRejectedSubmitWhilePreservingCanonicalFill() throws Exception {
     String clOrdId = "123e4567-e89b-42d3-a456-426614174225";
+    seedRestingSellLiquidity(2L, 2L, "200000000002", "maker-rejected", "2.0000", "70100.0000");
     WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(canonicalGatewayError(400, "9097", "order rejected by exchange")));
 
@@ -245,9 +250,10 @@ class CorebankExternalErrorFlowIntegrationTest {
         .andExpect(jsonPath("$.operatorCode").value("ORDER_REJECTED"));
 
     Order persistedOrder = orderRepository.findByClOrdId(clOrdId).orElseThrow();
-    assertThat(persistedOrder.getStatus()).isEqualTo("PENDING");
+    assertThat(persistedOrder.getStatus()).isEqualTo("FILLED");
     assertThat(persistedOrder.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_ESCALATED);
     assertThat(persistedOrder.getFailureReason()).isEqualTo("ORDER_REJECTED");
+    assertThat(persistedOrder.getExecutionResult()).isEqualTo("FILLED");
     assertThat(accountCashBalance()).isEqualByComparingTo("99859800.0000");
     assertThat(positionQuantity("005930")).isEqualByComparingTo("122.0000");
   }
@@ -1056,6 +1062,87 @@ class CorebankExternalErrorFlowIntegrationTest {
         default -> new FepExternalError("FEP-999", "UNKNOWN_EXTERNAL_" + externalRc);
       };
     }
+  }
+
+  private void seedRestingSellLiquidity(
+      Long accountId,
+      Long memberId,
+      String accountNo,
+      String clOrdId,
+      String quantity,
+      String price
+  ) {
+    Integer existingMemberCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM member WHERE id = ?",
+        Integer.class,
+        memberId
+    );
+    if (existingMemberCount != null && existingMemberCount == 0) {
+      jdbcTemplate.update(
+          """
+              INSERT INTO member (id, member_no, email, created_at)
+              VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+              """,
+          memberId,
+          "M-%05d".formatted(memberId),
+          "member-%d@fix.test".formatted(memberId)
+      );
+    }
+
+    Integer existingAccountCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM accounts WHERE id = ?",
+        Integer.class,
+        accountId
+    );
+    if (existingAccountCount != null && existingAccountCount == 0) {
+      jdbcTemplate.update(
+          """
+              INSERT INTO accounts (
+                id,
+                account_no,
+                currency,
+                cash_balance,
+                daily_sell_limit,
+                member_id,
+                status,
+                created_at,
+                updated_at,
+                version
+              )
+              VALUES (?, ?, 'KRW', 100000000.0000, 500.0000, ?, 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+              """,
+          accountId,
+          accountNo,
+          memberId
+      );
+    } else {
+      jdbcTemplate.update(
+          """
+              UPDATE accounts
+                 SET status = 'ACTIVE',
+                     cash_balance = 100000000.0000,
+                     daily_sell_limit = 500.0000
+               WHERE id = ?
+              """,
+          accountId
+      );
+    }
+
+    jdbcTemplate.update(
+        """
+            INSERT INTO positions (account_id, symbol, qty, avg_price, created_at, updated_at, version)
+            VALUES (?, '005930', 10.0000, 69000.0000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+            """,
+        accountId
+    );
+    orderRepository.saveAndFlush(Order.accepted(
+        accountId,
+        clOrdId,
+        "005930",
+        "SELL",
+        new BigDecimal(quantity),
+        new BigDecimal(price)
+    ));
   }
 
   private BigDecimal accountCashBalance() {
