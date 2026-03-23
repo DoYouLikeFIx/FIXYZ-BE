@@ -210,6 +210,62 @@ class AdminOrderIdempotencyReconciliationServiceTest {
   }
 
   @Test
+  void shouldTreatPartiallyFilledSnapshotAsCompletedForReconciliation() {
+    OrderSession session = completedSession(CL_ORD_ID, null, "FAILED");
+    OrderSession reconciledSession = completedSession(CL_ORD_ID, "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    AdminActorContext actor = actor();
+    when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(orderSessionRepository.findByClOrdIdForUpdate(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
+        .thenReturn(CorebankOrderSnapshotResult.of(
+            9001L,
+            session.getAccountId(),
+            CL_ORD_ID,
+            "PARTIALLY_FILLED",
+            "CONFIRMED",
+            "FEP-KRX-" + CL_ORD_ID
+        ));
+    when(orderSessionService.reconcileExternalLinkage(
+        session,
+        "FEP-KRX-" + CL_ORD_ID,
+        "CONFIRMED"
+    )).thenReturn(reconciledSession);
+
+    var result = reconciliationService.reconcile(CL_ORD_ID, actor);
+
+    verify(orderSessionService).reconcileExternalLinkage(session, "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    assertThat(result.getOutcome()).isEqualTo("RESTORED");
+  }
+
+  @Test
+  void shouldTreatAcceptedSnapshotAsCompletedForReconciliation() {
+    OrderSession session = completedSession(CL_ORD_ID, null, "FAILED");
+    OrderSession reconciledSession = completedSession(CL_ORD_ID, "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    AdminActorContext actor = actor();
+    when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(orderSessionRepository.findByClOrdIdForUpdate(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
+        .thenReturn(CorebankOrderSnapshotResult.of(
+            9001L,
+            session.getAccountId(),
+            CL_ORD_ID,
+            "ACCEPTED",
+            "CONFIRMED",
+            "FEP-KRX-" + CL_ORD_ID
+        ));
+    when(orderSessionService.reconcileExternalLinkage(
+        session,
+        "FEP-KRX-" + CL_ORD_ID,
+        "CONFIRMED"
+    )).thenReturn(reconciledSession);
+
+    var result = reconciliationService.reconcile(CL_ORD_ID, actor);
+
+    verify(orderSessionService).reconcileExternalLinkage(session, "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    assertThat(result.getOutcome()).isEqualTo("RESTORED");
+  }
+
+  @Test
   void shouldSurfaceMismatchWithoutMutatingCanonicalOrderSessionState() {
     OrderSession session = completedSession(CL_ORD_ID, "FEP-LOCAL-1", "CONFIRMED");
     AdminActorContext actor = actor();
