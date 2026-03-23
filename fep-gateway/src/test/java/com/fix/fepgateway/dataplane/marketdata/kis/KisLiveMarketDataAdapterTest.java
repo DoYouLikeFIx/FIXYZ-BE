@@ -9,14 +9,20 @@ import com.fix.fepgateway.config.FepMarketDataProperties;
 import com.fix.fepgateway.dataplane.marketdata.LiveMarketDataPersistencePort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataMetrics;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataEventSink;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionProgress;
+import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionProgressPort;
 import com.fix.fepgateway.dataplane.marketdata.MarketDataSubscriptionSpec;
 import com.fix.fepgateway.dataplane.marketdata.NormalizedQuoteEvent;
+import com.fix.fepgateway.dataplane.marketdata.replay.ReplayQuoteEventGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
@@ -125,8 +131,11 @@ class KisLiveMarketDataAdapterTest {
   void shouldReconnectAndResubscribeActiveRoutesWhenSessionDrops() throws Exception {
     FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
     RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    FixedMarketDataSubscriptionProgressPort progressPort = new FixedMarketDataSubscriptionProgressPort();
+    progressPort.put("000660", new MarketDataSubscriptionProgress(40L, Instant.parse("2026-03-19T00:30:00Z")));
+    progressPort.put("005930", new MarketDataSubscriptionProgress(10L, Instant.parse("2026-03-19T00:31:00Z")));
     SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort, meterRegistry);
+    KisLiveMarketDataAdapter adapter = newAdapter(sessionClient, persistencePort, progressPort, meterRegistry);
 
     adapter.start(subscription("sub-005930", "005930"), event -> {
     });
@@ -141,6 +150,17 @@ class KisLiveMarketDataAdapterTest {
         .path("body").path("input").path("tr_key").asText()).isEqualTo("000660");
     assertThat(new ObjectMapper().readTree(sessionClient.sessions().get(1).sentPayloads().get(1))
         .path("body").path("input").path("tr_key").asText()).isEqualTo("005930");
+    assertThat(persistencePort.persistedEvents()).hasSize(4);
+    assertThat(persistencePort.persistedEvents()).extracting(NormalizedQuoteEvent::symbol)
+        .containsExactly("000660", "000660", "005930", "005930");
+    assertThat(persistencePort.persistedEvents()).extracting(NormalizedQuoteEvent::sourceMode)
+        .containsOnly(FepQuoteSourceMode.REPLAY);
+
+    sessionClient.session().emit("0|H0STCNT0|001|" + recordPayload("005930", "093500", "70200", "70300", "70100", "20260319"));
+
+    assertThat(persistencePort.persistedEvents()).hasSize(5);
+    assertThat(persistencePort.persistedEvents().get(4).sourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(persistencePort.persistedEvents().get(4).streamOffset()).isEqualTo(43L);
     assertThat(meterRegistry.get("fep.marketdata.reconnect.attempts")
         .tag("provider", "KIS")
         .counter()
@@ -150,6 +170,51 @@ class KisLiveMarketDataAdapterTest {
         .counter()
         .count()).isEqualTo(1.0d);
     assertThat(meterRegistry.get("fep.marketdata.kis.session.open").gauge().value()).isEqualTo(1.0d);
+  }
+
+  @Test
+  void shouldReserveGapFillOffsetsBeforeImmediateReconnectedLiveFrames() {
+    FakeKisWebSocketSessionClient sessionClient = new FakeKisWebSocketSessionClient();
+    RecordingPersistencePort persistencePort = new RecordingPersistencePort();
+    FixedMarketDataSubscriptionProgressPort progressPort = new FixedMarketDataSubscriptionProgressPort();
+    progressPort.put("000660", new MarketDataSubscriptionProgress(40L, Instant.parse("2026-03-19T00:30:00Z")));
+    progressPort.put("005930", new MarketDataSubscriptionProgress(10L, Instant.parse("2026-03-19T00:31:00Z")));
+    KisLiveMarketDataAdapter adapter = newAdapter(
+        sessionClient,
+        persistencePort,
+        progressPort,
+        new SimpleMeterRegistry()
+    );
+
+    adapter.start(subscription("sub-005930", "005930"), event -> {
+    });
+    adapter.start(subscription("sub-000660", "000660"), event -> {
+    });
+    sessionClient.session().disconnectUnexpectedly();
+    sessionClient.onNextSessionCreated(session -> {
+      AtomicBoolean emitted = new AtomicBoolean(false);
+      session.onSend(payload -> {
+        if (emitted.compareAndSet(false, true)) {
+          session.emit(
+              "0|H0STCNT0|001|" + recordPayload("000660", "093500", "112000", "112100", "111900", "20260319")
+          );
+        }
+      });
+    });
+
+    assertThat(adapter.reconnectIfNecessary()).isTrue();
+
+    assertThat(persistencePort.persistedEvents()).hasSize(5);
+    assertThat(persistencePort.persistedEvents()).extracting(NormalizedQuoteEvent::sourceMode)
+        .containsExactly(
+            FepQuoteSourceMode.REPLAY,
+            FepQuoteSourceMode.REPLAY,
+            FepQuoteSourceMode.REPLAY,
+            FepQuoteSourceMode.REPLAY,
+            FepQuoteSourceMode.LIVE
+        );
+    assertThat(persistencePort.persistedEvents()).extracting(NormalizedQuoteEvent::streamOffset)
+        .containsExactly(41L, 42L, 11L, 12L, 43L);
   }
 
   @Test
@@ -169,12 +234,31 @@ class KisLiveMarketDataAdapterTest {
       FakeKisWebSocketSessionClient sessionClient,
       LiveMarketDataPersistencePort persistencePort
   ) {
-    return newAdapter(sessionClient, persistencePort, new SimpleMeterRegistry());
+    return newAdapter(
+        sessionClient,
+        persistencePort,
+        (provider, symbol, sourceMode) -> java.util.Optional.empty(),
+        new SimpleMeterRegistry()
+    );
   }
 
   private KisLiveMarketDataAdapter newAdapter(
       FakeKisWebSocketSessionClient sessionClient,
       LiveMarketDataPersistencePort persistencePort,
+      SimpleMeterRegistry meterRegistry
+  ) {
+    return newAdapter(
+        sessionClient,
+        persistencePort,
+        (provider, symbol, sourceMode) -> java.util.Optional.empty(),
+        meterRegistry
+    );
+  }
+
+  private KisLiveMarketDataAdapter newAdapter(
+      FakeKisWebSocketSessionClient sessionClient,
+      LiveMarketDataPersistencePort persistencePort,
+      MarketDataSubscriptionProgressPort progressPort,
       SimpleMeterRegistry meterRegistry
   ) {
     return new KisLiveMarketDataAdapter(
@@ -187,6 +271,8 @@ class KisLiveMarketDataAdapterTest {
         new KisH0stcnt0RecordParser(new KisRealtimeFrameParser(), new KisPayloadDecryptor()),
         new KisH0stcnt0EventMapper(),
         persistencePort,
+        progressPort,
+        new ReplayQuoteEventGenerator(),
         new MarketDataMetrics(meterRegistry)
     );
   }
@@ -257,11 +343,17 @@ class KisLiveMarketDataAdapterTest {
     private final List<URI> connectedUris = new ArrayList<>();
     private final List<FakeKisWebSocketSession> sessions = new ArrayList<>();
     private final AtomicReference<FakeKisWebSocketSession> session = new AtomicReference<>();
+    private java.util.function.Consumer<FakeKisWebSocketSession> nextSessionCreatedHook;
 
     @Override
     public KisWebSocketSession connect(URI uri, java.util.function.Consumer<String> inboundTextHandler) {
       connectedUris.add(uri);
       FakeKisWebSocketSession fakeSession = new FakeKisWebSocketSession(inboundTextHandler);
+      if (nextSessionCreatedHook != null) {
+        java.util.function.Consumer<FakeKisWebSocketSession> hook = nextSessionCreatedHook;
+        nextSessionCreatedHook = null;
+        hook.accept(fakeSession);
+      }
       sessions.add(fakeSession);
       session.set(fakeSession);
       return fakeSession;
@@ -278,6 +370,10 @@ class KisLiveMarketDataAdapterTest {
     private List<FakeKisWebSocketSession> sessions() {
       return sessions;
     }
+
+    private void onNextSessionCreated(java.util.function.Consumer<FakeKisWebSocketSession> hook) {
+      this.nextSessionCreatedHook = hook;
+    }
   }
 
   private static final class FakeKisWebSocketSession implements KisWebSocketSession {
@@ -287,6 +383,7 @@ class KisLiveMarketDataAdapterTest {
     private boolean open = true;
     private boolean closed;
     private RuntimeException closeFailure;
+    private java.util.function.Consumer<String> sendHook;
 
     private FakeKisWebSocketSession(java.util.function.Consumer<String> inboundTextHandler) {
       this.inboundTextHandler = inboundTextHandler;
@@ -295,6 +392,9 @@ class KisLiveMarketDataAdapterTest {
     @Override
     public void sendText(String payload) {
       sentPayloads.add(payload);
+      if (sendHook != null) {
+        sendHook.accept(payload);
+      }
     }
 
     @Override
@@ -330,6 +430,10 @@ class KisLiveMarketDataAdapterTest {
     private void failOnClose(RuntimeException closeFailure) {
       this.closeFailure = closeFailure;
     }
+
+    private void onSend(java.util.function.Consumer<String> sendHook) {
+      this.sendHook = sendHook;
+    }
   }
 
   private static final class RecordingPersistencePort implements LiveMarketDataPersistencePort {
@@ -363,6 +467,20 @@ class KisLiveMarketDataAdapterTest {
 
     private List<NormalizedQuoteEvent> persistedEvents() {
       return persistedEvents;
+    }
+  }
+
+  private static final class FixedMarketDataSubscriptionProgressPort implements MarketDataSubscriptionProgressPort {
+
+    private final Map<String, MarketDataSubscriptionProgress> progressBySymbol = new LinkedHashMap<>();
+
+    @Override
+    public java.util.Optional<MarketDataSubscriptionProgress> findProgress(String provider, String symbol, FepQuoteSourceMode sourceMode) {
+      return java.util.Optional.ofNullable(progressBySymbol.get(symbol));
+    }
+
+    private void put(String symbol, MarketDataSubscriptionProgress progress) {
+      progressBySymbol.put(symbol, progress);
     }
   }
 }

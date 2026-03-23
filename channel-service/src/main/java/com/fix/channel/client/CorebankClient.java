@@ -19,6 +19,7 @@ import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.TraceparentSupport;
 import java.math.BigDecimal;
@@ -270,16 +271,7 @@ public class CorebankClient {
       }
 
       return responseBody.stream()
-          .map((item) -> AccountPositionResult.of(
-              firstNonNull(item.accountId(), command.getAccountId()),
-              firstNonNull(item.memberId(), command.getMemberId()),
-              defaultIfBlank(item.symbol(), ""),
-              defaultDecimal(item.quantity(), BigDecimal.ZERO),
-              defaultDecimal(firstNonNull(item.availableQuantity(), item.availableQty()), BigDecimal.ZERO),
-              defaultDecimal(firstNonNull(item.balance(), item.availableBalance()), BigDecimal.ZERO),
-              item.currency(),
-              item.asOf()
-          ))
+          .map((item) -> mapAccountPosition(item, command.getAccountId(), command.getMemberId(), item.symbol()))
           .toList();
     } catch (RestClientException ex) {
       throw translateFailure(ex);
@@ -305,20 +297,7 @@ public class CorebankClient {
           });
 
       CorebankAccountPositionResponse responseBody = extractBody(response);
-      BigDecimal quantity = defaultDecimal(responseBody.quantity(), BigDecimal.ZERO);
-      BigDecimal availableQuantity =
-          defaultDecimal(firstNonNull(responseBody.availableQuantity(), responseBody.availableQty()), BigDecimal.ZERO);
-      BigDecimal balance = defaultDecimal(firstNonNull(responseBody.balance(), responseBody.availableBalance()), BigDecimal.ZERO);
-      return AccountPositionResult.of(
-          firstNonNull(responseBody.accountId(), command.getAccountId()),
-          firstNonNull(responseBody.memberId(), command.getMemberId()),
-          defaultIfBlank(responseBody.symbol(), ""),
-          quantity,
-          availableQuantity,
-          balance,
-          responseBody.currency(),
-          responseBody.asOf()
-      );
+      return mapAccountPosition(responseBody, command.getAccountId(), command.getMemberId(), "");
     } catch (RestClientException ex) {
       throw translateFailure(ex);
     }
@@ -439,7 +418,11 @@ public class CorebankClient {
         availableQuantity,
         balance,
         responseBody.currency(),
-        responseBody.asOf()
+        responseBody.asOf(),
+        responseBody.marketPrice(),
+        responseBody.quoteSnapshotId(),
+        responseBody.quoteAsOf(),
+        responseBody.quoteSourceMode()
     );
   }
 
@@ -553,8 +536,25 @@ public class CorebankClient {
     formData.add("clOrdId", command.getClOrdId());
     formData.add("symbol", command.getSymbol());
     formData.add("side", command.getSide());
+    if (command.getOrderType() != null && !command.getOrderType().isBlank()) {
+      formData.add("orderType", command.getOrderType());
+    }
     formData.add("quantity", command.getQuantity().toPlainString());
-    formData.add("price", command.getPrice().toPlainString());
+    if (command.getPrice() != null) {
+      formData.add("price", command.getPrice().toPlainString());
+    }
+    if (command.getQuoteSnapshotId() != null && !command.getQuoteSnapshotId().isBlank()) {
+      formData.add("quoteSnapshotId", command.getQuoteSnapshotId());
+    }
+    if (command.getQuoteAsOf() != null) {
+      formData.add("quoteAsOf", command.getQuoteAsOf().toString());
+    }
+    if (command.getQuoteSourceMode() != null) {
+      formData.add("quoteSourceMode", command.getQuoteSourceMode().name());
+    }
+    if (command.getPreTradePrice() != null) {
+      formData.add("preTradePrice", command.getPreTradePrice().toPlainString());
+    }
     return formData;
   }
 
@@ -685,7 +685,11 @@ public class CorebankClient {
       BigDecimal balance,
       BigDecimal availableBalance,
       String currency,
-      Instant asOf
+      Instant asOf,
+      BigDecimal marketPrice,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode
   ) {
   }
 

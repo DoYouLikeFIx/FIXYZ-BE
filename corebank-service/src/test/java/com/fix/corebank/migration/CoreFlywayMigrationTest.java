@@ -145,6 +145,58 @@ class CoreFlywayMigrationTest {
   }
 
   @Test
+  void shouldAddMarketTraceabilityColumnsToOrdersAndExecutions() {
+    String orderPriceNullable = jdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'ORDER_PRICE'",
+        String.class
+    );
+    Integer orderTypeLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'ORDER_TYPE'",
+        Integer.class
+    );
+    Integer preTradePriceScale = jdbcTemplate.queryForObject(
+        "SELECT NUMERIC_SCALE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'PRE_TRADE_PRICE'",
+        Integer.class
+    );
+    Integer quoteSnapshotIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'ORDERS' AND INDEX_NAME = 'IDX_ORDERS_QUOTE_SNAPSHOT_ID'",
+        Integer.class
+    );
+    Integer executionQuoteSnapshotExists = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'EXECUTIONS' AND COLUMN_NAME = 'QUOTE_SNAPSHOT_ID'",
+        Integer.class
+    );
+    Integer executionQuoteAsOfExists = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'EXECUTIONS' AND COLUMN_NAME = 'QUOTE_AS_OF'",
+        Integer.class
+    );
+    Integer executionQuoteSourceModeLength = jdbcTemplate.queryForObject(
+        "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'EXECUTIONS' AND COLUMN_NAME = 'QUOTE_SOURCE_MODE'",
+        Integer.class
+    );
+    Integer executionQuoteSnapshotIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'EXECUTIONS' AND INDEX_NAME = 'IDX_EXECUTIONS_QUOTE_SNAPSHOT_ID'",
+        Integer.class
+    );
+
+    assertThat(orderPriceNullable).isEqualTo("YES");
+    assertThat(orderTypeLength).isEqualTo(16);
+    assertThat(preTradePriceScale).isEqualTo(4);
+    assertThat(quoteSnapshotIndexCount).isEqualTo(1);
+    assertThat(executionQuoteSnapshotExists).isEqualTo(1);
+    assertThat(executionQuoteAsOfExists).isEqualTo(1);
+    assertThat(executionQuoteSourceModeLength).isEqualTo(16);
+    assertThat(executionQuoteSnapshotIndexCount).isEqualTo(1);
+  }
+
+  @Test
   void shouldCreateLedgerIntegrityTrackingTables() {
     Integer runTableCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'LEDGER_INTEGRITY_RUNS'",

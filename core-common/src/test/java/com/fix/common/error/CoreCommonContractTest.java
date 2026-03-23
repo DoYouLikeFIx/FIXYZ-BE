@@ -38,6 +38,21 @@ class CoreCommonContractTest {
   }
 
   @Test
+  void shouldBuildStaleQuoteErrorResponseWithContractCode() {
+    ApiErrorResponse error = ApiErrorResponse.from(
+        ErrorCode.STALE_QUOTE,
+        "",
+        "/internal/v1/accounts/1/positions",
+        "corr-stale"
+    );
+
+    assertThat(error.getCode()).isEqualTo("VALIDATION-003");
+    assertThat(error.getMessage()).isEqualTo("Stale quote");
+    assertThat(error.getPath()).isEqualTo("/internal/v1/accounts/1/positions");
+    assertThat(error.getCorrelationId()).isEqualTo("corr-stale");
+  }
+
+  @Test
   void shouldIncludeExternalErrorMetadataWhenPresent() {
     ApiErrorResponse error = ApiErrorResponse.from(
         ErrorCode.FEP_GATEWAY_TIMEOUT,
@@ -101,6 +116,8 @@ class CoreCommonContractTest {
         .isEqualTo(ErrorCode.ORD_DAILY_SELL_LIMIT_EXCEEDED);
     assertThat(ErrorCode.fromCode("ORD-003").orElseThrow())
         .isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION);
+    assertThat(ErrorCode.fromCode("VALIDATION-003").orElseThrow())
+        .isEqualTo(ErrorCode.STALE_QUOTE);
     assertThat(ErrorCode.fromCode("AUTH-026").orElseThrow())
         .isEqualTo(ErrorCode.AUTH_MFA_REBIND_CURRENT_PASSWORD_MISMATCH);
   }

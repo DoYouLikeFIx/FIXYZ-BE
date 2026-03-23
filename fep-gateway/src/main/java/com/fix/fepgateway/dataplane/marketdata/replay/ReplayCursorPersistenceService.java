@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReplayCursorPersistenceService implements ReplayCursorPersistencePort {
 
   private static final String RUNNING = "RUNNING";
+  private static final String PAUSED = "PAUSED";
   private static final String STOPPED = "STOPPED";
 
   private final ReplayCursorRepository replayCursorRepository;
@@ -43,12 +44,52 @@ public class ReplayCursorPersistenceService implements ReplayCursorPersistencePo
 
   @Override
   @Transactional
+  public ReplayCursorSpec reset(ReplayCursorSpec replayCursorSpec) {
+    ReplayCursor replayCursor = replayCursorRepository.findByReplayId(replayCursorSpec.replayId())
+        .orElseGet(() -> ReplayCursor.running(
+            replayCursorSpec.replayId(),
+            replayCursorSpec.seed(),
+            replayCursorSpec.symbol(),
+            replayCursorSpec.speedFactor()
+        ));
+
+    replayCursor.synchronize(
+        replayCursorSpec.seed(),
+        replayCursorSpec.symbol(),
+        replayCursorSpec.speedFactor()
+    );
+    replayCursor.moveTo(replayCursorSpec.cursorOffset());
+    replayCursor.changeStatus(RUNNING);
+
+    return toSpec(replayCursorRepository.save(replayCursor));
+  }
+
+  @Override
+  @Transactional
   public ReplayCursorSpec advance(String replayId, long nextCursorOffset) {
     ReplayCursor replayCursor = replayCursorRepository.findByReplayId(replayId)
         .orElseThrow(() -> new IllegalStateException("Replay cursor not found: " + replayId));
     replayCursor.moveTo(nextCursorOffset);
     replayCursor.changeStatus(RUNNING);
     return toSpec(replayCursorRepository.save(replayCursor));
+  }
+
+  @Override
+  @Transactional
+  public void pause(String replayId) {
+    replayCursorRepository.findByReplayId(replayId).ifPresent(replayCursor -> {
+      replayCursor.changeStatus(PAUSED);
+      replayCursorRepository.save(replayCursor);
+    });
+  }
+
+  @Override
+  @Transactional
+  public void resume(String replayId) {
+    replayCursorRepository.findByReplayId(replayId).ifPresent(replayCursor -> {
+      replayCursor.changeStatus(RUNNING);
+      replayCursorRepository.save(replayCursor);
+    });
   }
 
   @Override

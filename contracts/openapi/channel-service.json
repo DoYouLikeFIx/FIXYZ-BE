@@ -4177,6 +4177,24 @@
                     "asOf": {
                         "type": "string",
                         "format": "date-time"
+                    },
+                    "marketPrice": {
+                        "type": "number"
+                    },
+                    "quoteSnapshotId": {
+                        "type": "string"
+                    },
+                    "quoteAsOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "quoteSourceMode": {
+                        "type": "string",
+                        "enum": [
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY"
+                        ]
                     }
                 }
             },

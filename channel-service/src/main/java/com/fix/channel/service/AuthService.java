@@ -25,6 +25,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -73,6 +74,7 @@ public class AuthService {
   private final TotpReplayGuardService totpReplayGuardService;
   private final TotpService totpService;
   private final CorebankProvisioningClient corebankProvisioningClient;
+  private final Clock clock;
   @SuppressWarnings("rawtypes")
   private final ObjectProvider<FindByIndexNameSessionRepository> sessionRepositoryProvider;
 
@@ -521,7 +523,7 @@ public class AuthService {
       String userAgent,
       String loginToken
   ) {
-    Instant mfaVerifiedAt = Instant.now();
+    Instant mfaVerifiedAt = Instant.now(clock);
     HttpSession session = establishAuthenticatedSession(member, request, correlationId, mfaVerifiedAt, clientIp, userAgent);
 
     auditLogService.record(AuditLog.of(

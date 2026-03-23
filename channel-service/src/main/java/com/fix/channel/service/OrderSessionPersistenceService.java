@@ -5,6 +5,7 @@ import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.ManualRecoveryQueueEntry;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
+import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.channel.repository.ManualRecoveryQueueEntryRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.vo.OrderSessionCreateCommand;
@@ -41,7 +42,11 @@ public class OrderSessionPersistenceService {
       OrderSessionCreateCommand command,
       boolean challengeRequired,
       String authorizationReason,
-      Instant expiresAt
+      Instant expiresAt,
+      String quoteSnapshotId,
+      Instant quoteAsOf,
+      FepQuoteSourceMode quoteSourceMode,
+      BigDecimal preTradePrice
   ) {
     OrderSession savedSession = orderSessionRepository.saveAndFlush(OrderSession.initiated(
         command.getMemberId(),
@@ -55,7 +60,11 @@ public class OrderSessionPersistenceService {
         command.getPrice(),
         challengeRequired,
         authorizationReason,
-        expiresAt
+        expiresAt,
+        quoteSnapshotId,
+        quoteAsOf,
+        quoteSourceMode,
+        preTradePrice
     ));
     entityManager.refresh(savedSession);
 

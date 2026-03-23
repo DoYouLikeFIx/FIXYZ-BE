@@ -9,6 +9,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doNothing;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -20,6 +22,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fix.channel.service.OrderSessionRateLimitService;
+import com.fix.channel.service.SessionOwnershipValidator;
 import com.fix.channel.testsupport.OrderSessionTestFixture;
 import com.fix.channel.service.OrderSessionTtlStore;
 import com.fix.common.web.CommonHeaders;
@@ -31,6 +35,7 @@ import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -40,9 +45,11 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -76,6 +83,12 @@ class ChannelErrorContractTest {
   @Autowired
   private ObjectMapper objectMapper;
 
+  @MockitoBean
+  private OrderSessionRateLimitService orderSessionRateLimitService;
+
+  @MockitoBean
+  private SessionOwnershipValidator sessionOwnershipValidator;
+
   @Autowired
   private OrderSessionTestFixture orderSessionTestFixture;
 
@@ -87,6 +100,11 @@ class ChannelErrorContractTest {
   @AfterAll
   static void stopWireMock() {
     WIRE_MOCK_SERVER.stop();
+  }
+
+  @BeforeEach
+  void setUp() {
+    doNothing().when(sessionOwnershipValidator).validateLinkedAccount(anyLong(), anyLong());
   }
 
   @TestConfiguration
@@ -149,6 +167,69 @@ class ChannelErrorContractTest {
     assertThat(actual.path("path").asText()).isEqualTo(snapshot.path("path").asText());
     assertThat(actual.path("correlationId").asText()).isNotBlank();
     assertThat(actual.path("timestamp").asText()).isNotBlank();
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldExposeStaleQuoteErrorForMarketPrepareBoundary() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(422)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "code": "VALIDATION-003",
+                  "message": "Stale quote",
+                  "path": "/internal/v1/accounts/1/positions",
+                  "correlationId": "trace-core-stale-quote",
+                  "userMessageKey": "error.quote.stale",
+                  "operatorCode": "STALE_QUOTE",
+                  "details": {
+                    "symbol": "005930",
+                    "snapshotAgeMs": 5001,
+                    "quoteSnapshotId": "qsnap-005930-live-001",
+                    "quoteSourceMode": "LIVE"
+                  },
+                  "timestamp": "2026-03-20T00:00:00Z"
+                }
+                """)));
+
+    mockMvc.perform(post("/api/v1/orders/sessions")
+            .with(csrf())
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-stale-quote")
+            .header("X-ClOrdID", "123e4567-e89b-42d3-a456-426614174281")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "accountId": 1,
+                  "symbol": "005930",
+                  "side": "BUY",
+                  "orderType": "MARKET",
+                  "qty": 2
+                }
+                """))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-stale-quote"))
+        .andExpect(jsonPath("$.code").value("VALIDATION-003"))
+        .andExpect(jsonPath("$.message").value("Stale quote"))
+        .andExpect(jsonPath("$.path").value("/api/v1/orders/sessions"))
+        .andExpect(jsonPath("$.userMessageKey").value("error.quote.stale"))
+        .andExpect(jsonPath("$.operatorCode").value("STALE_QUOTE"))
+        .andExpect(jsonPath("$.details.symbol").value("005930"))
+        .andExpect(jsonPath("$.details.snapshotAgeMs").value(5001))
+        .andExpect(jsonPath("$.details.quoteSnapshotId").value("qsnap-005930-live-001"))
+        .andExpect(jsonPath("$.details.quoteSourceMode").value("LIVE"))
+        .andExpect(jsonPath("$.correlationId").value("trace-channel-stale-quote"));
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-stale-quote")));
   }
 
   @Test

@@ -482,6 +482,284 @@
                 }
             }
         },
+        "/fep-internal/v1/market-data/replay/timelines": {
+            "post": {
+                "tags": [
+                    "fep-gateway-replay-timeline-controller"
+                ],
+                "summary": "Start Timeline",
+                "operationId": "startTimeline",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FepReplayTimelineStartRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseFepReplayTimelineResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/fep-internal/v1/market-data/replay/timelines/{replayId}/resume": {
+            "post": {
+                "tags": [
+                    "fep-gateway-replay-timeline-controller"
+                ],
+                "summary": "Resume Timeline",
+                "operationId": "resumeTimeline",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "replayId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseFepReplayTimelineResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/fep-internal/v1/market-data/replay/timelines/{replayId}/pause": {
+            "post": {
+                "tags": [
+                    "fep-gateway-replay-timeline-controller"
+                ],
+                "summary": "Pause Timeline",
+                "operationId": "pauseTimeline",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "replayId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseFepReplayTimelineResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/fep/v1/orders/{clOrdId}/status": {
             "get": {
                 "tags": [
@@ -575,6 +853,190 @@
                 }
             }
         },
+        "/fep-internal/v1/quotes/snapshots/latest": {
+            "get": {
+                "tags": [
+                    "fep-gateway-quote-snapshot-controller"
+                ],
+                "summary": "Latest Snapshot",
+                "operationId": "latestSnapshot",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/FepQuoteSnapshotLatestRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseFepQuoteSnapshotResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/fep-internal/v1/quotes/snapshots/latest/batch": {
+            "get": {
+                "tags": [
+                    "fep-gateway-quote-snapshot-controller"
+                ],
+                "summary": "Latest Snapshots",
+                "operationId": "latestSnapshots",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "request",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/FepQuoteSnapshotBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseListFepQuoteSnapshotResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/fep-internal/v1/ping": {
             "get": {
                 "tags": [
@@ -603,6 +1065,98 @@
                                     "additionalProperties": {
                                         "type": "string"
                                     }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/fep-internal/v1/market-data/replay/timelines/{replayId}": {
+            "get": {
+                "tags": [
+                    "fep-gateway-replay-timeline-controller"
+                ],
+                "summary": "Get Timeline",
+                "operationId": "getTimeline",
+                "parameters": [
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Correlation-Id",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "replayId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseFepReplayTimelineResponse"
                                 }
                             }
                         }
@@ -1207,6 +1761,223 @@
                         "type": "integer",
                         "description": "Optional reference price override for legacy MARKET recovery rows.",
                         "format": "int64"
+                    }
+                }
+            },
+            "FepReplayTimelineStartRequest": {
+                "required": [
+                    "seed",
+                    "symbol"
+                ],
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "minLength": 1,
+                        "pattern": "^\\d{6}$",
+                        "type": "string",
+                        "description": "KRX symbol code used to start the replay timeline."
+                    },
+                    "seed": {
+                        "minLength": 1,
+                        "type": "string",
+                        "description": "Deterministic replay seed used to derive timeline events."
+                    },
+                    "startOffset": {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "Starting replay cursor offset.",
+                        "format": "int64"
+                    },
+                    "speedFactor": {
+                        "type": "number",
+                        "description": "Replay speed factor applied on each drain cycle."
+                    }
+                }
+            },
+            "ApiResponseFepReplayTimelineResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/FepReplayTimelineResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "FepReplayTimelineResponse": {
+                "type": "object",
+                "properties": {
+                    "replayId": {
+                        "type": "string"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "seed": {
+                        "type": "string"
+                    },
+                    "cursorOffset": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "speedFactor": {
+                        "type": "number"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "emittedCount": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "sequenceHash": {
+                        "type": "string"
+                    }
+                }
+            },
+            "FepQuoteSnapshotLatestRequest": {
+                "required": [
+                    "quoteSourceMode",
+                    "symbol"
+                ],
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "minLength": 1,
+                        "type": "string",
+                        "description": "KRX symbol code used to query the latest stored quote snapshot."
+                    },
+                    "quoteSourceMode": {
+                        "type": "string",
+                        "description": "Quote source mode to query.",
+                        "enum": [
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY",
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY"
+                        ]
+                    }
+                }
+            },
+            "ApiResponseFepQuoteSnapshotResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/FepQuoteSnapshotResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "FepQuoteSnapshotResponse": {
+                "type": "object",
+                "properties": {
+                    "quoteSnapshotId": {
+                        "type": "string"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "quoteSourceMode": {
+                        "type": "string",
+                        "enum": [
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY"
+                        ]
+                    },
+                    "quoteAsOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "bestBid": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "bestAsk": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "lastTrade": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "streamOffset": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "stale": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "FepQuoteSnapshotBatchRequest": {
+                "required": [
+                    "quoteSourceMode",
+                    "symbol"
+                ],
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "minItems": 1,
+                        "type": "array",
+                        "description": "KRX symbol codes used to query the latest stored quote snapshots.",
+                        "items": {
+                            "minLength": 1,
+                            "type": "string",
+                            "description": "KRX symbol codes used to query the latest stored quote snapshots."
+                        }
+                    },
+                    "quoteSourceMode": {
+                        "type": "string",
+                        "description": "Quote source mode to query.",
+                        "enum": [
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY",
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY"
+                        ]
+                    }
+                }
+            },
+            "ApiResponseListFepQuoteSnapshotResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FepQuoteSnapshotResponse"
+                        }
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
                     }
                 }
             }
