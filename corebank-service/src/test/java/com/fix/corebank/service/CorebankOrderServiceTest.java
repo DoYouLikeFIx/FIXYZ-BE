@@ -957,6 +957,38 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldExposeOrderSnapshotForCanonicalClOrdId() {
+    Order existingOrder = persistedOrder(
+        Order.accepted(
+            ACCOUNT_ID,
+            REQUERY_CL_ORD_ID,
+            "005930",
+            "BUY",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70100.0000")
+        ),
+        9011L
+    );
+    existingOrder.updateState(
+        "FILLED",
+        Order.EXTERNAL_SYNC_CONFIRMED,
+        "FEP-KRX-" + REQUERY_CL_ORD_ID,
+        null
+    );
+
+    when(orderRepository.findByClOrdId(REQUERY_CL_ORD_ID)).thenReturn(Optional.of(existingOrder));
+
+    var snapshot = corebankOrderService.getOrderSnapshot(REQUERY_CL_ORD_ID);
+
+    assertThat(snapshot.getOrderId()).isEqualTo(9011L);
+    assertThat(snapshot.getAccountId()).isEqualTo(ACCOUNT_ID);
+    assertThat(snapshot.getClOrdId()).isEqualTo(REQUERY_CL_ORD_ID);
+    assertThat(snapshot.getStatus()).isEqualTo("FILLED");
+    assertThat(snapshot.getExternalSyncStatus()).isEqualTo(Order.EXTERNAL_SYNC_CONFIRMED);
+    assertThat(snapshot.getExternalOrderId()).isEqualTo("FEP-KRX-" + REQUERY_CL_ORD_ID);
+  }
+
+  @Test
   void shouldRejectIdempotentReplayWhenAccountDiffers() {
     Order existingOrder = persistedOrder(
         Order.accepted(
