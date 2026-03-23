@@ -238,9 +238,10 @@ public class AdminOrderIdempotencyReconciliationService {
       return null;
     }
     return switch (corebankStatus) {
-      case "FILLED" -> sessionStatus == OrderSessionStatus.COMPLETED ? null : "TERMINAL_STATE_MISMATCH";
+      case "FILLED", "PARTIALLY_FILLED", "ACCEPTED" ->
+          sessionStatus == OrderSessionStatus.COMPLETED ? null : "TERMINAL_STATE_MISMATCH";
       case "CANCELED" -> sessionStatus == OrderSessionStatus.CANCELED ? null : "TERMINAL_STATE_MISMATCH";
-      case "PARTIALLY_FILLED", "REJECTED" -> "TERMINAL_STATE_MISMATCH";
+      case "REJECTED" -> "TERMINAL_STATE_MISMATCH";
       default -> null;
     };
   }
