@@ -288,11 +288,11 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(parameterByName(portfolioOperation.path("parameters"), "X-Internal-Secret").isMissingNode()).isFalse();
     assertThat(parameterByName(ledgerIntegritySummaryOperation.path("parameters"), "X-Internal-Secret").isMissingNode())
         .isFalse();
-    assertThat(schemaRef(portfolioOperation, "401"))
+    assertThat(schemaRef(portfolioOperation, "403"))
         .isEqualTo("#/components/schemas/ApiErrorResponse");
-    assertThat(portfolioOperation.path("responses").path("401").path("headers").path("X-Correlation-Id").path("schema")
+    assertThat(portfolioOperation.path("responses").path("403").path("headers").path("X-Correlation-Id").path("schema")
         .path("type").asText()).isEqualTo("string");
-    assertThat(portfolioOperation.path("responses").path("401").path("headers").path("traceparent").path("schema")
+    assertThat(portfolioOperation.path("responses").path("403").path("headers").path("traceparent").path("schema")
         .path("type").asText()).isEqualTo("string");
   }
 

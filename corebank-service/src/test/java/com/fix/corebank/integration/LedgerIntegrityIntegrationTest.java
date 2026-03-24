@@ -24,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -85,7 +86,8 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
   }
 
   @Test
-  void shouldPassWhenCompletedOrdersHaveBalancedLedgerEvidence() {
+  @Tag("epic10-acceptance")
+  void e10_007ShouldPassWhenCompletedOrdersHaveBalancedLedgerEvidence() {
     createFilledOrder(SELL_SYMBOL, "SELL", "10.0000", "72000.0000");
     createFilledOrder(BUY_SYMBOL, "BUY", "5.0000", "120000.0000");
 

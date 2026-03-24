@@ -50,3 +50,5 @@ tasks.register('correlationIdPropagationChecks') {
       ':fep-simulator:correlationPropagationTests'
   )
 }
+
+apply from: rootProject.file('gradle/epic10-acceptance.gradle')

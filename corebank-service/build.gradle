@@ -121,6 +121,20 @@ tasks.register('correlationPropagationTests', Test) {
   }
 }
 
+tasks.register('epic10AcceptanceTests', Test) {
+  description = 'Runs Story 10.1 canonical acceptance scenarios owned by corebank-service.'
+  group = 'verification'
+  useJUnitPlatform {
+    includeTags 'epic10-acceptance'
+  }
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10AcceptanceTests')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10AcceptanceTests')
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+}
+
 matchingRegressionSuites.each { String taskName, Map suite ->
   tasks.register(taskName, Test) {
     description = suite.description
@@ -223,6 +237,21 @@ tasks.register('resilienceScenarioTest', Test) {
   useJUnitPlatform()
   maxParallelForks = 1
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
+}
+
+tasks.register('epic10ResilienceAcceptanceTests', Test) {
+  description = 'Runs Story 10.1 canonical resilience acceptance scenarios owned by corebank-service.'
+  group = 'verification'
+  testClassesDirs = sourceSets.resilienceScenario.output.classesDirs
+  classpath = sourceSets.resilienceScenario.runtimeClasspath
+  shouldRunAfter tasks.named('resilienceScenarioTest')
+  useJUnitPlatform {
+    includeTags 'epic10-acceptance'
+  }
+  maxParallelForks = 1
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10ResilienceAcceptanceTests')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10ResilienceAcceptanceTests')
 }
 
 tasks.named('check') {

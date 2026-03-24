@@ -105,6 +105,19 @@ tasks.register('correlationPropagationTests', Test) {
   }
 }
 
+tasks.register('epic10AcceptanceTests', Test) {
+  description = 'Runs Story 10.1 canonical acceptance scenarios owned by channel-service.'
+  group = 'verification'
+  useJUnitPlatform {
+    includeTags 'epic10-acceptance'
+  }
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10AcceptanceTests')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10AcceptanceTests')
+}
+
 tasks.register('executeLatencySmokeTest', Test) {
   description = 'Runs Story 11.9 execute latency smoke coverage with evidence export.'
   group = 'verification'
