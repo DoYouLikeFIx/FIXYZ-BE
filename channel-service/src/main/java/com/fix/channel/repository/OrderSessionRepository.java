@@ -47,6 +47,21 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
 
   long countByStatusIn(Collection<OrderSessionStatus> statuses);
 
+  Optional<OrderSession> findTopByOrderByUpdatedAtDesc();
+
+  Optional<OrderSession> findTopByStatusInOrderByUpdatedAtDescIdDesc(Collection<OrderSessionStatus> statuses);
+
+  @Query("""
+      SELECT os
+      FROM OrderSession os
+      WHERE os.status = :status
+      ORDER BY COALESCE(os.executedAt, os.updatedAt) DESC, os.id DESC
+      """)
+  List<OrderSession> findByStatusOrderByEffectiveExecutionTimestampDesc(
+      @Param("status") OrderSessionStatus status,
+      Pageable pageable
+  );
+
   @Query("""
       SELECT os
       FROM OrderSession os

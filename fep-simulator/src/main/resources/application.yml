@@ -29,7 +29,7 @@ springdoc:
 management:
   server:
     port: ${FEP_SIMULATOR_MANAGEMENT_PORT:18082}
-    address: ${FEP_SIMULATOR_MANAGEMENT_ADDRESS:0.0.0.0}
+    address: ${FEP_SIMULATOR_MANAGEMENT_ADDRESS:127.0.0.1}
   endpoints:
     web:
       exposure:

@@ -11,6 +11,8 @@ public interface QuoteSnapshotRepository extends JpaRepository<QuoteSnapshot, Lo
 
   long countBySymbolAndSourceMode(String symbol, FepQuoteSourceMode sourceMode);
 
+  Optional<QuoteSnapshot> findTopByOrderByCreatedAtDesc();
+
   Optional<QuoteSnapshot> findTopBySymbolAndSourceModeOrderByQuoteAsOfDescStreamOffsetDesc(
       String symbol,
       FepQuoteSourceMode sourceMode

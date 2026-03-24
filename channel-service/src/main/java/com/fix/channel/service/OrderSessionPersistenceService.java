@@ -112,6 +112,7 @@ public class OrderSessionPersistenceService {
           null
       ));
       orderSessionRepository.delete(session);
+      orderSessionRepository.flush();
     });
   }
 
@@ -173,6 +174,7 @@ public class OrderSessionPersistenceService {
       Instant executedAt
   ) {
     OrderSession managedSession = managedSession(session);
+    OrderSessionStatus previousStatus = managedSession.getStatus();
     managedSession.beginRequerying(
         failureReason,
         executionResult,
@@ -184,6 +186,7 @@ public class OrderSessionPersistenceService {
         executedAt
     );
     orderSessionRepository.flush();
+    recordRecoveryBacklogMutationIfNeeded(previousStatus, managedSession.getStatus());
     return managedSession;
   }
 
@@ -199,6 +202,7 @@ public class OrderSessionPersistenceService {
       Instant executedAt
   ) {
     OrderSession managedSession = managedSession(session);
+    OrderSessionStatus previousStatus = managedSession.getStatus();
     managedSession.complete(
         executionResult,
         executedQty,
@@ -215,6 +219,7 @@ public class OrderSessionPersistenceService {
         "clOrdId=" + managedSession.getClOrdId() + ", result=" + executionResult
     );
     orderSessionMonitoringMetrics.recordExecutionCompleted(managedSession);
+    recordRecoveryBacklogMutationIfNeeded(previousStatus, managedSession.getStatus());
     return managedSession;
   }
 
@@ -231,6 +236,7 @@ public class OrderSessionPersistenceService {
       Instant canceledAt
   ) {
     OrderSession managedSession = managedSession(session);
+    OrderSessionStatus previousStatus = managedSession.getStatus();
     managedSession.cancel(
         executionResult,
         executedQty,
@@ -247,12 +253,14 @@ public class OrderSessionPersistenceService {
         AuditAction.ORDER_SESSION_CANCELED,
         "clOrdId=" + managedSession.getClOrdId() + ", result=" + executionResult
     );
+    recordRecoveryBacklogMutationIfNeeded(previousStatus, managedSession.getStatus());
     return managedSession;
   }
 
   @Transactional
   OrderSession markEscalated(OrderSession session, String failureReason) {
     OrderSession managedSession = managedSession(session);
+    OrderSessionStatus previousStatus = managedSession.getStatus();
     managedSession.escalate(failureReason);
     orderSessionRepository.flush();
     recordOrderSessionAudit(
@@ -260,6 +268,7 @@ public class OrderSessionPersistenceService {
         AuditAction.ORDER_SESSION_ESCALATED,
         "clOrdId=" + managedSession.getClOrdId() + ", reason=" + failureReason
     );
+    recordRecoveryBacklogMutationIfNeeded(previousStatus, managedSession.getStatus());
     return managedSession;
   }
 
@@ -276,6 +285,7 @@ public class OrderSessionPersistenceService {
       Instant executedAt
   ) {
     OrderSession managedSession = managedSession(session);
+    OrderSessionStatus previousStatus = managedSession.getStatus();
     managedSession.escalate(
         failureReason,
         executionResult,
@@ -294,6 +304,7 @@ public class OrderSessionPersistenceService {
             + ", reason=" + failureReason
             + ", externalSyncStatus=" + externalSyncStatus
     );
+    recordRecoveryBacklogMutationIfNeeded(previousStatus, managedSession.getStatus());
     return managedSession;
   }
 
@@ -311,6 +322,7 @@ public class OrderSessionPersistenceService {
       int attemptCount
   ) {
     OrderSession managedSession = managedSession(session);
+    OrderSessionStatus previousStatus = managedSession.getStatus();
     managedSession.escalate(
         failureReason,
         executionResult,
@@ -337,12 +349,14 @@ public class OrderSessionPersistenceService {
             + ", reason=" + failureReason
             + ", externalSyncStatus=" + externalSyncStatus
     );
+    recordRecoveryBacklogMutationIfNeeded(previousStatus, managedSession.getStatus());
     return managedSession;
   }
 
   @Transactional
   OrderSession markFailed(OrderSession session, String failureReason) {
     OrderSession managedSession = managedSession(session);
+    OrderSessionStatus previousStatus = managedSession.getStatus();
     managedSession.fail(failureReason);
     orderSessionRepository.flush();
     recordOrderSessionAudit(
@@ -350,6 +364,7 @@ public class OrderSessionPersistenceService {
         AuditAction.ORDER_SESSION_FAILED,
         "clOrdId=" + managedSession.getClOrdId() + ", reason=" + failureReason
     );
+    recordRecoveryBacklogMutationIfNeeded(previousStatus, managedSession.getStatus());
     return managedSession;
   }
 
@@ -360,8 +375,10 @@ public class OrderSessionPersistenceService {
       String externalSyncStatus
   ) {
     OrderSession managedSession = managedSession(session);
+    OrderSessionStatus previousStatus = managedSession.getStatus();
     managedSession.reconcileExternalLinkage(externalOrderId, externalSyncStatus);
     orderSessionRepository.flush();
+    recordRecoveryBacklogMutationIfNeeded(previousStatus, managedSession.getStatus());
     return managedSession;
   }
 
@@ -473,5 +490,15 @@ public class OrderSessionPersistenceService {
         null,
         null
     ));
+  }
+
+  private void recordRecoveryBacklogMutationIfNeeded(
+      OrderSessionStatus previousStatus,
+      OrderSessionStatus nextStatus
+  ) {
+    if (orderSessionMonitoringMetrics.isRecoveryBacklogStatus(previousStatus)
+        || orderSessionMonitoringMetrics.isRecoveryBacklogStatus(nextStatus)) {
+      orderSessionMonitoringMetrics.refreshRecoveryBacklogLastUpdated();
+    }
   }
 }

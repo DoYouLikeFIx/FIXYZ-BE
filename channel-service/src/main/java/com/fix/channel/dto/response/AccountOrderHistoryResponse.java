@@ -2,6 +2,7 @@ package com.fix.channel.dto.response;
 
 import com.fix.channel.vo.AccountOrderHistoryItemResult;
 import com.fix.channel.vo.AccountOrderHistoryResult;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -27,6 +28,7 @@ public record AccountOrderHistoryResponse(
     );
   }
 
+  @Schema(name = "AccountOrderHistoryItem")
   public record Item(
       String symbol,
       String symbolName,

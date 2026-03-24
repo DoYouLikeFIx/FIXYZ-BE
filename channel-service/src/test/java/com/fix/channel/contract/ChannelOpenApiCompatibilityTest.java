@@ -65,6 +65,11 @@ class ChannelOpenApiCompatibilityTest {
         .path("ApiResponseAdminAccountStatusTransitionResponse");
     JsonNode adminStatusTransitionSchema = contract.path("components").path("schemas")
         .path("AdminAccountStatusTransitionResponse");
+    JsonNode adminMonitoringFreshnessItemSchema = resolveRefSchema(
+        contract,
+        contract.path("components").path("schemas").path("AdminMonitoringFreshnessResponse")
+            .path("properties").path("items").path("items").path("$ref").asText()
+    );
     JsonNode accountOrderHistoryItemSchema = resolveRefSchema(
         contract,
         accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText()
@@ -73,6 +78,7 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode positionsListOperation = paths.path("/api/v1/accounts/{accountId}/positions/list").path("get");
     JsonNode summaryOperation = paths.path("/api/v1/accounts/{accountId}/summary").path("get");
     JsonNode adminAuditLogsOperation = paths.path("/api/v1/admin/audit-logs").path("get");
+    JsonNode adminMonitoringFreshnessOperation = paths.path("/api/v1/admin/monitoring/freshness").path("get");
     JsonNode adminReconciliationOperation = paths.path("/api/v1/admin/orders/{clOrdId}/idempotency-reconciliation")
         .path("post");
     JsonNode adminMemberSessionDeleteOperation = paths.path("/api/v1/admin/members/{memberUuid}/sessions").path("delete");
@@ -323,6 +329,27 @@ class ChannelOpenApiCompatibilityTest {
         .path("type").asText()).isEqualTo("string");
     assertThat(adminAuditLogsOperation.path("responses").path("429").path("headers").path("Retry-After").path("schema").path("type").asText())
         .isEqualTo("string");
+    assertThat(adminMonitoringFreshnessOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseAdminMonitoringFreshnessResponse");
+    assertThat(paths.path("/api/v1/admin/monitoring/freshness").path("get").path("responses").path("200").path("content")
+        .path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseAdminMonitoringFreshnessResponse");
+    assertThat(adminMonitoringFreshnessOperation.path("responses").path("401").path("content").path("application/json")
+        .path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(adminMonitoringFreshnessOperation, "403"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminMonitoringFreshnessOperation.path("responses").path("403").path("headers").path("X-Correlation-Id")
+        .path("schema").path("type").asText()).isEqualTo("string");
+    assertThat(adminMonitoringFreshnessOperation.path("responses").path("403").path("headers").path("traceparent")
+        .path("schema").path("type").asText()).isEqualTo("string");
+    assertThat(contract.path("components").path("schemas").path("AdminMonitoringFreshnessResponse").path("properties")
+        .path("items").path("items").path("$ref").asText())
+        .isEqualTo("#/components/schemas/AdminMonitoringFreshnessItem");
+    assertThat(fieldNames(adminMonitoringFreshnessItemSchema.path("properties")))
+        .contains("key", "status", "statusMessage", "lastUpdatedAt");
+    assertThat(accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText())
+        .isEqualTo("#/components/schemas/AccountOrderHistoryItem");
     assertThat(adminReconciliationOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAdminOrderIdempotencyReconciliationResponse");
     assertThat(schemaRef(adminReconciliationOperation, "401"))

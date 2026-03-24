@@ -19,12 +19,14 @@ public class AdminApiRateLimitService {
 
   private static final String ENDPOINT_DEFAULT = "default";
   private static final String ENDPOINT_AUDIT_LOGS = "audit-logs";
+  private static final String ENDPOINT_MONITORING_FRESHNESS = "monitoring-freshness";
   private static final String ENDPOINT_ORDER_REPLAY = "order-replay";
   private static final String ENDPOINT_ORDER_RECONCILIATION = "order-reconciliation";
   private static final String ENDPOINT_SESSION_INVALIDATION = "session-invalidation";
   private static final Set<String> ALLOWED_ENDPOINTS = Set.of(
       ENDPOINT_DEFAULT,
       ENDPOINT_AUDIT_LOGS,
+      ENDPOINT_MONITORING_FRESHNESS,
       ENDPOINT_ORDER_REPLAY,
       ENDPOINT_ORDER_RECONCILIATION,
       ENDPOINT_SESSION_INVALIDATION
@@ -40,6 +42,9 @@ public class AdminApiRateLimitService {
 
   @Value("${channel.admin.rate-limit.audit-logs.max-attempts:20}")
   private int auditLogsMaxAttempts;
+
+  @Value("${channel.admin.rate-limit.monitoring-freshness.max-attempts:60}")
+  private int monitoringFreshnessMaxAttempts;
 
   @Value("${channel.admin.rate-limit.order-replay.max-attempts:20}")
   private int orderReplayMaxAttempts;
@@ -59,6 +64,10 @@ public class AdminApiRateLimitService {
 
   public void enforceAuditLogs(String sessionId) {
     enforceForEndpoint(sessionId, ENDPOINT_AUDIT_LOGS);
+  }
+
+  public void enforceMonitoringFreshness(String sessionId) {
+    enforceForEndpoint(sessionId, ENDPOINT_MONITORING_FRESHNESS);
   }
 
   public void enforceOrderReplay(String sessionId) {
@@ -123,6 +132,9 @@ public class AdminApiRateLimitService {
   private int maxAttemptsFor(String endpointKey) {
     if (ENDPOINT_AUDIT_LOGS.equals(endpointKey)) {
       return Math.max(1, auditLogsMaxAttempts);
+    }
+    if (ENDPOINT_MONITORING_FRESHNESS.equals(endpointKey)) {
+      return Math.max(1, monitoringFreshnessMaxAttempts);
     }
     if (ENDPOINT_ORDER_REPLAY.equals(endpointKey)) {
       return Math.max(1, orderReplayMaxAttempts);

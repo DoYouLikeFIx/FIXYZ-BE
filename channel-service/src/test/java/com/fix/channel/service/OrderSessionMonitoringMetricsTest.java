@@ -2,6 +2,8 @@ package com.fix.channel.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,7 +12,10 @@ import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.OrderSessionRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Instant;
+import java.util.List;
 import java.util.Collection;
+import org.springframework.data.domain.Pageable;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -20,36 +25,82 @@ class OrderSessionMonitoringMetricsTest {
   void shouldExposePendingOrderSessionGauge() {
     OrderSessionRepository repository = mock(OrderSessionRepository.class);
     when(repository.countByStatusIn(anyCollection())).thenReturn(4L);
+    when(repository.findTopByStatusInOrderByUpdatedAtDescIdDesc(anyCollection())).thenReturn(java.util.Optional.empty());
+    when(repository.findByStatusOrderByEffectiveExecutionTimestampDesc(eq(OrderSessionStatus.COMPLETED), any(Pageable.class)))
+        .thenReturn(List.of());
     SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     OrderSessionMonitoringMetrics metrics = new OrderSessionMonitoringMetrics(repository, meterRegistry);
 
-    double gaugeValue = meterRegistry.get("channel.order.sessions.pending").gauge().value();
+    double gaugeValue = meterRegistry.get("channel.order.sessions.recovery.backlog").gauge().value();
 
     assertThat(gaugeValue).isEqualTo(4.0d);
 
     ArgumentCaptor<Collection<OrderSessionStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
     verify(repository).countByStatusIn(statusesCaptor.capture());
     assertThat(statusesCaptor.getValue()).containsExactlyInAnyOrder(
-        OrderSessionStatus.PENDING_NEW,
-        OrderSessionStatus.AUTHED,
-        OrderSessionStatus.EXECUTING,
-        OrderSessionStatus.REQUERYING
+        OrderSessionStatus.REQUERYING,
+        OrderSessionStatus.ESCALATED
     );
+    assertThat(
+        meterRegistry.get("channel.order.sessions.recovery.backlog.last.updated.epoch.seconds").gauge().value()
+    ).isZero();
     assertThat(metrics).isNotNull();
   }
 
   @Test
   void shouldRecordCompletedExecutionCounterWithNormalizedResultTag() {
     OrderSessionRepository repository = mock(OrderSessionRepository.class);
+    when(repository.findTopByStatusInOrderByUpdatedAtDescIdDesc(anyCollection())).thenReturn(java.util.Optional.empty());
+    when(repository.findByStatusOrderByEffectiveExecutionTimestampDesc(eq(OrderSessionStatus.COMPLETED), any(Pageable.class)))
+        .thenReturn(List.of());
     SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     OrderSessionMonitoringMetrics metrics = new OrderSessionMonitoringMetrics(repository, meterRegistry);
     OrderSession session = mock(OrderSession.class);
     when(session.getExecutionResult()).thenReturn("FILLED");
+    when(session.getExecutedAt()).thenReturn(Instant.parse("2026-03-24T09:15:00Z"));
 
     metrics.recordExecutionCompleted(session);
 
     assertThat(
         meterRegistry.get("channel.order.execution.completed").tag("result", "filled").counter().count()
     ).isEqualTo(1.0d);
+    assertThat(meterRegistry.get("channel.order.execution.last.completed.epoch.seconds").gauge().value())
+        .isEqualTo((double) Instant.parse("2026-03-24T09:15:00Z").getEpochSecond());
+  }
+
+  @Test
+  void shouldRefreshRecoveryBacklogGaugeFromCurrentBacklogSessions() {
+    OrderSessionRepository repository = mock(OrderSessionRepository.class);
+    OrderSession latestPending = mock(OrderSession.class);
+    when(latestPending.getUpdatedAt()).thenReturn(Instant.parse("2026-03-24T09:20:00Z"));
+    when(repository.findTopByStatusInOrderByUpdatedAtDescIdDesc(anyCollection()))
+        .thenReturn(java.util.Optional.of(latestPending), java.util.Optional.empty());
+    when(repository.findByStatusOrderByEffectiveExecutionTimestampDesc(eq(OrderSessionStatus.COMPLETED), any(Pageable.class)))
+        .thenReturn(List.of());
+    SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    OrderSessionMonitoringMetrics metrics = new OrderSessionMonitoringMetrics(repository, meterRegistry);
+
+    metrics.refreshRecoveryBacklogLastUpdated();
+
+    assertThat(
+        meterRegistry.get("channel.order.sessions.recovery.backlog.last.updated.epoch.seconds").gauge().value()
+    ).isZero();
+  }
+
+  @Test
+  void shouldSeedCompletedExecutionGaugeFromUpdatedAtWhenExecutedAtIsMissing() {
+    OrderSessionRepository repository = mock(OrderSessionRepository.class);
+    OrderSession latestCompleted = mock(OrderSession.class);
+    when(repository.findTopByStatusInOrderByUpdatedAtDescIdDesc(anyCollection())).thenReturn(java.util.Optional.empty());
+    when(repository.findByStatusOrderByEffectiveExecutionTimestampDesc(eq(OrderSessionStatus.COMPLETED), any(Pageable.class)))
+        .thenReturn(List.of(latestCompleted));
+    when(latestCompleted.getExecutedAt()).thenReturn(null);
+    when(latestCompleted.getUpdatedAt()).thenReturn(Instant.parse("2026-03-24T09:40:00Z"));
+
+    SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    new OrderSessionMonitoringMetrics(repository, meterRegistry);
+
+    assertThat(meterRegistry.get("channel.order.execution.last.completed.epoch.seconds").gauge().value())
+        .isEqualTo((double) Instant.parse("2026-03-24T09:40:00Z").getEpochSecond());
   }
 }
