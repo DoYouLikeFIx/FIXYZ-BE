@@ -498,7 +498,7 @@ public class OrderSessionPersistenceService {
   ) {
     if (orderSessionMonitoringMetrics.isRecoveryBacklogStatus(previousStatus)
         || orderSessionMonitoringMetrics.isRecoveryBacklogStatus(nextStatus)) {
-      orderSessionMonitoringMetrics.recordRecoveryBacklogMutation();
+      orderSessionMonitoringMetrics.refreshRecoveryBacklogLastUpdated();
     }
   }
 }

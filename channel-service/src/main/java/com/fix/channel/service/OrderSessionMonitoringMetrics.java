@@ -5,12 +5,12 @@ import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.OrderSessionRepository;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -24,7 +24,6 @@ public class OrderSessionMonitoringMetrics {
 
   private final OrderSessionRepository orderSessionRepository;
   private final MeterRegistry meterRegistry;
-  private final Clock clock;
   private final AtomicLong lastPendingSessionUpdatedEpochSeconds;
   private final AtomicLong lastCompletedExecutionEpochSeconds;
 
@@ -33,17 +32,8 @@ public class OrderSessionMonitoringMetrics {
       OrderSessionRepository orderSessionRepository,
       MeterRegistry meterRegistry
   ) {
-    this(orderSessionRepository, meterRegistry, Clock.systemUTC());
-  }
-
-  OrderSessionMonitoringMetrics(
-      OrderSessionRepository orderSessionRepository,
-      MeterRegistry meterRegistry,
-      Clock clock
-  ) {
     this.orderSessionRepository = orderSessionRepository;
     this.meterRegistry = meterRegistry;
-    this.clock = clock;
     this.lastPendingSessionUpdatedEpochSeconds = new AtomicLong(seedLatestRecoveryBacklogUpdateEpochSeconds());
     this.lastCompletedExecutionEpochSeconds = new AtomicLong(seedLatestCompletedExecutionEpochSeconds());
     Gauge.builder("channel.order.sessions.recovery.backlog", orderSessionRepository, this::countPendingSessions)
@@ -54,7 +44,7 @@ public class OrderSessionMonitoringMetrics {
         lastPendingSessionUpdatedEpochSeconds,
         AtomicLong::get
     )
-        .description("Epoch seconds of the most recent recovery backlog mutation")
+        .description("Epoch seconds of the latest updatedAt among sessions currently in the recovery backlog")
         .register(meterRegistry);
     Gauge.builder(
         "channel.order.execution.last.completed.epoch.seconds",
@@ -74,8 +64,8 @@ public class OrderSessionMonitoringMetrics {
     lastCompletedExecutionEpochSeconds.accumulateAndGet(resolveExecutionEpochSeconds(session), Math::max);
   }
 
-  public void recordRecoveryBacklogMutation() {
-    lastPendingSessionUpdatedEpochSeconds.accumulateAndGet(clock.instant().getEpochSecond(), Math::max);
+  public void refreshRecoveryBacklogLastUpdated() {
+    lastPendingSessionUpdatedEpochSeconds.set(seedLatestRecoveryBacklogUpdateEpochSeconds());
   }
 
   double countPendingSessions(OrderSessionRepository repository) {
@@ -94,10 +84,14 @@ public class OrderSessionMonitoringMetrics {
   }
 
   private long seedLatestCompletedExecutionEpochSeconds() {
-    Optional<OrderSession> latestExecution =
-        Optional.ofNullable(orderSessionRepository.findTopByExecutedAtIsNotNullOrderByExecutedAtDesc())
-            .orElse(Optional.empty());
-    return latestExecution.map(this::resolveExecutionEpochSeconds).orElse(0L);
+    return orderSessionRepository.findByStatusOrderByEffectiveExecutionTimestampDesc(
+            OrderSessionStatus.COMPLETED,
+            PageRequest.of(0, 1)
+        )
+        .stream()
+        .findFirst()
+        .map(this::resolveExecutionEpochSeconds)
+        .orElse(0L);
   }
 
   private long resolveExecutionEpochSeconds(OrderSession session) {
