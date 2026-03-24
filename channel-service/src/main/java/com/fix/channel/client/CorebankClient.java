@@ -21,6 +21,8 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepQuoteSourceMode;
+import com.fix.common.valuation.ValuationStatus;
+import com.fix.common.valuation.ValuationUnavailableReason;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.TraceparentSupport;
 import java.math.BigDecimal;
@@ -314,7 +316,7 @@ public class CorebankClient {
   ) {
     try {
       String traceparent = TraceparentSupport.currentOrGenerate();
-      CorebankApiResponse<CorebankAccountPositionResponse> response = restClient.get()
+      CorebankApiResponse<CorebankAccountSummaryResponse> response = restClient.get()
           .uri(uriBuilder -> uriBuilder
               .path(COREBANK_ACCOUNT_SUMMARY_PATH)
               .queryParam("memberId", command.getMemberId())
@@ -326,8 +328,8 @@ public class CorebankClient {
           .body(new ParameterizedTypeReference<>() {
           });
 
-      CorebankAccountPositionResponse responseBody = extractBody(response);
-      return mapAccountPosition(responseBody, command.getAccountId(), command.getMemberId(), "");
+      CorebankAccountSummaryResponse responseBody = extractBody(response);
+      return mapAccountSummary(responseBody, command.getAccountId(), command.getMemberId());
     } catch (RestClientException ex) {
       throw translateFailure(ex);
     }
@@ -441,6 +443,12 @@ public class CorebankClient {
       Long memberId,
       String fallbackSymbol
   ) {
+    if (responseBody.valuationStatus() == null) {
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          "valuationStatus is required for account position response"
+      );
+    }
     BigDecimal quantity = defaultDecimal(responseBody.quantity(), BigDecimal.ZERO);
     BigDecimal availableQuantity = defaultDecimal(
         firstNonNull(responseBody.availableQuantity(), responseBody.availableQty()),
@@ -460,10 +468,42 @@ public class CorebankClient {
         balance,
         responseBody.currency(),
         responseBody.asOf(),
+        responseBody.avgPrice(),
         responseBody.marketPrice(),
         responseBody.quoteSnapshotId(),
         responseBody.quoteAsOf(),
-        responseBody.quoteSourceMode()
+        responseBody.quoteSourceMode(),
+        responseBody.unrealizedPnl(),
+        responseBody.realizedPnlDaily(),
+        responseBody.valuationStatus(),
+        responseBody.valuationUnavailableReason()
+    );
+  }
+
+  private AccountPositionResult mapAccountSummary(
+      CorebankAccountSummaryResponse responseBody,
+      Long accountId,
+      Long memberId
+  ) {
+    BigDecimal quantity = defaultDecimal(responseBody.quantity(), BigDecimal.ZERO);
+    BigDecimal availableQuantity = defaultDecimal(
+        firstNonNull(responseBody.availableQuantity(), responseBody.availableQty()),
+        quantity
+    );
+    BigDecimal balance = defaultDecimal(
+        firstNonNull(responseBody.balance(), responseBody.availableBalance()),
+        BigDecimal.ZERO
+    );
+
+    return AccountPositionResult.of(
+        firstNonNull(responseBody.accountId(), accountId),
+        firstNonNull(responseBody.memberId(), memberId),
+        defaultIfBlank(responseBody.symbol(), ""),
+        quantity,
+        availableQuantity,
+        balance,
+        responseBody.currency(),
+        responseBody.asOf()
     );
   }
 
@@ -738,10 +778,30 @@ public class CorebankClient {
       BigDecimal availableBalance,
       String currency,
       Instant asOf,
+      BigDecimal avgPrice,
       BigDecimal marketPrice,
       String quoteSnapshotId,
       Instant quoteAsOf,
-      FepQuoteSourceMode quoteSourceMode
+      FepQuoteSourceMode quoteSourceMode,
+      BigDecimal unrealizedPnl,
+      BigDecimal realizedPnlDaily,
+      ValuationStatus valuationStatus,
+      ValuationUnavailableReason valuationUnavailableReason
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankAccountSummaryResponse(
+      Long accountId,
+      Long memberId,
+      String symbol,
+      BigDecimal quantity,
+      BigDecimal availableQuantity,
+      BigDecimal availableQty,
+      BigDecimal balance,
+      BigDecimal availableBalance,
+      String currency,
+      Instant asOf
   ) {
   }
 
