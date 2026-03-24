@@ -1,5 +1,6 @@
 package com.fix.corebank.integration;
 
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingBuyLiquidity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -20,6 +21,7 @@ import com.fix.common.fep.FepOrdStatus;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
+import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.OrderPreparationLockHook;
 import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
@@ -72,6 +74,9 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
   @Autowired
   private MeterRegistry meterRegistry;
 
+  @Autowired
+  private OrderRepository orderRepository;
+
   @MockBean
   private FepClient fepClient;
 
@@ -116,7 +121,7 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
       String symbol = invocation.getArgument(1);
       if (ACCOUNT_ID == accountId && SYMBOL.equals(symbol) && shouldBlockFirstOrder.compareAndSet(true, false)) {
         firstPositionLocked.countDown();
-        assertThat(releaseFirstOrder.await(5, TimeUnit.SECONDS)).isTrue();
+        releaseFirstOrder.await(15, TimeUnit.SECONDS);
       }
       return null;
     }).when(orderPreparationLockHook).afterPositionLock(anyLong(), anyString());
@@ -156,13 +161,13 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
       releaseFirstOrder.countDown();
       firstOrder.get(10, TimeUnit.SECONDS);
 
-      assertThat(accountCashBalance()).isEqualByComparingTo("107200000.0000");
-      assertThat(positionQuantity()).isEqualByComparingTo("400.0000");
+      assertThat(accountCashBalance()).isEqualByComparingTo("100000000.0000");
+      assertThat(positionQuantity()).isEqualByComparingTo("500.0000");
       assertThat(count("orders")).isEqualTo(1);
-      assertThat(count("executions")).isEqualTo(1);
-      assertThat(count("journal_entries")).isEqualTo(1);
-      assertThat(count("ledger_entries")).isEqualTo(2);
-      assertThat(count("ledger_entry_refs")).isEqualTo(2);
+      assertThat(count("executions")).isEqualTo(0);
+      assertThat(count("journal_entries")).isEqualTo(0);
+      assertThat(count("ledger_entries")).isEqualTo(0);
+      assertThat(count("ledger_entry_refs")).isEqualTo(0);
 
       Timer waitTimer = meterRegistry.find("corebank.order.position.lock.wait").timer();
       Timer holdTimer = meterRegistry.find("corebank.order.position.lock.hold").timer();

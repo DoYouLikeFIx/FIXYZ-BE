@@ -1,5 +1,7 @@
 package com.fix.corebank.integration;
 
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingBuyLiquidity;
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingSellLiquidity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -11,6 +13,7 @@ import com.fix.common.fep.FepOrdStatus;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
+import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.LedgerIntegrityService;
 import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
@@ -49,6 +52,9 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
+
+  @Autowired
+  private OrderRepository orderRepository;
 
   @MockBean
   private FepClient fepClient;
@@ -146,7 +152,17 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
   @Test
   void shouldReportJournalLedgerCountMismatch() {
     String clOrdId = createFilledOrder(SELL_SYMBOL, "SELL", "10.0000", "72000.0000");
-    Long journalEntryId = jdbcTemplate.queryForObject("SELECT id FROM journal_entries", Long.class);
+    Long journalEntryId = jdbcTemplate.queryForObject(
+        """
+            SELECT j.id
+            FROM journal_entries j
+            JOIN orders o
+              ON o.id = j.order_id
+            WHERE o.cl_ord_id = ?
+            """,
+        Long.class,
+        clOrdId
+    );
     Long extraLedgerEntryId = insertZeroAmountLedgerEntry(journalEntryId, ACCOUNT_ID, clOrdId);
     insertLedgerReference(extraLedgerEntryId, clOrdId);
 
@@ -185,7 +201,21 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
   @Test
   void shouldReportMissingLedgerReferenceWithTraceableIdentifiers() {
     String clOrdId = createFilledOrder(SELL_SYMBOL, "SELL", "10.0000", "72000.0000");
-    Long ledgerEntryId = jdbcTemplate.queryForObject("SELECT MIN(id) FROM ledger_entries", Long.class);
+    Long ledgerEntryId = jdbcTemplate.queryForObject(
+        """
+            SELECT le.id
+            FROM ledger_entries le
+            JOIN journal_entries j
+              ON j.id = le.journal_entry_id
+            JOIN orders o
+              ON o.id = j.order_id
+            WHERE o.cl_ord_id = ?
+            ORDER BY le.id
+            LIMIT 1
+            """,
+        Long.class,
+        clOrdId
+    );
     jdbcTemplate.update("DELETE FROM ledger_entry_refs WHERE ledger_entry_id = ?", ledgerEntryId);
 
     LedgerIntegrityCheckResult result = ledgerIntegrityService.runCheck();
@@ -259,6 +289,31 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
 
   private String createFilledOrder(String symbol, String side, String qty, String price) {
     String clOrdId = UUID.randomUUID().toString();
+    if ("BUY".equals(side)) {
+      seedRestingSellLiquidity(
+          jdbcTemplate,
+          orderRepository,
+          2L,
+          2L,
+          "200000000002",
+          symbol,
+          "maker-" + clOrdId,
+          new BigDecimal(qty),
+          new BigDecimal(price)
+      );
+    } else {
+      seedRestingBuyLiquidity(
+          jdbcTemplate,
+          orderRepository,
+          3L,
+          3L,
+          "200000000003",
+          symbol,
+          "maker-" + clOrdId,
+          new BigDecimal(qty),
+          new BigDecimal(price)
+      );
+    }
     corebankOrderService.createOrder(InternalOrderCreateCommand.of(
         ACCOUNT_ID,
         clOrdId,

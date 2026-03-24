@@ -1,5 +1,6 @@
 package com.fix.corebank.integration;
 
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingSellLiquidity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -11,6 +12,7 @@ import com.fix.common.fep.FepOrdStatus;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
+import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
@@ -52,6 +54,9 @@ class CorebankOrderIdempotencyIntegrationTest extends CorebankContainersIntegrat
   @Autowired
   private JdbcTemplate jdbcTemplate;
 
+  @Autowired
+  private OrderRepository orderRepository;
+
   @MockBean
   private FepClient fepClient;
 
@@ -82,6 +87,17 @@ class CorebankOrderIdempotencyIntegrationTest extends CorebankContainersIntegrat
   @Timeout(20)
   void shouldCommitOnlyOnePostingPathForConcurrentDuplicateOrderRequests() throws Exception {
     String clOrdId = UUID.randomUUID().toString();
+    seedRestingSellLiquidity(
+        jdbcTemplate,
+        orderRepository,
+        2L,
+        2L,
+        "200000000002",
+        SYMBOL,
+        "maker-" + clOrdId,
+        ORDER_QTY,
+        ORDER_PRICE
+    );
     InternalOrderCreateCommand command = InternalOrderCreateCommand.of(
         ACCOUNT_ID,
         clOrdId,
@@ -112,11 +128,11 @@ class CorebankOrderIdempotencyIntegrationTest extends CorebankContainersIntegrat
 
       assertThat(first.getOrderId()).isEqualTo(second.getOrderId());
       assertThat(List.of(first.isIdempotent(), second.isIdempotent())).containsExactlyInAnyOrder(false, true);
-      assertThat(count("orders")).isEqualTo(1);
-      assertThat(count("executions")).isEqualTo(1);
-      assertThat(count("journal_entries")).isEqualTo(1);
-      assertThat(count("ledger_entries")).isEqualTo(2);
-      assertThat(count("ledger_entry_refs")).isEqualTo(2);
+      assertThat(count("orders")).isEqualTo(2);
+      assertThat(count("executions")).isEqualTo(2);
+      assertThat(count("journal_entries")).isEqualTo(2);
+      assertThat(count("ledger_entries")).isEqualTo(4);
+      assertThat(count("ledger_entry_refs")).isEqualTo(4);
       assertThat(accountCashBalance()).isEqualByComparingTo("99280000.0000");
       assertThat(positionQuantity()).isEqualByComparingTo("130.0000");
     } finally {
