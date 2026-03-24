@@ -57,5 +57,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: epic10-acceptance-evidence-${{ github.run_id }}
-          path: _bmad-output/test-artifacts/epic-10/**
+          path: ../_bmad-output/test-artifacts/epic-10/**
           if-no-files-found: error
