@@ -65,6 +65,11 @@ class ChannelOpenApiCompatibilityTest {
         .path("ApiResponseAdminAccountStatusTransitionResponse");
     JsonNode adminStatusTransitionSchema = contract.path("components").path("schemas")
         .path("AdminAccountStatusTransitionResponse");
+    JsonNode adminMonitoringFreshnessItemSchema = resolveRefSchema(
+        contract,
+        contract.path("components").path("schemas").path("AdminMonitoringFreshnessResponse")
+            .path("properties").path("items").path("items").path("$ref").asText()
+    );
     JsonNode accountOrderHistoryItemSchema = resolveRefSchema(
         contract,
         accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText()
@@ -332,9 +337,17 @@ class ChannelOpenApiCompatibilityTest {
     assertThat(adminMonitoringFreshnessOperation.path("responses").path("401").path("content").path("application/json")
         .path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(adminMonitoringFreshnessOperation, "403"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminMonitoringFreshnessOperation.path("responses").path("403").path("headers").path("X-Correlation-Id")
+        .path("schema").path("type").asText()).isEqualTo("string");
+    assertThat(adminMonitoringFreshnessOperation.path("responses").path("403").path("headers").path("traceparent")
+        .path("schema").path("type").asText()).isEqualTo("string");
     assertThat(contract.path("components").path("schemas").path("AdminMonitoringFreshnessResponse").path("properties")
         .path("items").path("items").path("$ref").asText())
         .isEqualTo("#/components/schemas/AdminMonitoringFreshnessItem");
+    assertThat(fieldNames(adminMonitoringFreshnessItemSchema.path("properties")))
+        .contains("key", "status", "statusMessage", "lastUpdatedAt");
     assertThat(accountOrderHistorySchema.path("properties").path("content").path("items").path("$ref").asText())
         .isEqualTo("#/components/schemas/AccountOrderHistoryItem");
     assertThat(adminReconciliationOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
