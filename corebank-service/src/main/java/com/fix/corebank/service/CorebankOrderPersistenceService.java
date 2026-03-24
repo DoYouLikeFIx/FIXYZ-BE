@@ -220,6 +220,7 @@ public class CorebankOrderPersistenceService {
 
     Instant executedAt = Instant.now();
     BigDecimal totalGross = zeroMoney();
+    Map<Long, Integer> nextExecutionSequences = new LinkedHashMap<>();
     for (CorebankMatchingEngine.MatchFill fill : matchResult.fills()) {
       Order makerOrder = requireMatchedOrder(makerOrders, fill.makerOrderId());
       Account makerAccount = participantLocks.requireAccount(makerOrder.getAccountId());
@@ -231,8 +232,20 @@ public class CorebankOrderPersistenceService {
       applyCanonicalPosting(takerAccount, takerPosition, side, fillQty, fillPrice, fillGross);
       applyCanonicalPosting(makerAccount, makerPosition, makerOrder.getSide(), fillQty, fillPrice, fillGross);
 
-      saveExecutionFill(takerOrder, fillQty, fillPrice, executedAt);
-      saveExecutionFill(makerOrder, fillQty, fillPrice, executedAt);
+      saveExecutionFill(
+          takerOrder,
+          fillQty,
+          fillPrice,
+          nextExecutionSequence(takerOrder, nextExecutionSequences),
+          executedAt
+      );
+      saveExecutionFill(
+          makerOrder,
+          fillQty,
+          fillPrice,
+          nextExecutionSequence(makerOrder, nextExecutionSequences),
+          executedAt
+      );
 
       applyMatchSummary(makerOrder, fillQty, fillPrice, fill.remainingMakerQty(), executedAt);
       orderPostingTransactionHook.afterPostingMutation(makerOrder, makerAccount, makerPosition);
@@ -472,7 +485,13 @@ public class CorebankOrderPersistenceService {
     saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_POSITION, LEDGER_DIRECTION_CREDIT, grossAmount, order.getClOrdId());
   }
 
-  private void saveExecutionFill(Order order, BigDecimal executedQty, BigDecimal executedPrice, Instant executedAt) {
+  private void saveExecutionFill(
+      Order order,
+      BigDecimal executedQty,
+      BigDecimal executedPrice,
+      int executionSeq,
+      Instant executedAt
+  ) {
     executionRepository.saveAndFlush(Execution.of(
         order.getId(),
         order.getAccountId(),
@@ -481,11 +500,22 @@ public class CorebankOrderPersistenceService {
         order.getSide(),
         executedQty,
         executedPrice,
+        executionSeq,
         order.getQuoteSnapshotId(),
         order.getQuoteAsOf(),
         order.getQuoteSourceMode(),
         executedAt
     ));
+  }
+
+  private int nextExecutionSequence(Order order, Map<Long, Integer> nextExecutionSequences) {
+    return nextExecutionSequences.compute(order.getId(), (orderId, nextExecutionSeq) -> {
+      if (nextExecutionSeq == null) {
+        long persistedCount = executionRepository.countByOrderId(orderId);
+        return Math.toIntExact(persistedCount) + 1;
+      }
+      return nextExecutionSeq + 1;
+    });
   }
 
   private void applyMatchSummary(

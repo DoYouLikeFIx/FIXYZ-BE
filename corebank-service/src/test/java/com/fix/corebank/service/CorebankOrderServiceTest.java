@@ -26,6 +26,7 @@ import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.JournalEntry;
 import com.fix.corebank.entity.LedgerEntry;
 import com.fix.corebank.entity.LedgerEntryRef;
+import com.fix.corebank.entity.Execution;
 import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.AccountRepository;
@@ -1301,6 +1302,13 @@ class CorebankOrderServiceTest {
     assertThat(fepClient.lastSubmitPayload()).isNotNull();
     assertThat(fepClient.lastSubmitPayload().orderType()).isEqualTo(com.fix.common.fep.FepOrderType.LIMIT);
     assertThat(fepClient.lastSubmitPayload().price()).isEqualTo(70100L);
+
+    ArgumentCaptor<Execution> executionCaptor = ArgumentCaptor.forClass(Execution.class);
+    verify(executionRepository, times(4)).saveAndFlush(executionCaptor.capture());
+    List<Execution> persistedExecutions = executionCaptor.getAllValues();
+    assertThat(executionSeqsForOrder(persistedExecutions, savedOrderRef[0].getId())).containsExactly(1, 2);
+    assertThat(executionSeqsForOrder(persistedExecutions, makerOneOrder.getId())).containsExactly(1);
+    assertThat(executionSeqsForOrder(persistedExecutions, makerTwoOrder.getId())).containsExactly(1);
   }
 
   @Test
@@ -1559,6 +1567,87 @@ class CorebankOrderServiceTest {
     assertThat(makerTwoOrder.getExecutedPrice()).isEqualByComparingTo("70100.0000");
     assertThat(fepClient.lastSubmitPayload()).isNotNull();
     assertThat(fepClient.lastSubmitPayload().orderType()).isEqualTo(com.fix.common.fep.FepOrderType.MARKET);
+  }
+
+  @Test
+  void shouldAppendExecutionSequenceAfterExistingMakerFillHistory() {
+    Account takerAccount = persistedAccount();
+    Position takerPosition = Position.of(ACCOUNT_ID, "005930", BigDecimal.ZERO.setScale(4), BigDecimal.ZERO.setScale(4));
+    Account makerAccount = withId(
+        Account.of("ACC-2003", 2003L, "ACTIVE", "KRW", new BigDecimal("1000000.0000"), new BigDecimal("500.0000")),
+        2003L
+    );
+    Position makerPosition = Position.of(2003L, "005930", new BigDecimal("4.0000"), new BigDecimal("69900.0000"));
+    Order makerOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            2003L,
+            "maker-sell-existing",
+            "005930",
+            "SELL",
+            "LIMIT",
+            new BigDecimal("4.0000"),
+            new BigDecimal("70000.0000"),
+            null,
+            null,
+            null,
+            null
+        ),
+        9401L
+    ), Instant.parse("2026-03-01T10:00:00Z"));
+    Order[] savedOrderRef = new Order[1];
+
+    when(orderRepository.findByClOrdId(LIMIT_CROSS_CL_ORD_ID))
+        .thenAnswer(invocation -> Optional.ofNullable(savedOrderRef[0]));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(takerAccount));
+    when(accountRepository.findById(2003L)).thenReturn(Optional.of(makerAccount));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(takerPosition));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(2003L, "005930")).thenReturn(Optional.of(makerPosition));
+    when(orderRepository.lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+        .thenReturn(List.of(makerOrder));
+    when(orderRepository.saveAndFlush(any(Order.class)))
+        .thenAnswer(invocation -> {
+          Order persisted = persistedOrder(invocation.getArgument(0), 9410L);
+          savedOrderRef[0] = persisted;
+          return persisted;
+        });
+    when(executionRepository.countByOrderId(anyLong())).thenReturn(0L);
+    when(executionRepository.countByOrderId(9401L)).thenReturn(2L);
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7410L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8410L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        LIMIT_CROSS_CL_ORD_ID,
+        "FEP-KRX-" + LIMIT_CROSS_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        2L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
+        null,
+        null
+    ));
+
+    corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        LIMIT_CROSS_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70000.0000")
+    ));
+
+    ArgumentCaptor<Execution> executionCaptor = ArgumentCaptor.forClass(Execution.class);
+    verify(executionRepository, times(2)).saveAndFlush(executionCaptor.capture());
+    List<Execution> persistedExecutions = executionCaptor.getAllValues();
+    assertThat(executionSeqsForOrder(persistedExecutions, savedOrderRef[0].getId())).containsExactly(1);
+    assertThat(executionSeqsForOrder(persistedExecutions, makerOrder.getId())).containsExactly(3);
   }
 
   @Test
@@ -2764,6 +2853,13 @@ class CorebankOrderServiceTest {
   private <T> T withVersion(T target, Long version) {
     ReflectionTestUtils.setField(target, "version", version);
     return target;
+  }
+
+  private List<Integer> executionSeqsForOrder(List<Execution> executions, Long orderId) {
+    return executions.stream()
+        .filter(execution -> orderId.equals(execution.getOrderId()))
+        .map(Execution::getExecutionSeq)
+        .toList();
   }
 
   private FepQuoteSnapshotResult quoteSnapshot(

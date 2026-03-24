@@ -213,10 +213,10 @@ class CoreFlywayMigrationTest {
             + "WHERE TABLE_NAME = 'EXECUTIONS' AND COLUMN_NAME = 'EXECUTION_SEQ'",
         String.class
     );
-    Integer executionSeqIndexCount = jdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+    Integer executionSeqConstraintCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS "
             + "WHERE TABLE_NAME = 'EXECUTIONS' "
-            + "AND INDEX_NAME = 'IDX_EXECUTIONS_ORDER_EXECUTION_SEQ'",
+            + "AND CONSTRAINT_NAME = 'UK_EXECUTIONS_ORDER_EXECUTION_SEQ'",
         Integer.class
     );
 
@@ -234,8 +234,14 @@ class CoreFlywayMigrationTest {
     assertThat(executionSeqExists).isEqualTo(1);
     assertThat(executionSeqNullable).isEqualTo("NO");
     assertThat(executionSeqDefault).contains("1");
-    assertThat(executionSeqIndexCount).isEqualTo(1);
+    assertThat(executionSeqConstraintCount).isEqualTo(1);
     assertThat(executionSeqValue).isEqualTo(1);
+
+    assertThatThrownBy(() -> jdbcTemplate.update(
+        "INSERT INTO executions (id, order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, execution_seq, executed_at, created_at, updated_at, version) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)",
+        914L, 10L, 21L, "legacy-cl-ord-v14", "005930", "BUY", 1.0000, 72100.0000, 1, 0L
+    )).isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
