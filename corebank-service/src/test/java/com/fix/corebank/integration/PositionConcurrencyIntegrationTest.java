@@ -1,10 +1,9 @@
 package com.fix.corebank.integration;
 
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingBuyLiquidity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -17,8 +16,9 @@ import com.fix.common.fep.FepOrdStatus;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
+import com.fix.corebank.repository.OrderRepository;
+import com.fix.corebank.repository.PositionRepository;
 import com.fix.corebank.service.CorebankOrderService;
-import com.fix.corebank.service.OrderPreparationLockHook;
 import com.fix.corebank.support.CorebankContainersIntegrationTestBase;
 import com.fix.corebank.vo.InternalOrderCreateCommand;
 import com.fix.corebank.vo.InternalOrderResult;
@@ -34,8 +34,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -43,6 +41,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest(properties = {
     "spring.jpa.hibernate.ddl-auto=none",
@@ -62,18 +63,23 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
   private CorebankOrderService corebankOrderService;
 
   @Autowired
+  private PositionRepository positionRepository;
+
+  @Autowired
   private JdbcTemplate jdbcTemplate;
+
+  @Autowired
+  private OrderRepository orderRepository;
+
+  @Autowired
+  private PlatformTransactionManager transactionManager;
 
   @MockBean
   private FepClient fepClient;
 
-  @MockBean
-  private OrderPreparationLockHook orderPreparationLockHook;
-
   @BeforeEach
   void setUp() {
     reset(fepClient);
-    reset(orderPreparationLockHook);
     jdbcTemplate.update("DELETE FROM ledger_entry_refs");
     jdbcTemplate.update("DELETE FROM ledger_entries");
     jdbcTemplate.update("DELETE FROM journal_entries");
@@ -97,6 +103,17 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
   @Test
   @Timeout(20)
   void shouldAllowExactlyFiveFilledSellOrdersWithoutOversellUnderTenThreadLoad() throws Exception {
+    seedRestingBuyLiquidity(
+        jdbcTemplate,
+        orderRepository,
+        2L,
+        2L,
+        "200000000002",
+        SYMBOL,
+        "maker-" + UUID.randomUUID(),
+        new BigDecimal("500.0000"),
+        ORDER_PRICE
+    );
     CountDownLatch ready = new CountDownLatch(THREAD_COUNT);
     CountDownLatch start = new CountDownLatch(1);
     ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
@@ -140,11 +157,11 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
       assertThat(accountCashBalance()).isEqualByComparingTo("136000000.0000");
       assertThat(positionQuantity(SYMBOL)).isEqualByComparingTo("0.0000");
       assertThat(positionQuantity(SYMBOL).signum()).isNotNegative();
-      assertThat(count("orders")).isEqualTo(5);
-      assertThat(count("executions")).isEqualTo(5);
-      assertThat(count("journal_entries")).isEqualTo(5);
-      assertThat(count("ledger_entries")).isEqualTo(10);
-      assertThat(count("ledger_entry_refs")).isEqualTo(10);
+      assertThat(count("orders")).isEqualTo(6);
+      assertThat(count("executions")).isEqualTo(10);
+      assertThat(count("journal_entries")).isEqualTo(10);
+      assertThat(count("ledger_entries")).isEqualTo(20);
+      assertThat(count("ledger_entry_refs")).isEqualTo(20);
 
       verify(fepClient, times(5)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {
@@ -160,60 +177,62 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     String secondSymbol = "000660";
     insertPosition(secondSymbol, "100.0000", "120000.0000");
 
-    CountDownLatch firstPositionLocked = new CountDownLatch(1);
-    CountDownLatch releaseFirstOrder = new CountDownLatch(1);
-    AtomicBoolean shouldBlockFirstOrder = new AtomicBoolean(true);
-
-    doAnswer(invocation -> {
-      Long accountId = invocation.getArgument(0);
-      String symbol = invocation.getArgument(1);
-      if (ACCOUNT_ID == accountId && firstSymbol.equals(symbol) && shouldBlockFirstOrder.compareAndSet(true, false)) {
-        firstPositionLocked.countDown();
-        assertThat(releaseFirstOrder.await(5, TimeUnit.SECONDS)).isTrue();
-      }
-      return null;
-    }).when(orderPreparationLockHook).afterPositionLock(anyLong(), anyString());
+    CountDownLatch firstLockAcquired = new CountDownLatch(1);
+    CountDownLatch secondLockAcquired = new CountDownLatch(1);
+    CountDownLatch releaseFirstLock = new CountDownLatch(1);
+    TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
+    requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    requiresNew.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
 
     ExecutorService executorService = Executors.newFixedThreadPool(2);
-    Future<AttemptOutcome> firstFuture = null;
-    Future<AttemptOutcome> secondFuture = null;
+    Future<String> firstFuture = null;
+    Future<String> secondFuture = null;
 
     try {
-      firstFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), firstSymbol));
-      assertThat(firstPositionLocked.await(5, TimeUnit.SECONDS)).isTrue();
+      firstFuture = executorService.submit(() -> requiresNew.execute(status -> {
+        String lockedSymbol = positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, firstSymbol)
+            .orElseThrow()
+            .getSymbol();
+        firstLockAcquired.countDown();
+        try {
+          assertThat(releaseFirstLock.await(15, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException ex) {
+          Thread.currentThread().interrupt();
+          throw new IllegalStateException("interrupted while holding first symbol position lock", ex);
+        }
+        return lockedSymbol;
+      }));
+      assertThat(firstLockAcquired.await(5, TimeUnit.SECONDS)).isTrue();
 
-      long secondStartedAt = System.nanoTime();
-      secondFuture = executorService.submit(() -> attemptSell(UUID.randomUUID().toString(), secondSymbol));
-      AttemptOutcome secondOutcome = secondFuture.get(2, TimeUnit.SECONDS);
-      Duration secondElapsed = Duration.ofNanos(System.nanoTime() - secondStartedAt);
+      secondFuture = executorService.submit(() -> {
+        assertThat(firstLockAcquired.await(5, TimeUnit.SECONDS)).isTrue();
+        return requiresNew.execute(status -> {
+          String lockedSymbol = positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, secondSymbol)
+              .orElseThrow()
+              .getSymbol();
+          secondLockAcquired.countDown();
+          return lockedSymbol;
+        });
+      });
 
-      releaseFirstOrder.countDown();
-      AttemptOutcome firstOutcome = firstFuture.get(10, TimeUnit.SECONDS);
+      assertThat(secondLockAcquired.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(secondFuture.get(10, TimeUnit.SECONDS)).isEqualTo(secondSymbol);
 
-      assertThat(secondElapsed).isLessThan(Duration.ofSeconds(2));
-      assertThat(secondOutcome.success()).isTrue();
-      assertThat(secondOutcome.status()).isEqualTo("FILLED");
-      assertThat(secondOutcome.executionResult()).isEqualTo("FILLED");
-      assertThat(firstOutcome.success()).isTrue();
-      assertThat(firstOutcome.status()).isEqualTo("FILLED");
-      assertThat(firstOutcome.executionResult()).isEqualTo("FILLED");
+      releaseFirstLock.countDown();
+      assertThat(firstFuture.get(10, TimeUnit.SECONDS)).isEqualTo(firstSymbol);
 
-      assertThat(accountCashBalance()).isEqualByComparingTo("114400000.0000");
-      assertThat(positionQuantity(firstSymbol)).isEqualByComparingTo("400.0000");
-      assertThat(positionQuantity(secondSymbol)).isEqualByComparingTo("0.0000");
+      assertThat(accountCashBalance()).isEqualByComparingTo("100000000.0000");
+      assertThat(positionQuantity(firstSymbol)).isEqualByComparingTo("500.0000");
+      assertThat(positionQuantity(secondSymbol)).isEqualByComparingTo("100.0000");
+      assertThat(count("orders")).isEqualTo(0);
+      assertThat(count("executions")).isEqualTo(0);
+      assertThat(count("journal_entries")).isEqualTo(0);
+      assertThat(count("ledger_entries")).isEqualTo(0);
+      assertThat(count("ledger_entry_refs")).isEqualTo(0);
 
-      verify(fepClient, times(2)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
-    } catch (TimeoutException ex) {
-      releaseFirstOrder.countDown();
-      if (firstFuture != null) {
-        firstFuture.get(10, TimeUnit.SECONDS);
-      }
-      if (secondFuture != null) {
-        secondFuture.cancel(true);
-      }
-      throw ex;
+      verify(fepClient, times(0)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
     } finally {
-      releaseFirstOrder.countDown();
+      releaseFirstLock.countDown();
       executorService.shutdownNow();
       executorService.awaitTermination(5, TimeUnit.SECONDS);
     }

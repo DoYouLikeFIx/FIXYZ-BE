@@ -3,6 +3,7 @@ package com.fix.corebank.integration;
 import java.math.BigDecimal;
 import java.util.UUID;
 
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingBuyLiquidity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.AfterAll;
@@ -102,6 +103,17 @@ class CorebankSameBankLedgerPostingIntegrationTest extends CorebankContainersInt
   @Test
   void shouldPostSellExecutionAtomicallyAndReturnFilledSummary() {
     String clOrdId = UUID.randomUUID().toString();
+    seedRestingBuyLiquidity(
+        jdbcTemplate,
+        orderRepository,
+        2L,
+        2L,
+        "200000000002",
+        SYMBOL,
+        "maker-" + clOrdId,
+        new BigDecimal("10.0000"),
+        new BigDecimal("72000.0000")
+    );
     WIRE_MOCK_SERVER.stubFor(post(urlEqualTo("/fep/v1/orders"))
         .willReturn(aResponse()
             .withHeader("Content-Type", "application/json")
@@ -134,11 +146,11 @@ class CorebankSameBankLedgerPostingIntegrationTest extends CorebankContainersInt
 
     assertThat(accountCashBalance()).isEqualByComparingTo("100720000.0000");
     assertThat(positionQuantity()).isEqualByComparingTo("110.0000");
-    assertThat(count("orders")).isEqualTo(1);
-    assertThat(count("executions")).isEqualTo(1);
-    assertThat(count("journal_entries")).isEqualTo(1);
-    assertThat(count("ledger_entries")).isEqualTo(2);
-    assertThat(count("ledger_entry_refs")).isEqualTo(2);
+    assertThat(count("orders")).isEqualTo(2);
+    assertThat(count("executions")).isEqualTo(2);
+    assertThat(count("journal_entries")).isEqualTo(2);
+    assertThat(count("ledger_entries")).isEqualTo(4);
+    assertThat(count("ledger_entry_refs")).isEqualTo(4);
 
     WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/fep/v1/orders")));
   }
@@ -146,6 +158,17 @@ class CorebankSameBankLedgerPostingIntegrationTest extends CorebankContainersInt
   @Test
   void shouldRollbackPostingWhenMidTransactionFailureOccurs() {
     String clOrdId = UUID.randomUUID().toString();
+    seedRestingBuyLiquidity(
+        jdbcTemplate,
+        orderRepository,
+        2L,
+        2L,
+        "200000000002",
+        SYMBOL,
+        "maker-" + clOrdId,
+        new BigDecimal("10.0000"),
+        new BigDecimal("72000.0000")
+    );
     doThrow(new IllegalStateException("simulated posting failure"))
         .when(orderPostingTransactionHook)
         .afterPostingMutation(any(Order.class), any(Account.class), any(Position.class));
@@ -163,11 +186,12 @@ class CorebankSameBankLedgerPostingIntegrationTest extends CorebankContainersInt
 
     assertThat(accountCashBalance()).isEqualByComparingTo("100000000.0000");
     assertThat(positionQuantity()).isEqualByComparingTo("120.0000");
-    assertThat(count("orders")).isEqualTo(0);
+    assertThat(count("orders")).isEqualTo(1);
     assertThat(count("executions")).isEqualTo(0);
     assertThat(count("journal_entries")).isEqualTo(0);
     assertThat(count("ledger_entries")).isEqualTo(0);
     assertThat(count("ledger_entry_refs")).isEqualTo(0);
+    assertThat(orderRepository.findByClOrdId(clOrdId)).isEmpty();
 
     WIRE_MOCK_SERVER.verify(0, postRequestedFor(urlEqualTo("/fep/v1/orders")));
   }

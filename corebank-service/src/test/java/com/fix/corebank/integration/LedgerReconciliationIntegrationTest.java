@@ -2,6 +2,8 @@ package com.fix.corebank.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingBuyLiquidity;
+import static com.fix.corebank.support.CorebankLiquidityFixtures.seedRestingSellLiquidity;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.reset;
@@ -20,6 +22,7 @@ import com.fix.corebank.entity.LedgerReconciliationCaseEvent;
 import com.fix.corebank.repository.LedgerIntegrityAnomalyRecordRepository;
 import com.fix.corebank.repository.LedgerReconciliationCaseEventRepository;
 import com.fix.corebank.repository.LedgerReconciliationCaseRepository;
+import com.fix.corebank.repository.OrderRepository;
 import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.LedgerIntegrityService;
 import com.fix.corebank.service.LedgerReconciliationService;
@@ -73,6 +76,9 @@ class LedgerReconciliationIntegrationTest extends CorebankContainersIntegrationT
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
+
+  @Autowired
+  private OrderRepository orderRepository;
 
   @MockBean
   private FepClient fepClient;
@@ -359,6 +365,31 @@ class LedgerReconciliationIntegrationTest extends CorebankContainersIntegrationT
 
   private String createFilledOrder(String symbol, String side, String qty, String price) {
     String clOrdId = UUID.randomUUID().toString();
+    if ("BUY".equals(side)) {
+      seedRestingSellLiquidity(
+          jdbcTemplate,
+          orderRepository,
+          2L,
+          2L,
+          "200000000002",
+          symbol,
+          "maker-" + clOrdId,
+          new BigDecimal(qty),
+          new BigDecimal(price)
+      );
+    } else {
+      seedRestingBuyLiquidity(
+          jdbcTemplate,
+          orderRepository,
+          3L,
+          3L,
+          "200000000003",
+          symbol,
+          "maker-" + clOrdId,
+          new BigDecimal(qty),
+          new BigDecimal(price)
+      );
+    }
     corebankOrderService.createOrder(InternalOrderCreateCommand.of(
         ACCOUNT_ID,
         clOrdId,
