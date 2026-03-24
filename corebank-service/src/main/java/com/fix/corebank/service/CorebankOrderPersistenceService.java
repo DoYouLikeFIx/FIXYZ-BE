@@ -220,6 +220,9 @@ public class CorebankOrderPersistenceService {
 
     Instant executedAt = Instant.now();
     BigDecimal totalGross = zeroMoney();
+    Map<Long, Integer> nextExecutionSequences = new LinkedHashMap<>();
+    BigDecimal takerExecutedQty = zeroMoney();
+    BigDecimal takerExecutedPrice = null;
     for (CorebankMatchingEngine.MatchFill fill : matchResult.fills()) {
       Order makerOrder = requireMatchedOrder(makerOrders, fill.makerOrderId());
       Account makerAccount = participantLocks.requireAccount(makerOrder.getAccountId());
@@ -231,23 +234,30 @@ public class CorebankOrderPersistenceService {
       applyCanonicalPosting(takerAccount, takerPosition, side, fillQty, fillPrice, fillGross);
       applyCanonicalPosting(makerAccount, makerPosition, makerOrder.getSide(), fillQty, fillPrice, fillGross);
 
-      saveExecutionFill(takerOrder, fillQty, fillPrice, executedAt);
-      saveExecutionFill(makerOrder, fillQty, fillPrice, executedAt);
+      saveExecutionFill(
+          takerOrder,
+          fillQty,
+          fillPrice,
+          nextExecutionSequence(takerOrder, nextExecutionSequences),
+          executedAt
+      );
+      saveExecutionFill(
+          makerOrder,
+          fillQty,
+          fillPrice,
+          nextExecutionSequence(makerOrder, nextExecutionSequences),
+          executedAt
+      );
 
-      applyMatchSummary(makerOrder, fillQty, fillPrice, fill.remainingMakerQty(), executedAt);
+      applyMatchSummary(makerOrder, fillQty, fillPrice, executedAt);
       orderPostingTransactionHook.afterPostingMutation(makerOrder, makerAccount, makerPosition);
       appendExecutionPosting(makerOrder, fillGross);
       totalGross = totalGross.add(fillGross).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+      takerExecutedPrice = weightedAveragePrice(takerExecutedQty, takerExecutedPrice, fillQty, fillPrice);
+      takerExecutedQty = takerExecutedQty.add(fillQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
-    takerOrder.completeExecution(
-        matchResult.executionResult(),
-        matchResult.executionResult(),
-        matchResult.totalExecutedQty(),
-        matchResult.leavesQty(),
-        matchResult.weightedAvgPrice(),
-        executedAt
-    );
+    applyCanonicalExecutionSummary(takerOrder, takerExecutedQty, takerExecutedPrice, executedAt);
     orderPostingTransactionHook.afterPostingMutation(takerOrder, takerAccount, takerPosition);
     appendExecutionPosting(takerOrder, totalGross);
     orderRepository.flush();
@@ -323,6 +333,10 @@ public class CorebankOrderPersistenceService {
       CorebankMatchingEngine.MatchResult matchResult,
       List<Order> makerOrders
   ) {
+    // Keep the acquisition order stable across executions:
+    // matched book rows are locked before entering this method,
+    // then participant accounts,
+    // then participant positions ordered by symbol/account key.
     long waitStartedAtNanos = System.nanoTime();
     Map<Long, Account> lockedAccounts = new LinkedHashMap<>();
     Map<ParticipantPositionKey, Position> lockedPositions = new LinkedHashMap<>();
@@ -348,8 +362,8 @@ public class CorebankOrderPersistenceService {
           )
           .distinct()
           .sorted(Comparator
-              .comparing(ParticipantPositionKey::accountId)
-              .thenComparing(ParticipantPositionKey::symbol))
+              .comparing(ParticipantPositionKey::symbol)
+              .thenComparing(ParticipantPositionKey::accountId))
           .toList();
       for (ParticipantPositionKey positionKey : positionKeys) {
         lockedPositions.put(
@@ -472,7 +486,13 @@ public class CorebankOrderPersistenceService {
     saveLedgerEntryWithRef(journalEntry.getId(), order.getAccountId(), LEDGER_TYPE_POSITION, LEDGER_DIRECTION_CREDIT, grossAmount, order.getClOrdId());
   }
 
-  private void saveExecutionFill(Order order, BigDecimal executedQty, BigDecimal executedPrice, Instant executedAt) {
+  private void saveExecutionFill(
+      Order order,
+      BigDecimal executedQty,
+      BigDecimal executedPrice,
+      int executionSeq,
+      Instant executedAt
+  ) {
     executionRepository.saveAndFlush(Execution.of(
         order.getId(),
         order.getAccountId(),
@@ -481,6 +501,7 @@ public class CorebankOrderPersistenceService {
         order.getSide(),
         executedQty,
         executedPrice,
+        executionSeq,
         order.getQuoteSnapshotId(),
         order.getQuoteAsOf(),
         order.getQuoteSourceMode(),
@@ -488,24 +509,62 @@ public class CorebankOrderPersistenceService {
     ));
   }
 
+  private int nextExecutionSequence(Order order, Map<Long, Integer> nextExecutionSequences) {
+    return nextExecutionSequences.compute(order.getId(), (orderId, nextExecutionSeq) -> {
+      if (nextExecutionSeq == null) {
+        return executionRepository.findLatestExecutionSequenceForUpdate(orderId) + 1;
+      }
+      return nextExecutionSeq + 1;
+    });
+  }
+
   private void applyMatchSummary(
       Order order,
       BigDecimal fillQty,
       BigDecimal fillPrice,
-      BigDecimal leavesQty,
       Instant executedAt
   ) {
     BigDecimal currentExecutedQty = zeroIfNull(order.getExecutedQty());
     BigDecimal nextExecutedQty = currentExecutedQty.add(fillQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     BigDecimal nextExecutedPrice = weightedAveragePrice(currentExecutedQty, order.getExecutedPrice(), fillQty, fillPrice);
-    BigDecimal normalizedLeavesQty = normalizeMoney(leavesQty);
-    String executionResult = normalizedLeavesQty.signum() == 0 ? "FILLED" : "PARTIALLY_FILLED";
+    applyCanonicalExecutionSummary(order, nextExecutedQty, nextExecutedPrice, executedAt);
+  }
+
+  private void applyCanonicalExecutionSummary(
+      Order order,
+      BigDecimal executedQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
+    CanonicalExecutionSummary summary = canonicalExecutionSummary(order, executedQty, executedPrice, executedAt);
     order.completeExecution(
-        executionResult,
-        executionResult,
-        nextExecutedQty,
+        summary.status(),
+        summary.executionResult(),
+        summary.executedQty(),
+        summary.leavesQty(),
+        summary.executedPrice(),
+        summary.executedAt()
+    );
+  }
+
+  private CanonicalExecutionSummary canonicalExecutionSummary(
+      Order order,
+      BigDecimal executedQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
+    BigDecimal normalizedExecutedQty = normalizeMoney(executedQty);
+    BigDecimal normalizedLeavesQty = normalizeMoney(order.getOrderQty().subtract(normalizedExecutedQty));
+    if (normalizedLeavesQty.signum() < 0) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "executed quantity exceeds order quantity");
+    }
+    String status = normalizedLeavesQty.signum() == 0 ? "FILLED" : "PARTIALLY_FILLED";
+    return new CanonicalExecutionSummary(
+        status,
+        status,
+        normalizedExecutedQty,
         normalizedLeavesQty,
-        nextExecutedPrice,
+        normalizeMoney(executedPrice),
         executedAt
     );
   }
@@ -760,6 +819,16 @@ public class CorebankOrderPersistenceService {
   }
 
   private record ParticipantPositionKey(Long accountId, String symbol) {
+  }
+
+  private record CanonicalExecutionSummary(
+      String status,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
   }
 
   private record MarketParticipantLocks(

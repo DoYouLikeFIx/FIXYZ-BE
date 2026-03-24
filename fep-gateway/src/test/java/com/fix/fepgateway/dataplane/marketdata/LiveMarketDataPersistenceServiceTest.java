@@ -47,7 +47,7 @@ class LiveMarketDataPersistenceServiceTest {
   void shouldPersistLiveSnapshotAndAdvanceSubscriptionProgress() {
     MarketDataSubscriptionSpec subscriptionSpec = liveSubscription("bootstrap-005930", "005930");
     NormalizedQuoteEvent event = liveEvent("005930", 18L, Instant.parse("2026-03-19T00:30:02Z"));
-    long snapshotCountBefore = quoteSnapshotRepository.count();
+    long snapshotCountBefore = quoteSnapshotRepository.countBySymbolAndSourceMode("005930", FepQuoteSourceMode.LIVE);
     Counter counterBefore = meterRegistry.find("fep.marketdata.snapshots.persisted")
         .tags("provider", "KIS", "source_mode", "LIVE")
         .counter();
@@ -56,7 +56,8 @@ class LiveMarketDataPersistenceServiceTest {
     liveMarketDataPersistencePort.activateSubscription(subscriptionSpec);
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
 
-    assertThat(quoteSnapshotRepository.count()).isEqualTo(snapshotCountBefore + 1L);
+    assertThat(quoteSnapshotRepository.countBySymbolAndSourceMode("005930", FepQuoteSourceMode.LIVE))
+        .isEqualTo(snapshotCountBefore + 1L);
     MarketDataSubscription subscription = marketDataSubscriptionRepository.findByProviderAndSymbolAndSourceMode(
         "KIS",
         "005930",
@@ -77,7 +78,7 @@ class LiveMarketDataPersistenceServiceTest {
   void shouldSkipDuplicateQuoteSnapshotIdAndKeepSingleRow() {
     MarketDataSubscriptionSpec subscriptionSpec = liveSubscription("bootstrap-005930", "005930");
     NormalizedQuoteEvent event = liveEvent("005930", 17L, Instant.parse("2026-03-19T00:30:01Z"));
-    long snapshotCountBefore = quoteSnapshotRepository.count();
+    long snapshotCountBefore = quoteSnapshotRepository.countBySymbolAndSourceMode("005930", FepQuoteSourceMode.LIVE);
     Counter counterBefore = meterRegistry.find("fep.marketdata.snapshots.persisted")
         .tags("provider", "KIS", "source_mode", "LIVE")
         .counter();
@@ -86,7 +87,8 @@ class LiveMarketDataPersistenceServiceTest {
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
     liveMarketDataPersistencePort.persistSnapshot(subscriptionSpec, event);
 
-    assertThat(quoteSnapshotRepository.count()).isEqualTo(snapshotCountBefore + 1L);
+    assertThat(quoteSnapshotRepository.countBySymbolAndSourceMode("005930", FepQuoteSourceMode.LIVE))
+        .isEqualTo(snapshotCountBefore + 1L);
     assertThat(meterRegistry.get("fep.marketdata.snapshots.persisted")
         .tag("provider", "KIS")
         .tag("source_mode", "LIVE")

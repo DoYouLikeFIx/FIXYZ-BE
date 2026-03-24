@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,6 +27,7 @@ import com.fix.corebank.entity.Account;
 import com.fix.corebank.entity.JournalEntry;
 import com.fix.corebank.entity.LedgerEntry;
 import com.fix.corebank.entity.LedgerEntryRef;
+import com.fix.corebank.entity.Execution;
 import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.AccountRepository;
@@ -94,6 +96,9 @@ class CorebankOrderServiceTest {
   private static final String MARKET_STALE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174226";
   private static final String LIMIT_RESTING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174227";
   private static final String LIMIT_CROSS_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174228";
+  private static final String MARKET_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174229";
+  private static final String MARKET_MISSING_SNAPSHOT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174230";
+  private static final String MARKET_MISSING_SOURCE_MODE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174231";
 
   @Mock
   private AccountRepository accountRepository;
@@ -1290,6 +1295,9 @@ class CorebankOrderServiceTest {
     assertThat(savedOrderRef[0].getOrderType()).isEqualTo("LIMIT");
     assertThat(savedOrderRef[0].getOrderPrice()).isEqualByComparingTo("70100.0000");
     assertThat(savedOrderRef[0].getStatus()).isEqualTo("FILLED");
+    assertThat(savedOrderRef[0].getQuoteSnapshotId()).isNull();
+    assertThat(savedOrderRef[0].getQuoteAsOf()).isNull();
+    assertThat(savedOrderRef[0].getQuoteSourceMode()).isNull();
     assertThat(takerPosition.getQty()).isEqualByComparingTo("4.0000");
     assertThat(takerPosition.getAvgPrice()).isEqualByComparingTo("70050.0000");
     assertThat(makerOneOrder.getStatus()).isEqualTo("FILLED");
@@ -1301,6 +1309,18 @@ class CorebankOrderServiceTest {
     assertThat(fepClient.lastSubmitPayload()).isNotNull();
     assertThat(fepClient.lastSubmitPayload().orderType()).isEqualTo(com.fix.common.fep.FepOrderType.LIMIT);
     assertThat(fepClient.lastSubmitPayload().price()).isEqualTo(70100L);
+
+    ArgumentCaptor<Execution> executionCaptor = ArgumentCaptor.forClass(Execution.class);
+    verify(executionRepository, times(4)).saveAndFlush(executionCaptor.capture());
+    List<Execution> persistedExecutions = executionCaptor.getAllValues();
+    assertThat(executionSeqsForOrder(persistedExecutions, savedOrderRef[0].getId())).containsExactly(1, 2);
+    assertThat(executionSeqsForOrder(persistedExecutions, makerOneOrder.getId())).containsExactly(1);
+    assertThat(executionSeqsForOrder(persistedExecutions, makerTwoOrder.getId())).containsExactly(1);
+    assertThat(persistedExecutions).allSatisfy(execution -> {
+      assertThat(execution.getQuoteSnapshotId()).isNull();
+      assertThat(execution.getQuoteAsOf()).isNull();
+      assertThat(execution.getQuoteSourceMode()).isNull();
+    });
   }
 
   @Test
@@ -1401,6 +1421,24 @@ class CorebankOrderServiceTest {
     assertThat(makerOrder.getStatus()).isEqualTo("FILLED");
     assertThat(makerOrder.getExecutedQty()).isEqualByComparingTo("3.0000");
     assertThat(makerPosition.getQty()).isEqualByComparingTo("0.0000");
+
+    ArgumentCaptor<Execution> executionCaptor = ArgumentCaptor.forClass(Execution.class);
+    verify(executionRepository, times(2)).saveAndFlush(executionCaptor.capture());
+    List<Execution> persistedExecutions = executionCaptor.getAllValues();
+    Execution takerExecution = persistedExecutions.stream()
+        .filter(execution -> savedOrderRef[0].getId().equals(execution.getOrderId()))
+        .findFirst()
+        .orElseThrow();
+    Execution makerExecution = persistedExecutions.stream()
+        .filter(execution -> makerOrder.getId().equals(execution.getOrderId()))
+        .findFirst()
+        .orElseThrow();
+    assertThat(takerExecution.getQuoteSnapshotId()).isEqualTo("qsnap-market-1");
+    assertThat(takerExecution.getQuoteAsOf()).isEqualTo(quoteAsOf);
+    assertThat(takerExecution.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(makerExecution.getQuoteSnapshotId()).isNull();
+    assertThat(makerExecution.getQuoteAsOf()).isNull();
+    assertThat(makerExecution.getQuoteSourceMode()).isNull();
   }
 
   @Test
@@ -1433,6 +1471,14 @@ class CorebankOrderServiceTest {
         });
 
     assertThat(fepClient.submitCalls()).isZero();
+    assertThat(account.getCashBalance()).isEqualByComparingTo("100000000.0000");
+    verify(orderRepository, never()).saveAndFlush(any(Order.class));
+    verify(executionRepository, never()).saveAndFlush(any(Execution.class));
+    verify(journalEntryRepository, never()).save(any(JournalEntry.class));
+    verify(ledgerEntryRepository, never()).save(any(LedgerEntry.class));
+    verify(ledgerEntryRefRepository, never()).save(any(LedgerEntryRef.class));
+    verify(accountRepository, never()).findByIdForUpdate(anyLong());
+    verify(positionRepository, never()).findByAccountIdAndSymbolForUpdate(anyLong(), any(String.class));
   }
 
   @Test
@@ -1562,6 +1608,200 @@ class CorebankOrderServiceTest {
   }
 
   @Test
+  void shouldMarkMarketOrderPartiallyFilledFromPersistedFills() {
+    Account takerAccount = persistedAccount();
+    Position takerPosition = Position.of(ACCOUNT_ID, "005930", BigDecimal.ZERO.setScale(4), BigDecimal.ZERO.setScale(4));
+    Account makerOneAccount = withId(
+        Account.of("ACC-2001", 2001L, "ACTIVE", "KRW", new BigDecimal("1000000.0000"), new BigDecimal("500.0000")),
+        2001L
+    );
+    Account makerTwoAccount = withId(
+        Account.of("ACC-2002", 2002L, "ACTIVE", "KRW", new BigDecimal("1000000.0000"), new BigDecimal("500.0000")),
+        2002L
+    );
+    Position makerOnePosition = Position.of(2001L, "005930", new BigDecimal("2.0000"), new BigDecimal("68000.0000"));
+    Position makerTwoPosition = Position.of(2002L, "005930", new BigDecimal("1.5000"), new BigDecimal("69000.0000"));
+    Order makerOneOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            2001L,
+            "maker-sell-partial-1",
+            "005930",
+            "SELL",
+            "LIMIT",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70000.0000"),
+            null,
+            null,
+            null,
+            null
+        ),
+        9501L
+    ), Instant.parse("2026-03-01T09:59:00Z"));
+    Order makerTwoOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            2002L,
+            "maker-sell-partial-2",
+            "005930",
+            "SELL",
+            "LIMIT",
+            new BigDecimal("1.5000"),
+            new BigDecimal("70100.0000"),
+            null,
+            null,
+            null,
+            null
+        ),
+        9502L
+    ), Instant.parse("2026-03-01T10:00:00Z"));
+    Order[] savedOrderRef = new Order[1];
+
+    when(orderRepository.findByClOrdId(MARKET_PARTIAL_CL_ORD_ID))
+        .thenAnswer(invocation -> Optional.ofNullable(savedOrderRef[0]));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(takerAccount));
+    when(accountRepository.findById(2001L)).thenReturn(Optional.of(makerOneAccount));
+    when(accountRepository.findById(2002L)).thenReturn(Optional.of(makerTwoAccount));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(takerPosition));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(2001L, "005930")).thenReturn(Optional.of(makerOnePosition));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(2002L, "005930")).thenReturn(Optional.of(makerTwoPosition));
+    when(orderRepository.lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+        .thenReturn(List.of(makerOneOrder, makerTwoOrder));
+    when(orderRepository.saveAndFlush(any(Order.class)))
+        .thenAnswer(invocation -> {
+          Order persisted = persistedOrder(invocation.getArgument(0), 9510L);
+          savedOrderRef[0] = persisted;
+          return persisted;
+        });
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7510L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8510L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        MARKET_PARTIAL_CL_ORD_ID,
+        "FEP-KRX-" + MARKET_PARTIAL_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        5L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
+        null,
+        null
+    ));
+
+    InternalOrderResult result = corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        MARKET_PARTIAL_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("5.0000"),
+        null,
+        "qsnap-market-partial-1",
+        Instant.parse("2026-03-01T10:01:59Z"),
+        FepQuoteSourceMode.LIVE,
+        new BigDecimal("72050.0000")
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PARTIALLY_FILLED");
+    assertThat(result.getExecutionResult()).isEqualTo("PARTIALLY_FILLED");
+    assertThat(result.getExecutedQty()).isEqualByComparingTo("3.5000");
+    assertThat(result.getLeavesQty()).isEqualByComparingTo("1.5000");
+    assertThat(result.getExecutedPrice()).isEqualByComparingTo("70042.8571");
+    assertThat(savedOrderRef[0]).isNotNull();
+    assertThat(savedOrderRef[0].getStatus()).isEqualTo("PARTIALLY_FILLED");
+    assertThat(savedOrderRef[0].getExecutionResult()).isEqualTo("PARTIALLY_FILLED");
+    assertThat(savedOrderRef[0].getExecutedQty()).isEqualByComparingTo("3.5000");
+    assertThat(savedOrderRef[0].getLeavesQty()).isEqualByComparingTo("1.5000");
+    assertThat(savedOrderRef[0].getExecutedPrice()).isEqualByComparingTo("70042.8571");
+  }
+
+  @Test
+  void shouldAppendExecutionSequenceAfterExistingMakerFillHistory() {
+    Account takerAccount = persistedAccount();
+    Position takerPosition = Position.of(ACCOUNT_ID, "005930", BigDecimal.ZERO.setScale(4), BigDecimal.ZERO.setScale(4));
+    Account makerAccount = withId(
+        Account.of("ACC-2003", 2003L, "ACTIVE", "KRW", new BigDecimal("1000000.0000"), new BigDecimal("500.0000")),
+        2003L
+    );
+    Position makerPosition = Position.of(2003L, "005930", new BigDecimal("4.0000"), new BigDecimal("69900.0000"));
+    Order makerOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            2003L,
+            "maker-sell-existing",
+            "005930",
+            "SELL",
+            "LIMIT",
+            new BigDecimal("4.0000"),
+            new BigDecimal("70000.0000"),
+            null,
+            null,
+            null,
+            null
+        ),
+        9401L
+    ), Instant.parse("2026-03-01T10:00:00Z"));
+    Order[] savedOrderRef = new Order[1];
+
+    when(orderRepository.findByClOrdId(LIMIT_CROSS_CL_ORD_ID))
+        .thenAnswer(invocation -> Optional.ofNullable(savedOrderRef[0]));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(takerAccount));
+    when(accountRepository.findById(2003L)).thenReturn(Optional.of(makerAccount));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(takerPosition));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(2003L, "005930")).thenReturn(Optional.of(makerPosition));
+    when(orderRepository.lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+        .thenReturn(List.of(makerOrder));
+    when(orderRepository.saveAndFlush(any(Order.class)))
+        .thenAnswer(invocation -> {
+          Order persisted = persistedOrder(invocation.getArgument(0), 9410L);
+          savedOrderRef[0] = persisted;
+          return persisted;
+        });
+    when(executionRepository.findLatestExecutionSequenceForUpdate(anyLong())).thenReturn(0);
+    when(executionRepository.findLatestExecutionSequenceForUpdate(9401L)).thenReturn(2);
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7410L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8410L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        LIMIT_CROSS_CL_ORD_ID,
+        "FEP-KRX-" + LIMIT_CROSS_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        2L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
+        null,
+        null
+    ));
+
+    corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        LIMIT_CROSS_CL_ORD_ID,
+        "005930",
+        "BUY",
+        new BigDecimal("2.0000"),
+        new BigDecimal("70000.0000")
+    ));
+
+    ArgumentCaptor<Execution> executionCaptor = ArgumentCaptor.forClass(Execution.class);
+    verify(executionRepository, times(2)).saveAndFlush(executionCaptor.capture());
+    List<Execution> persistedExecutions = executionCaptor.getAllValues();
+    assertThat(executionSeqsForOrder(persistedExecutions, savedOrderRef[0].getId())).containsExactly(1);
+    assertThat(executionSeqsForOrder(persistedExecutions, makerOrder.getId())).containsExactly(3);
+  }
+
+  @Test
   void shouldLockMarketParticipantsInDeterministicAccountAndPositionOrder() {
     Account takerAccount = persistedAccount();
     Position takerPosition = Position.of(ACCOUNT_ID, "005930", BigDecimal.ZERO.setScale(4), BigDecimal.ZERO.setScale(4));
@@ -1666,6 +1906,15 @@ class CorebankOrderServiceTest {
         new BigDecimal("72050.0000")
     ));
 
+    InOrder lockStepInOrder = org.mockito.Mockito.inOrder(orderRepository, accountRepository, positionRepository);
+    lockStepInOrder.verify(orderRepository).lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any());
+    lockStepInOrder.verify(accountRepository).findByIdForUpdate(1000L);
+    lockStepInOrder.verify(accountRepository).findByIdForUpdate(ACCOUNT_ID);
+    lockStepInOrder.verify(accountRepository).findByIdForUpdate(3002L);
+    lockStepInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(1000L, "005930");
+    lockStepInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930");
+    lockStepInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(3002L, "005930");
+
     InOrder accountLockInOrder = org.mockito.Mockito.inOrder(accountRepository);
     accountLockInOrder.verify(accountRepository).findByIdForUpdate(1000L);
     accountLockInOrder.verify(accountRepository).findByIdForUpdate(ACCOUNT_ID);
@@ -1700,6 +1949,56 @@ class CorebankOrderServiceTest {
           assertThat(ex.getDetails()).containsEntry("snapshotAgeMs", 6_000L);
           assertThat(ex.getDetails()).containsEntry("quoteSnapshotId", "qsnap-market-stale-1");
           assertThat(ex.getDetails()).containsEntry("quoteSourceMode", "LIVE");
+        });
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectMarketOrderWhenQuoteSnapshotIdIsMissing() {
+    when(orderRepository.findByClOrdId(MARKET_MISSING_SNAPSHOT_CL_ORD_ID)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        MARKET_MISSING_SNAPSHOT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null,
+        null,
+        Instant.parse("2026-03-01T10:01:59Z"),
+        FepQuoteSourceMode.LIVE,
+        new BigDecimal("72050.0000")
+    )))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
+          assertThat(ex.getMessage()).contains("quoteSnapshotId is required for MARKET orders");
+        });
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectMarketOrderWhenQuoteSourceModeIsMissing() {
+    when(orderRepository.findByClOrdId(MARKET_MISSING_SOURCE_MODE_CL_ORD_ID)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        MARKET_MISSING_SOURCE_MODE_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null,
+        "qsnap-market-missing-source",
+        Instant.parse("2026-03-01T10:01:59Z"),
+        null,
+        new BigDecimal("72050.0000")
+    )))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
+          assertThat(ex.getMessage()).contains("quoteSourceMode is required for MARKET orders");
         });
 
     assertThat(fepClient.submitCalls()).isZero();
@@ -2764,6 +3063,13 @@ class CorebankOrderServiceTest {
   private <T> T withVersion(T target, Long version) {
     ReflectionTestUtils.setField(target, "version", version);
     return target;
+  }
+
+  private List<Integer> executionSeqsForOrder(List<Execution> executions, Long orderId) {
+    return executions.stream()
+        .filter(execution -> orderId.equals(execution.getOrderId()))
+        .map(Execution::getExecutionSeq)
+        .toList();
   }
 
   private FepQuoteSnapshotResult quoteSnapshot(
