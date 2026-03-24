@@ -1,0 +1,324 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.time.Instant
+import javax.xml.parsers.DocumentBuilderFactory
+
+def epic10ConcurrencyPerformanceBuildId = providers.gradleProperty('epic10ConcurrencyPerformanceBuildId')
+    .orElse(providers.environmentVariable('EPIC10_CONCURRENCY_PERFORMANCE_BUILD_ID'))
+    .orElse(providers.environmentVariable('GITHUB_RUN_ID'))
+    .getOrElse('local')
+def epic10ConcurrencyPerformanceBaseDir = providers.environmentVariable('GITHUB_WORKSPACE')
+    .map { new File(it) }
+    .getOrNull() ?: rootProject.projectDir.parentFile
+def epic10ConcurrencyPerformanceArtifactRoot = new File(
+    epic10ConcurrencyPerformanceBaseDir,
+    "_bmad-output/test-artifacts/epic-10/${epic10ConcurrencyPerformanceBuildId}/story-10-2"
+)
+def story102MaxVarianceMs = providers.gradleProperty('story102ExecutePerfMaxVarianceMs')
+    .orElse(providers.environmentVariable('STORY102_EXECUTE_PERF_MAX_VARIANCE_MS'))
+    .map { Double.parseDouble(it) }
+    .getOrElse(150.0d)
+def epic10ConcurrencySuite = [
+    taskPath : ':corebank-service:epic10ConcurrencyTests',
+    sourceDir: new File(rootProject.projectDir, 'corebank-service/build/test-results/epic10ConcurrencyTests')
+]
+def epic10PerformanceRuns = (1..3).collect { int runIndex ->
+  [
+      runId      : "run-${runIndex}",
+      taskPath   : ":channel-service:epic10PerformanceRun${runIndex}",
+      junitDir   : new File(rootProject.projectDir, "channel-service/build/test-results/epic10PerformanceRun${runIndex}"),
+      perfReport : new File(rootProject.projectDir, "channel-service/build/test-results/epic10PerformanceRun${runIndex}/perf-p95.json"),
+      htmlDirName: "epic10PerformanceRun${runIndex}"
+  ]
+}
+def epic10ConcurrencyScenarios = [
+    [
+        id         : 'E10-CONC-001',
+        description: 'Same-position concurrent sell requests preserve final position integrity under 100-thread load',
+        className  : 'com.fix.corebank.integration.PositionConcurrencyIntegrationTest',
+        testName   : 'e10Conc001ShouldPreservePositionIntegrityAcrossHundredConcurrentSellAttempts'
+    ],
+    [
+        id         : 'E10-CONC-002',
+        description: 'Same-symbol lock contention returns deterministic conflict contract and emits observability metrics',
+        className  : 'com.fix.corebank.integration.PositionLockContentionIntegrationTest',
+        testName   : 'e10Conc002ShouldExposeConflictMetricsWhenSameSymbolPositionLockContentionExceedsTimeout'
+    ]
+]
+
+Closure<List<Map<String, Object>>> parseEpic10Testcases = { File xmlDir ->
+  List<Map<String, Object>> testcases = []
+  if (!xmlDir.exists()) {
+    return testcases
+  }
+
+  DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance()
+  factory.setNamespaceAware(false)
+  factory.setExpandEntityReferences(false)
+  factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+
+  xmlDir.eachFileRecurse { File xmlFile ->
+    if (!xmlFile.name.endsWith('.xml')) {
+      return
+    }
+    def document = factory.newDocumentBuilder().parse(xmlFile)
+    def testcaseNodes = document.getElementsByTagName('testcase')
+    for (int index = 0; index < testcaseNodes.length; index++) {
+      def testcase = testcaseNodes.item(index)
+      String result = 'PASSED'
+      if (testcase.getElementsByTagName('failure').length > 0) {
+        result = 'FAILED'
+      } else if (testcase.getElementsByTagName('error').length > 0) {
+        result = 'ERROR'
+      } else if (testcase.getElementsByTagName('skipped').length > 0) {
+        result = 'SKIPPED'
+      }
+      testcases << [
+          classname: testcase.getAttribute('classname') ?: '',
+          name     : (testcase.getAttribute('name') ?: '').replaceFirst(/\(\)$/, ''),
+          result   : result,
+          xmlFile  : xmlFile.name
+      ]
+    }
+  }
+
+  return testcases
+}
+
+Closure<Map<String, Integer>> parseJUnitSummary = { File xmlDir ->
+  Map<String, Integer> summary = [
+      files   : 0,
+      tests   : 0,
+      failures: 0,
+      errors  : 0,
+      skipped : 0
+  ]
+  if (!xmlDir.exists()) {
+    return summary
+  }
+
+  DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance()
+  factory.setNamespaceAware(false)
+  factory.setExpandEntityReferences(false)
+  factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+
+  xmlDir.eachFileRecurse { File xmlFile ->
+    if (!xmlFile.name.endsWith('.xml')) {
+      return
+    }
+    summary.files += 1
+    def document = factory.newDocumentBuilder().parse(xmlFile)
+    List suites = []
+    if (document.documentElement != null) {
+      if (document.documentElement.tagName == 'testsuite') {
+        suites << document.documentElement
+      } else {
+        def suiteNodes = document.getElementsByTagName('testsuite')
+        for (int index = 0; index < suiteNodes.length; index++) {
+          suites << suiteNodes.item(index)
+        }
+      }
+    }
+
+    suites.each { suite ->
+      summary.tests += (suite.getAttribute('tests') ?: '0').toInteger()
+      summary.failures += (suite.getAttribute('failures') ?: '0').toInteger()
+      summary.errors += (suite.getAttribute('errors') ?: '0').toInteger()
+      summary.skipped += (suite.getAttribute('skipped') ?: '0').toInteger()
+    }
+  }
+
+  return summary
+}
+
+Closure<Double> roundValue = { Double value ->
+  value == null ? null : Math.round(value * 1_000.0d) / 1_000.0d
+}
+
+tasks.register('epic10ConcurrencyPerformanceEvidence') {
+  group = 'verification'
+  description = 'Collects Story 10.2 concurrency and performance evidence artifacts.'
+  dependsOn(([epic10ConcurrencySuite.taskPath] + epic10PerformanceRuns.collect { it.taskPath }) as List<String>)
+
+  doLast {
+    File junitRoot = new File(epic10ConcurrencyPerformanceArtifactRoot, 'junit')
+    File perfRoot = new File(epic10ConcurrencyPerformanceArtifactRoot, 'perf')
+    delete(junitRoot)
+    delete(perfRoot)
+    mkdir(junitRoot)
+    mkdir(perfRoot)
+
+    File concurrencyTargetDir = new File(junitRoot, 'concurrency')
+    mkdir(concurrencyTargetDir)
+    copy {
+      from(epic10ConcurrencySuite.sourceDir)
+      include('**/*.xml')
+      into(concurrencyTargetDir)
+    }
+
+    List<Map<String, Object>> concurrencyTestcases = parseEpic10Testcases(epic10ConcurrencySuite.sourceDir)
+    List<Map<String, Object>> concurrencyResults = epic10ConcurrencyScenarios.collect { Map scenario ->
+      Map<String, Object> testcase = concurrencyTestcases.find { Map candidate ->
+        candidate.classname == scenario.className && candidate.name == scenario.testName
+      }
+      [
+          scenarioId : scenario.id,
+          description: scenario.description,
+          result     : testcase == null ? 'MISSING' : String.valueOf(testcase.result),
+          ownerTest  : "${scenario.className}#${scenario.testName}",
+          evidence   : testcase == null ? null : "junit/concurrency/${testcase.xmlFile}"
+      ]
+    }
+
+    List<Map<String, Object>> performanceRuns = epic10PerformanceRuns.collect { Map run ->
+      File junitTargetDir = new File(junitRoot, run.runId)
+      mkdir(junitTargetDir)
+      copy {
+        from(run.junitDir)
+        include('**/*.xml')
+        into(junitTargetDir)
+      }
+
+      File perfTargetDir = new File(perfRoot, run.runId)
+      mkdir(perfTargetDir)
+      if (run.perfReport.exists()) {
+        copy {
+          from(run.perfReport)
+          into(perfTargetDir)
+        }
+      }
+
+      Map<String, Integer> junitSummary = parseJUnitSummary(run.junitDir)
+      boolean hasJUnitEvidence = junitSummary.files > 0 && junitSummary.tests > 0
+      boolean hasPerfEvidence = run.perfReport.exists()
+      Map perfReport = hasPerfEvidence ? (Map) new JsonSlurper().parse(run.perfReport) : [:]
+      Double p50Ms = perfReport.containsKey('p50Ms') ? ((Number) perfReport.p50Ms).doubleValue() : null
+      Double p95Ms = perfReport.containsKey('p95Ms') ? ((Number) perfReport.p95Ms).doubleValue() : null
+      Double maxMs = perfReport.containsKey('maxMs') ? ((Number) perfReport.maxMs).doubleValue() : null
+      Double metricMaxMs = perfReport.containsKey('metricMaxMs') ? ((Number) perfReport.metricMaxMs).doubleValue() : null
+      String reportResult = hasPerfEvidence ? String.valueOf(perfReport.result) : 'MISSING'
+      String runResult = hasJUnitEvidence
+          && hasPerfEvidence
+          && (junitSummary.failures + junitSummary.errors) == 0
+          && reportResult == 'PASSED'
+          ? 'PASSED'
+          : 'FAILED'
+
+      [
+          runId                 : run.runId,
+          result                : runResult,
+          reportResult          : reportResult,
+          p50Ms                 : roundValue(p50Ms),
+          p95Ms                 : roundValue(p95Ms),
+          maxMs                 : roundValue(maxMs),
+          metricName            : perfReport.metricName,
+          metricOutcome         : perfReport.metricOutcome,
+          prometheusMetricFamily: perfReport.prometheusMetricFamily,
+          metricCount           : perfReport.metricCount,
+          metricMaxMs           : roundValue(metricMaxMs),
+          junitSummary          : junitSummary,
+          evidence              : hasPerfEvidence ? "perf/${run.runId}/perf-p95.json" : null
+      ]
+    }
+
+    List<Double> p95Values = performanceRuns.findAll { it.p95Ms != null }.collect { ((Number) it.p95Ms).doubleValue() }
+    Double minP95Ms = p95Values ? p95Values.min() : null
+    Double maxP95Ms = p95Values ? p95Values.max() : null
+    Double varianceMs = (minP95Ms == null || maxP95Ms == null) ? null : roundValue(maxP95Ms - minP95Ms)
+    String varianceResult = varianceMs == null
+        ? 'MISSING'
+        : varianceMs <= story102MaxVarianceMs ? 'PASSED' : 'FAILED'
+
+    String perfThresholdResult = performanceRuns.every { it.result == 'PASSED' } ? 'PASSED' : 'FAILED'
+    List<Map<String, Object>> scenarioResults = []
+    scenarioResults.addAll(concurrencyResults)
+    scenarioResults << [
+        scenarioId : 'E10-PERF-001',
+        description: 'Execute path p95 stays within the configured SLA budget',
+        result     : perfThresholdResult,
+        ownerTest  : 'com.fix.channel.perf.OrderExecuteLatencySmokeTest#e10Perf001ShouldKeepExecuteP95WithinConfiguredBudget',
+        evidence   : performanceRuns.collect { it.evidence ?: 'n/a' }.join(', ')
+    ]
+    scenarioResults << [
+        scenarioId : 'E10-PERF-002',
+        description: 'Threshold breach blocks the release gate with metric evidence',
+        result     : perfThresholdResult,
+        ownerTest  : 'Story 10.2 performance gate summary',
+        evidence   : performanceRuns.collect { it.evidence ?: 'n/a' }.join(', ')
+    ]
+    scenarioResults << [
+        scenarioId : 'E10-PERF-003',
+        description: 'Repeated benchmark runs surface unacceptable variance',
+        result     : varianceResult,
+        ownerTest  : 'Story 10.2 repeated benchmark summary',
+        evidence   : performanceRuns.collect { it.evidence ?: 'n/a' }.join(', ')
+    ]
+
+    int passedCount = scenarioResults.count { it.result == 'PASSED' }
+    int failedCount = scenarioResults.count { it.result == 'FAILED' }
+    int missingCount = scenarioResults.count { it.result == 'MISSING' }
+    String overallResult = failedCount == 0
+        && missingCount == 0
+        && concurrencyResults.every { it.result == 'PASSED' }
+        && performanceRuns.every { it.result == 'PASSED' }
+        && varianceResult == 'PASSED'
+        ? 'PASSED'
+        : 'FAILED'
+
+    File matrixSummaryMd = new File(epic10ConcurrencyPerformanceArtifactRoot, 'matrix-summary.md')
+    matrixSummaryMd.parentFile.mkdirs()
+    matrixSummaryMd.text = """# Story 10.2 Concurrency/Performance Summary
+
+- Build ID: `${epic10ConcurrencyPerformanceBuildId}`
+- Generated At: `${Instant.now()}`
+- Overall Result: `${overallResult}`
+- Variance Threshold: `${story102MaxVarianceMs} ms`
+- p95 Min/Max/Spread: `${minP95Ms == null ? 'n/a' : minP95Ms} / ${maxP95Ms == null ? 'n/a' : maxP95Ms} / ${varianceMs == null ? 'n/a' : varianceMs} ms`
+- Totals: passed=${passedCount}, failed=${failedCount}, missing=${missingCount}
+
+## Scenario Matrix
+
+| Scenario ID | Result | Owner | Evidence |
+| --- | --- | --- | --- |
+${scenarioResults.collect { result ->
+  "| `${result.scenarioId}` | `${result.result}` | `${result.ownerTest}` | `${result.evidence ?: 'n/a'}` |"
+}.join('\n')}
+
+## Performance Runs
+
+| Run | Result | p50 (ms) | p95 (ms) | Max (ms) | Metric | Metric Outcome | Metric Count | Metric Max (ms) | JUnit Totals |
+| --- | --- | ---: | ---: | ---: | --- | --- | ---: | ---: | --- |
+${performanceRuns.collect { run ->
+  "| `${run.runId}` | `${run.result}` | ${run.p50Ms == null ? 'n/a' : run.p50Ms} | ${run.p95Ms == null ? 'n/a' : run.p95Ms} | ${run.maxMs == null ? 'n/a' : run.maxMs} | `${run.metricName ?: 'n/a'}` | `${run.metricOutcome ?: 'n/a'}` | ${run.metricCount == null ? 'n/a' : run.metricCount} | ${run.metricMaxMs == null ? 'n/a' : run.metricMaxMs} | tests=${run.junitSummary.tests}, failures=${run.junitSummary.failures}, errors=${run.junitSummary.errors}, skipped=${run.junitSummary.skipped} |"
+}.join('\n')}
+"""
+
+    File matrixSummaryJson = new File(epic10ConcurrencyPerformanceArtifactRoot, 'matrix-summary.json')
+    matrixSummaryJson.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+        buildId         : epic10ConcurrencyPerformanceBuildId,
+        generatedAt     : Instant.now().toString(),
+        overallResult   : overallResult,
+        varianceThresholdMs: story102MaxVarianceMs,
+        variance        : [
+            minP95Ms   : roundValue(minP95Ms),
+            maxP95Ms   : roundValue(maxP95Ms),
+            spreadMs   : varianceMs,
+            result     : varianceResult
+        ],
+        scenarios       : scenarioResults,
+        performanceRuns : performanceRuns
+    ])) + '\n'
+
+    if (overallResult != 'PASSED') {
+      throw new GradleException(
+          "Story 10.2 concurrency/performance gate failed; see ${matrixSummaryMd.absolutePath}"
+      )
+    }
+  }
+}
+
+tasks.register('epic10ConcurrencyPerformanceGate') {
+  group = 'verification'
+  description = 'Runs Story 10.2 canonical concurrency and performance scenarios with repeated benchmark evidence export.'
+  dependsOn tasks.named('epic10ConcurrencyPerformanceEvidence')
+}

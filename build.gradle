@@ -52,3 +52,4 @@ tasks.register('correlationIdPropagationChecks') {
 }
 
 apply from: rootProject.file('gradle/epic10-acceptance.gradle')
+apply from: rootProject.file('gradle/epic10-concurrency-performance.gradle')
