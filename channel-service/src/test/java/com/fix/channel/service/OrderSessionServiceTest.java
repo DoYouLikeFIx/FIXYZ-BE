@@ -20,6 +20,8 @@ import com.fix.channel.vo.OrderSessionQueryCommand;
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.valuation.ValuationStatus;
+import com.fix.common.valuation.ValuationUnavailableReason;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -185,17 +187,10 @@ class OrderSessionServiceTest {
 
   @Test
   void shouldRecordAuditAndRejectWhenMarketQuoteIsStale() {
-    accountPositionService.failNextWith(new BusinessException(
-        ErrorCode.STALE_QUOTE,
-        ErrorCode.STALE_QUOTE.defaultMessage(),
-        null,
-        Map.of(
-            "symbol", "005930",
-            "snapshotAgeMs", 6000,
-            "quoteSourceMode", "LIVE",
-            "quoteSnapshotId", "qsnap_005930_live_999"
-        )
-    ));
+    accountPositionService.setStaleQuote(
+        Instant.now(Clock.systemUTC()).minusMillis(6_000L),
+        "qsnap_005930_live_999"
+    );
 
     assertThatThrownBy(() -> orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
         ownerMember.getId(),
@@ -217,8 +212,38 @@ class OrderSessionServiceTest {
           assertThat(log.getTargetId()).isEqualTo("123e4567-e89b-42d3-a456-426614174276");
           assertThat(log.getDetail()).contains("reason=STALE_QUOTE");
           assertThat(log.getDetail()).contains("symbol=005930");
-          assertThat(log.getDetail()).contains("snapshotAgeMs=6000");
+          assertThat(log.getDetail()).contains("snapshotAgeMs=");
           assertThat(log.getDetail()).contains("quoteSourceMode=LIVE");
+        });
+  }
+
+  @Test
+  void shouldRecordAuditAndRejectWhenMarketQuoteIsUnavailable() {
+    accountPositionService.setUnavailableQuote(ValuationUnavailableReason.PROVIDER_UNAVAILABLE);
+
+    assertThatThrownBy(() -> orderSessionService.createOrderSession(OrderSessionCreateCommand.of(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174277",
+        "005930",
+        "BUY",
+        "MARKET",
+        BigDecimal.TEN,
+        null
+    )))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.STALE_QUOTE));
+
+    assertThat(orderSessionRepository.findByClOrdId("123e4567-e89b-42d3-a456-426614174277")).isEmpty();
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo("ORDER_SESSION_FAILED");
+          assertThat(log.getTargetId()).isEqualTo("123e4567-e89b-42d3-a456-426614174277");
+          assertThat(log.getDetail()).contains("reason=STALE_QUOTE");
+          assertThat(log.getDetail()).contains("symbol=005930");
+          assertThat(log.getDetail()).contains("snapshotAgeMs=unknown");
+          assertThat(log.getDetail()).contains("quoteSourceMode=unknown");
+          assertThat(log.getDetail()).contains("quoteSnapshotId=unknown");
         });
   }
 
@@ -1097,10 +1122,13 @@ class OrderSessionServiceTest {
     private Long memberId = 0L;
     private BigDecimal availableBalance = BigDecimal.valueOf(5_000_000);
     private BigDecimal availableQuantity = BigDecimal.valueOf(500);
+    private BigDecimal avgPrice = BigDecimal.valueOf(70000).setScale(4);
     private BigDecimal marketPrice = BigDecimal.valueOf(72050).setScale(4);
     private String quoteSnapshotId = "qsnap_005930_live_001";
     private Instant quoteAsOf = Instant.parse("2026-03-20T00:00:00Z");
     private FepQuoteSourceMode quoteSourceMode = FepQuoteSourceMode.LIVE;
+    private ValuationStatus valuationStatus = ValuationStatus.FRESH;
+    private ValuationUnavailableReason valuationUnavailableReason;
     private RuntimeException failure;
 
     StubAccountPositionService() {
@@ -1137,10 +1165,15 @@ class OrderSessionServiceTest {
           availableBalance,
           "KRW",
           Instant.now(),
+          avgPrice,
           marketPrice,
           quoteSnapshotId,
           quoteAsOf,
-          quoteSourceMode
+          quoteSourceMode,
+          null,
+          null,
+          valuationStatus,
+          valuationUnavailableReason
       );
     }
 
@@ -1149,10 +1182,13 @@ class OrderSessionServiceTest {
       this.memberId = memberId;
       this.availableBalance = BigDecimal.valueOf(5_000_000);
       this.availableQuantity = BigDecimal.valueOf(500);
+      this.avgPrice = BigDecimal.valueOf(70000).setScale(4);
       this.marketPrice = BigDecimal.valueOf(72050).setScale(4);
       this.quoteSnapshotId = "qsnap_005930_live_001";
       this.quoteAsOf = Instant.parse("2026-03-20T00:00:00Z");
       this.quoteSourceMode = FepQuoteSourceMode.LIVE;
+      this.valuationStatus = ValuationStatus.FRESH;
+      this.valuationUnavailableReason = null;
       this.failure = null;
     }
 
@@ -1162,6 +1198,27 @@ class OrderSessionServiceTest {
 
     void setAvailableQuantity(BigDecimal availableQuantity) {
       this.availableQuantity = availableQuantity;
+    }
+
+    void setQuoteAsOf(Instant quoteAsOf) {
+      this.quoteAsOf = quoteAsOf;
+    }
+
+    void setStaleQuote(Instant quoteAsOf, String quoteSnapshotId) {
+      this.quoteAsOf = quoteAsOf;
+      this.quoteSnapshotId = quoteSnapshotId;
+      this.marketPrice = null;
+      this.valuationStatus = ValuationStatus.STALE;
+      this.valuationUnavailableReason = ValuationUnavailableReason.STALE_QUOTE;
+    }
+
+    void setUnavailableQuote(ValuationUnavailableReason valuationUnavailableReason) {
+      this.marketPrice = null;
+      this.quoteSnapshotId = null;
+      this.quoteAsOf = null;
+      this.quoteSourceMode = null;
+      this.valuationStatus = ValuationStatus.UNAVAILABLE;
+      this.valuationUnavailableReason = valuationUnavailableReason;
     }
 
     void failNextWith(RuntimeException failure) {
