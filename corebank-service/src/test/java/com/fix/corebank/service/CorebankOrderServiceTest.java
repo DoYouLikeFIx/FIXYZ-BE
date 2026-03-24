@@ -97,6 +97,8 @@ class CorebankOrderServiceTest {
   private static final String LIMIT_RESTING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174227";
   private static final String LIMIT_CROSS_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174228";
   private static final String MARKET_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174229";
+  private static final String MARKET_MISSING_SNAPSHOT_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174230";
+  private static final String MARKET_MISSING_SOURCE_MODE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174231";
 
   @Mock
   private AccountRepository accountRepository;
@@ -1293,6 +1295,9 @@ class CorebankOrderServiceTest {
     assertThat(savedOrderRef[0].getOrderType()).isEqualTo("LIMIT");
     assertThat(savedOrderRef[0].getOrderPrice()).isEqualByComparingTo("70100.0000");
     assertThat(savedOrderRef[0].getStatus()).isEqualTo("FILLED");
+    assertThat(savedOrderRef[0].getQuoteSnapshotId()).isNull();
+    assertThat(savedOrderRef[0].getQuoteAsOf()).isNull();
+    assertThat(savedOrderRef[0].getQuoteSourceMode()).isNull();
     assertThat(takerPosition.getQty()).isEqualByComparingTo("4.0000");
     assertThat(takerPosition.getAvgPrice()).isEqualByComparingTo("70050.0000");
     assertThat(makerOneOrder.getStatus()).isEqualTo("FILLED");
@@ -1311,6 +1316,11 @@ class CorebankOrderServiceTest {
     assertThat(executionSeqsForOrder(persistedExecutions, savedOrderRef[0].getId())).containsExactly(1, 2);
     assertThat(executionSeqsForOrder(persistedExecutions, makerOneOrder.getId())).containsExactly(1);
     assertThat(executionSeqsForOrder(persistedExecutions, makerTwoOrder.getId())).containsExactly(1);
+    assertThat(persistedExecutions).allSatisfy(execution -> {
+      assertThat(execution.getQuoteSnapshotId()).isNull();
+      assertThat(execution.getQuoteAsOf()).isNull();
+      assertThat(execution.getQuoteSourceMode()).isNull();
+    });
   }
 
   @Test
@@ -1411,6 +1421,24 @@ class CorebankOrderServiceTest {
     assertThat(makerOrder.getStatus()).isEqualTo("FILLED");
     assertThat(makerOrder.getExecutedQty()).isEqualByComparingTo("3.0000");
     assertThat(makerPosition.getQty()).isEqualByComparingTo("0.0000");
+
+    ArgumentCaptor<Execution> executionCaptor = ArgumentCaptor.forClass(Execution.class);
+    verify(executionRepository, times(2)).saveAndFlush(executionCaptor.capture());
+    List<Execution> persistedExecutions = executionCaptor.getAllValues();
+    Execution takerExecution = persistedExecutions.stream()
+        .filter(execution -> savedOrderRef[0].getId().equals(execution.getOrderId()))
+        .findFirst()
+        .orElseThrow();
+    Execution makerExecution = persistedExecutions.stream()
+        .filter(execution -> makerOrder.getId().equals(execution.getOrderId()))
+        .findFirst()
+        .orElseThrow();
+    assertThat(takerExecution.getQuoteSnapshotId()).isEqualTo("qsnap-market-1");
+    assertThat(takerExecution.getQuoteAsOf()).isEqualTo(quoteAsOf);
+    assertThat(takerExecution.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(makerExecution.getQuoteSnapshotId()).isNull();
+    assertThat(makerExecution.getQuoteAsOf()).isNull();
+    assertThat(makerExecution.getQuoteSourceMode()).isNull();
   }
 
   @Test
@@ -1912,6 +1940,56 @@ class CorebankOrderServiceTest {
           assertThat(ex.getDetails()).containsEntry("snapshotAgeMs", 6_000L);
           assertThat(ex.getDetails()).containsEntry("quoteSnapshotId", "qsnap-market-stale-1");
           assertThat(ex.getDetails()).containsEntry("quoteSourceMode", "LIVE");
+        });
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectMarketOrderWhenQuoteSnapshotIdIsMissing() {
+    when(orderRepository.findByClOrdId(MARKET_MISSING_SNAPSHOT_CL_ORD_ID)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        MARKET_MISSING_SNAPSHOT_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null,
+        null,
+        Instant.parse("2026-03-01T10:01:59Z"),
+        FepQuoteSourceMode.LIVE,
+        new BigDecimal("72050.0000")
+    )))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
+          assertThat(ex.getMessage()).contains("quoteSnapshotId is required for MARKET orders");
+        });
+
+    assertThat(fepClient.submitCalls()).isZero();
+  }
+
+  @Test
+  void shouldRejectMarketOrderWhenQuoteSourceModeIsMissing() {
+    when(orderRepository.findByClOrdId(MARKET_MISSING_SOURCE_MODE_CL_ORD_ID)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        MARKET_MISSING_SOURCE_MODE_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null,
+        "qsnap-market-missing-source",
+        Instant.parse("2026-03-01T10:01:59Z"),
+        null,
+        new BigDecimal("72050.0000")
+    )))
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
+          assertThat(ex.getMessage()).contains("quoteSourceMode is required for MARKET orders");
         });
 
     assertThat(fepClient.submitCalls()).isZero();

@@ -865,8 +865,14 @@ public class CorebankOrderService {
     if (!FepOrderType.MARKET.name().equals(normalizeOrderType(command.getOrderType()))) {
       return;
     }
+    if (command.getQuoteSnapshotId() == null || command.getQuoteSnapshotId().isBlank()) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "quoteSnapshotId is required for MARKET orders");
+    }
     if (command.getQuoteAsOf() == null) {
       throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "quoteAsOf is required for MARKET orders");
+    }
+    if (command.getQuoteSourceMode() == null) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "quoteSourceMode is required for MARKET orders");
     }
     QuoteFreshnessDecision decision = quoteFreshnessPolicy.evaluate(command.getQuoteAsOf());
     if (!decision.stale()) {
