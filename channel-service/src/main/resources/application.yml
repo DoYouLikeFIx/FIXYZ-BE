@@ -55,6 +55,9 @@ channel:
   audit-security-retention:
     enabled: ${CHANNEL_AUDIT_SECURITY_RETENTION_ENABLED:true}
 
+internal:
+  secret: ${INTERNAL_SECRET:local-internal-secret}
+
 auth:
   login-token:
     ttl: ${AUTH_LOGIN_TOKEN_TTL:5m}
@@ -77,9 +80,12 @@ auth:
     enrollment-pepper: ${AUTH_TOTP_ENROLLMENT_PEPPER:dev-totp-enrollment-pepper}
     secret-store: ${AUTH_TOTP_SECRET_STORE:in-memory}
     vault:
-      base-url: ${AUTH_TOTP_VAULT_BASE_URL:${VAULT_ADDR:http://localhost:8200}}
-      token: ${AUTH_TOTP_VAULT_TOKEN:${VAULT_TOKEN:root-token}}
+      base-url: ${AUTH_TOTP_VAULT_BASE_URL:}
+      token: ${AUTH_TOTP_VAULT_TOKEN:}
       mount: ${AUTH_TOTP_VAULT_MOUNT:secret}
+      trust-store-path: ${AUTH_TOTP_VAULT_TRUST_STORE_PATH:}
+      trust-store-password: ${AUTH_TOTP_VAULT_TRUST_STORE_PASSWORD:}
+      trust-store-type: ${AUTH_TOTP_VAULT_TRUST_STORE_TYPE:PKCS12}
       connect-timeout: ${AUTH_TOTP_VAULT_CONNECT_TIMEOUT:2s}
       read-timeout: ${AUTH_TOTP_VAULT_READ_TIMEOUT:5s}
   password-recovery:

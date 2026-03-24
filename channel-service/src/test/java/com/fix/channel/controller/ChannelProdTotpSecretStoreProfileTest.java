@@ -22,6 +22,10 @@ import org.springframework.test.context.TestPropertySource;
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
+    "AUTH_TOTP_VAULT_BASE_URL=https://vault.example.internal",
+    "AUTH_TOTP_VAULT_TOKEN=test-vault-token",
+    "INTERNAL_SECRET=test-internal-secret",
+    "COREBANK_INTERNAL_SECRET=test-internal-secret",
     "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
     "spring.session.store-type=none",
     "spring.autoconfigure.exclude="
@@ -39,6 +43,9 @@ class ChannelProdTotpSecretStoreProfileTest {
     Properties properties = loadProdProperties();
 
     assertThat(properties.getProperty("auth.totp.secret-store")).isEqualTo("vault");
+    assertThat(properties.getProperty("auth.totp.vault.base-url")).isEqualTo("${AUTH_TOTP_VAULT_BASE_URL}");
+    assertThat(properties.getProperty("auth.totp.vault.token")).isEqualTo("${AUTH_TOTP_VAULT_TOKEN}");
+    assertThat(properties.getProperty("auth.totp.vault.trust-store-path")).isEqualTo("${AUTH_TOTP_VAULT_TRUST_STORE_PATH:}");
     assertThat(totpSecretStore).isInstanceOf(VaultTotpSecretStore.class);
   }
 
