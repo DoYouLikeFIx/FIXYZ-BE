@@ -11,10 +11,13 @@ import static org.mockito.Mockito.when;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.OrderSessionRepository;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Collection;
+import java.util.concurrent.TimeUnit;
 import org.springframework.data.domain.Pageable;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -102,5 +105,22 @@ class OrderSessionMonitoringMetricsTest {
 
     assertThat(meterRegistry.get("channel.order.execution.last.completed.epoch.seconds").gauge().value())
         .isEqualTo((double) Instant.parse("2026-03-24T09:40:00Z").getEpochSecond());
+  }
+
+  @Test
+  void shouldRecordExecutionLatencyTimerWithOutcomeTag() {
+    OrderSessionRepository repository = mock(OrderSessionRepository.class);
+    when(repository.findTopByStatusInOrderByUpdatedAtDescIdDesc(anyCollection())).thenReturn(java.util.Optional.empty());
+    when(repository.findByStatusOrderByEffectiveExecutionTimestampDesc(eq(OrderSessionStatus.COMPLETED), any(Pageable.class)))
+        .thenReturn(List.of());
+    SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+    OrderSessionMonitoringMetrics metrics = new OrderSessionMonitoringMetrics(repository, meterRegistry);
+
+    metrics.recordExecutionLatency("completed", Duration.ofMillis(120).toNanos());
+
+    Timer timer = meterRegistry.get("channel.order.execution.latency").tag("outcome", "completed").timer();
+    assertThat(timer.count()).isEqualTo(1L);
+    assertThat(timer.totalTime(TimeUnit.MILLISECONDS)).isEqualTo(120.0d);
+    assertThat(timer.max(TimeUnit.MILLISECONDS)).isEqualTo(120.0d);
   }
 }

@@ -135,6 +135,21 @@ tasks.register('epic10AcceptanceTests', Test) {
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
 }
 
+tasks.register('epic10ConcurrencyTests', Test) {
+  description = 'Runs Story 10.2 canonical concurrency scenarios owned by corebank-service.'
+  group = 'verification'
+  useJUnitPlatform {
+    includeTags 'epic10-concurrency'
+  }
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  ignoreFailures = true
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10ConcurrencyTests')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10ConcurrencyTests')
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+}
+
 matchingRegressionSuites.each { String taskName, Map suite ->
   tasks.register(taskName, Test) {
     description = suite.description

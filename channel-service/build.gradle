@@ -26,6 +26,15 @@ def executeLatencyMeasuredIterations = providers.gradleProperty('story119Execute
 def executeLatencyP95BudgetMs = providers.gradleProperty('story119ExecutePerfP95BudgetMs')
     .orElse(providers.environmentVariable('STORY119_EXECUTE_PERF_P95_BUDGET_MS'))
     .getOrElse('1000')
+def story102ExecutePerfWarmupIterations = providers.gradleProperty('story102ExecutePerfWarmupIterations')
+    .orElse(providers.environmentVariable('STORY102_EXECUTE_PERF_WARMUP_ITERATIONS'))
+    .getOrElse('5')
+def story102ExecutePerfMeasuredIterations = providers.gradleProperty('story102ExecutePerfMeasuredIterations')
+    .orElse(providers.environmentVariable('STORY102_EXECUTE_PERF_MEASURED_ITERATIONS'))
+    .getOrElse('25')
+def story102ExecutePerfP95BudgetMs = providers.gradleProperty('story102ExecutePerfP95BudgetMs')
+    .orElse(providers.environmentVariable('STORY102_EXECUTE_PERF_P95_BUDGET_MS'))
+    .getOrElse('1000')
 def matchingRegressionArtifactRoot = new File(
     rootProject.projectDir.parentFile,
     "_bmad-output/test-artifacts/matching-regression/${matchingRegressionBuildId}"
@@ -116,6 +125,38 @@ tasks.register('epic10AcceptanceTests', Test) {
   shouldRunAfter tasks.named('test')
   reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10AcceptanceTests')
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10AcceptanceTests')
+}
+
+(1..3).each { int runIndex ->
+  String taskName = "epic10PerformanceRun${runIndex}"
+  def reportOutputFile = layout.buildDirectory.file("test-results/${taskName}/perf-p95.json")
+  tasks.register(taskName, Test) {
+    description = "Runs Story 10.2 execute latency benchmark run ${runIndex}."
+    group = 'verification'
+    useJUnitPlatform {
+      includeTags 'epic10-performance'
+    }
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    shouldRunAfter tasks.named('test')
+    ignoreFailures = true
+    reports.junitXml.outputLocation = layout.buildDirectory.dir("test-results/${taskName}")
+    reports.html.outputLocation = layout.buildDirectory.dir("reports/tests/${taskName}")
+    systemProperty 'story102.execute.perf.outputPath', reportOutputFile.get().asFile.absolutePath
+    systemProperty 'story102.execute.perf.warmupIterations', story102ExecutePerfWarmupIterations
+    systemProperty 'story102.execute.perf.measuredIterations', story102ExecutePerfMeasuredIterations
+    systemProperty 'story102.execute.perf.p95BudgetMs', story102ExecutePerfP95BudgetMs
+  }
+}
+
+tasks.register('epic10PerformanceTests') {
+  description = 'Runs Story 10.2 repeated execute latency benchmark suites.'
+  group = 'verification'
+  dependsOn(
+      tasks.named('epic10PerformanceRun1'),
+      tasks.named('epic10PerformanceRun2'),
+      tasks.named('epic10PerformanceRun3')
+  )
 }
 
 tasks.register('executeLatencySmokeTest', Test) {

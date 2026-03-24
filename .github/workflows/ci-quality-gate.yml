@@ -42,7 +42,8 @@ jobs:
             :corebank-service:resilienceScenarioTest \
             :fep-gateway:test \
             :fep-simulator:test \
-            epic10AcceptanceGate
+            epic10AcceptanceGate \
+            epic10ConcurrencyPerformanceGate
 
       - name: Verify OpenAPI snapshots
         run: |
@@ -52,10 +53,10 @@ jobs:
             :fep-gateway:verifyCommittedOpenApi \
             :fep-simulator:verifyCommittedOpenApi
 
-      - name: Upload Story 10.1 acceptance evidence
+      - name: Upload Epic 10 gate evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: epic10-acceptance-evidence-${{ github.run_id }}
+          name: epic10-gate-evidence-${{ github.run_id }}
           path: _bmad-output/test-artifacts/epic-10/**
           if-no-files-found: error

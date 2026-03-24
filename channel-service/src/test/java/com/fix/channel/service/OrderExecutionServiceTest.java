@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.never;
@@ -39,6 +40,9 @@ class OrderExecutionServiceTest {
   @Mock
   private ChannelScaffoldService channelScaffoldService;
 
+  @Mock
+  private OrderSessionMonitoringMetrics orderSessionMonitoringMetrics;
+
   private OrderExecutionService orderExecutionService;
 
   @BeforeEach
@@ -48,7 +52,8 @@ class OrderExecutionServiceTest {
         corebankClient,
         orderSessionService,
         orderSessionExecutionLockService,
-        channelScaffoldService
+        channelScaffoldService,
+        orderSessionMonitoringMetrics
     );
   }
 
@@ -92,6 +97,7 @@ class OrderExecutionServiceTest {
         eq("ORDER"),
         startsWith("orderSessionId=" + completedSession.getOrderSessionId() + " status=COMPLETED")
     );
+    verify(orderSessionMonitoringMetrics).recordExecutionLatency(eq("completed"), anyLong());
   }
 
   @Test
@@ -149,6 +155,7 @@ class OrderExecutionServiceTest {
         eq("ORDER"),
         startsWith("orderSessionId=" + authedSession.getOrderSessionId() + " status=FAILED")
     );
+    verify(orderSessionMonitoringMetrics).recordExecutionLatency(eq("failed"), anyLong());
   }
 
   @Test

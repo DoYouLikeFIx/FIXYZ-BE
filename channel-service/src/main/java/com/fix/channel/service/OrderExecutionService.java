@@ -26,42 +26,81 @@ public class OrderExecutionService {
   private final OrderSessionService orderSessionService;
   private final OrderSessionExecutionLockService orderSessionExecutionLockService;
   private final ChannelScaffoldService channelScaffoldService;
+  private final OrderSessionMonitoringMetrics orderSessionMonitoringMetrics;
 
   public OrderSessionResult execute(Long memberId, String orderSessionId) {
-    OrderSession session = orderSessionService.requireOwnedSession(memberId, orderSessionId);
-    if (session.getStatus() == OrderSessionStatus.EXECUTING) {
-      throw new BusinessException(
-          ErrorCode.ORDER_SESSION_EXECUTION_IN_PROGRESS,
-          "order session execution is already in progress"
-      );
-    }
-    if (session.getStatus() != OrderSessionStatus.AUTHED) {
-      throw new BusinessException(
-          ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
-          "order session is not authorized for execution"
-      );
-    }
-    orderSessionService.ensureActiveWindow(session);
-
-    orderSessionExecutionLockService.acquire(orderSessionId);
+    long startedAtNanos = System.nanoTime();
+    String latencyOutcome = "rejected";
     try {
-      OrderSession executingSession = orderSessionService.beginExecution(session);
-      OrderExecuteResult result;
+      OrderSession session = orderSessionService.requireOwnedSession(memberId, orderSessionId);
+      if (session.getStatus() == OrderSessionStatus.EXECUTING) {
+        throw new BusinessException(
+            ErrorCode.ORDER_SESSION_EXECUTION_IN_PROGRESS,
+            "order session execution is already in progress"
+        );
+      }
+      if (session.getStatus() != OrderSessionStatus.AUTHED) {
+        throw new BusinessException(
+            ErrorCode.ORDER_SESSION_NOT_AUTHORIZED,
+            "order session is not authorized for execution"
+        );
+      }
+      orderSessionService.ensureActiveWindow(session);
+
+      orderSessionExecutionLockService.acquire(orderSessionId);
       try {
-        result = corebankClient.executeOrder(toCommand(executingSession), ChannelCorrelationIdSupport.currentOrGenerate());
-      } catch (RuntimeException ex) {
+        OrderSession executingSession = orderSessionService.beginExecution(session);
+        OrderExecuteResult result;
         try {
-          handleExecutionFailure(executingSession, ex);
-        } catch (RuntimeException markFailedEx) {
-          ex.addSuppressed(markFailedEx);
+          result = corebankClient.executeOrder(
+              toCommand(executingSession),
+              ChannelCorrelationIdSupport.currentOrGenerate()
+          );
+        } catch (RuntimeException ex) {
+          latencyOutcome = requiresEscalation(ex) ? "escalated" : "failed";
+          try {
+            handleExecutionFailure(executingSession, ex);
+          } catch (RuntimeException markFailedEx) {
+            ex.addSuppressed(markFailedEx);
+          }
+          throw ex;
         }
-        throw ex;
-      }
 
-      if (requiresEscalation(result)) {
-        OrderSession escalatedSession = orderSessionService.markEscalated(
+        if (requiresEscalation(result)) {
+          OrderSession escalatedSession = orderSessionService.markEscalated(
+              executingSession,
+              OrderSession.ESCALATED_MANUAL_REVIEW,
+              result.getExecutionResult(),
+              result.getExecutedQty(),
+              result.getLeavesQty(),
+              result.getExecutedPrice(),
+              result.getExternalOrderId(),
+              result.getExternalSyncStatus(),
+              result.getExecutedAt()
+          );
+          persistTerminalNotification(escalatedSession, "ESCALATED");
+          latencyOutcome = "escalated";
+          return orderSessionService.toResult(escalatedSession, false, result.isIdempotent());
+        }
+
+        if (requiresRequery(result)) {
+          OrderSession requeryingSession = orderSessionService.beginRequerying(
+              executingSession,
+              REQUERY_REQUIRED_REASON,
+              result.getExecutionResult(),
+              result.getExecutedQty(),
+              result.getLeavesQty(),
+              result.getExecutedPrice(),
+              result.getExternalOrderId(),
+              result.getExternalSyncStatus(),
+              result.getExecutedAt()
+          );
+          latencyOutcome = "requerying";
+          return orderSessionService.toResult(requeryingSession, false, result.isIdempotent());
+        }
+
+        OrderSession completedSession = orderSessionService.completeExecution(
             executingSession,
-            OrderSession.ESCALATED_MANUAL_REVIEW,
             result.getExecutionResult(),
             result.getExecutedQty(),
             result.getLeavesQty(),
@@ -70,39 +109,14 @@ public class OrderExecutionService {
             result.getExternalSyncStatus(),
             result.getExecutedAt()
         );
-        persistTerminalNotification(escalatedSession, "ESCALATED");
-        return orderSessionService.toResult(escalatedSession, false, result.isIdempotent());
+        persistTerminalNotification(completedSession, "COMPLETED");
+        latencyOutcome = "completed";
+        return orderSessionService.toResult(completedSession, false, result.isIdempotent());
+      } finally {
+        orderSessionExecutionLockService.release(orderSessionId);
       }
-
-      if (requiresRequery(result)) {
-        OrderSession requeryingSession = orderSessionService.beginRequerying(
-            executingSession,
-            REQUERY_REQUIRED_REASON,
-            result.getExecutionResult(),
-            result.getExecutedQty(),
-            result.getLeavesQty(),
-            result.getExecutedPrice(),
-            result.getExternalOrderId(),
-            result.getExternalSyncStatus(),
-            result.getExecutedAt()
-        );
-        return orderSessionService.toResult(requeryingSession, false, result.isIdempotent());
-      }
-
-      OrderSession completedSession = orderSessionService.completeExecution(
-          executingSession,
-          result.getExecutionResult(),
-          result.getExecutedQty(),
-          result.getLeavesQty(),
-          result.getExecutedPrice(),
-          result.getExternalOrderId(),
-          result.getExternalSyncStatus(),
-          result.getExecutedAt()
-      );
-      persistTerminalNotification(completedSession, "COMPLETED");
-      return orderSessionService.toResult(completedSession, false, result.isIdempotent());
     } finally {
-      orderSessionExecutionLockService.release(orderSessionId);
+      orderSessionMonitoringMetrics.recordExecutionLatency(latencyOutcome, System.nanoTime() - startedAtNanos);
     }
   }
 
