@@ -14,6 +14,8 @@ import com.fix.channel.testsupport.OrderSessionTestFixture;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
 import com.fix.common.web.CommonHeaders;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,8 +28,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -61,17 +65,27 @@ import org.springframework.web.client.RestClient;
 @WithMockUser(username = "perf-user")
 class OrderExecuteLatencySmokeTest {
 
+  private static final String SCENARIO_ID = "E10-PERF-001";
   private static final long MEMBER_ID = 301L;
   private static final long ACCOUNT_ID = 1L;
-  private static final int WARMUP_ITERATIONS = Integer.getInteger(
+  private static final String EXECUTION_LATENCY_METER = "channel.order.execution.latency";
+  private static final String EXECUTION_LATENCY_OUTCOME = "completed";
+  private static final String EXECUTION_LATENCY_PROMETHEUS_FAMILY = "channel_order_execution_latency_seconds";
+  private static final int WARMUP_ITERATIONS = integerProperty(
+      "story102.execute.perf.warmupIterations",
       "story119.execute.perf.warmupIterations",
       5
   );
-  private static final int MEASURED_ITERATIONS = Integer.getInteger(
+  private static final int MEASURED_ITERATIONS = integerProperty(
+      "story102.execute.perf.measuredIterations",
       "story119.execute.perf.measuredIterations",
       25
   );
-  private static final long P95_BUDGET_MS = Long.getLong("story119.execute.perf.p95BudgetMs", 1_000L);
+  private static final long P95_BUDGET_MS = longProperty(
+      "story102.execute.perf.p95BudgetMs",
+      "story119.execute.perf.p95BudgetMs",
+      1_000L
+  );
 
   @Autowired
   private MockMvc mockMvc;
@@ -88,6 +102,9 @@ class OrderExecuteLatencySmokeTest {
   @Autowired
   private FakeCorebankClient fakeCorebankClient;
 
+  @Autowired
+  private MeterRegistry meterRegistry;
+
   @BeforeEach
   void setUp() {
     orderSessionTestFixture.reset();
@@ -96,11 +113,13 @@ class OrderExecuteLatencySmokeTest {
   }
 
   @Test
-  void shouldKeepExecuteP95UnderOneSecondBudget() throws Exception {
+  @Tag("epic10-performance")
+  void e10Perf001ShouldKeepExecuteP95WithinConfiguredBudget() throws Exception {
     List<Double> latencySamplesMs = new ArrayList<>();
     Double p50Ms = null;
     Double p95Ms = null;
     Double maxMs = null;
+    Timer executionLatencyTimer = null;
     Throwable failure = null;
 
     try {
@@ -118,16 +137,23 @@ class OrderExecuteLatencySmokeTest {
       p50Ms = percentile(sortedSamples, 0.50d);
       p95Ms = percentile(sortedSamples, 0.95d);
       maxMs = sortedSamples.get(sortedSamples.size() - 1);
+      executionLatencyTimer = meterRegistry.find(EXECUTION_LATENCY_METER)
+          .tag("outcome", EXECUTION_LATENCY_OUTCOME)
+          .timer();
 
       assertThat(p95Ms)
           .as("execute endpoint p95 latency must stay within %s ms budget", P95_BUDGET_MS)
           .isLessThanOrEqualTo((double) P95_BUDGET_MS);
+      assertThat(executionLatencyTimer)
+          .as("expected %s timer with outcome=%s to be registered", EXECUTION_LATENCY_METER, EXECUTION_LATENCY_OUTCOME)
+          .isNotNull();
+      assertThat(executionLatencyTimer.count()).isEqualTo(WARMUP_ITERATIONS + MEASURED_ITERATIONS);
     } catch (Throwable throwable) {
       failure = throwable;
       throw throwable;
     } finally {
       try {
-        writePerfReport(latencySamplesMs, p50Ms, p95Ms, maxMs, failure);
+        writePerfReport(latencySamplesMs, p50Ms, p95Ms, maxMs, executionLatencyTimer, failure);
       } catch (Exception reportFailure) {
         if (failure != null) {
           failure.addSuppressed(reportFailure);
@@ -195,9 +221,10 @@ class OrderExecuteLatencySmokeTest {
       Double p50Ms,
       Double p95Ms,
       Double maxMs,
+      Timer executionLatencyTimer,
       Throwable failure
   ) throws Exception {
-    String outputPath = System.getProperty("story119.execute.perf.outputPath");
+    String outputPath = firstSystemProperty("story102.execute.perf.outputPath", "story119.execute.perf.outputPath");
     if (outputPath == null || outputPath.isBlank()) {
       return;
     }
@@ -206,6 +233,8 @@ class OrderExecuteLatencySmokeTest {
     Files.createDirectories(reportPath.getParent());
 
     Map<String, Object> report = new LinkedHashMap<>();
+    report.put("storyId", "10.2");
+    report.put("scenarioId", SCENARIO_ID);
     report.put("generatedAt", Instant.now().toString());
     report.put("warmupIterations", WARMUP_ITERATIONS);
     report.put("measuredIterations", MEASURED_ITERATIONS);
@@ -215,6 +244,15 @@ class OrderExecuteLatencySmokeTest {
     report.put("p95Ms", p95Ms == null ? null : round(p95Ms));
     report.put("maxMs", maxMs == null ? null : round(maxMs));
     report.put("samplesMs", latencySamplesMs.stream().map(OrderExecuteLatencySmokeTest::round).toList());
+    report.put("metricName", EXECUTION_LATENCY_METER);
+    report.put("metricOutcome", EXECUTION_LATENCY_OUTCOME);
+    report.put("prometheusMetricFamily", EXECUTION_LATENCY_PROMETHEUS_FAMILY);
+    report.put("metricCount", executionLatencyTimer == null ? null : executionLatencyTimer.count());
+    report.put(
+        "metricTotalTimeMs",
+        executionLatencyTimer == null ? null : round(executionLatencyTimer.totalTime(TimeUnit.MILLISECONDS))
+    );
+    report.put("metricMaxMs", executionLatencyTimer == null ? null : round(executionLatencyTimer.max(TimeUnit.MILLISECONDS)));
     report.put("result", failure == null && p95Ms != null && p95Ms <= P95_BUDGET_MS ? "PASSED" : "FAILED");
     report.put("failureType", failure == null ? null : failure.getClass().getName());
     report.put("failureMessage", failure == null ? null : failure.getMessage());
@@ -224,6 +262,22 @@ class OrderExecuteLatencySmokeTest {
 
   private static double round(double value) {
     return Math.round(value * 1_000.0d) / 1_000.0d;
+  }
+
+  private static int integerProperty(String primaryKey, String legacyKey, int defaultValue) {
+    return Integer.getInteger(primaryKey, Integer.getInteger(legacyKey, defaultValue));
+  }
+
+  private static long longProperty(String primaryKey, String legacyKey, long defaultValue) {
+    return Long.getLong(primaryKey, Long.getLong(legacyKey, defaultValue));
+  }
+
+  private static String firstSystemProperty(String primaryKey, String legacyKey) {
+    String primaryValue = System.getProperty(primaryKey);
+    if (primaryValue != null && !primaryValue.isBlank()) {
+      return primaryValue;
+    }
+    return System.getProperty(legacyKey);
   }
 
   @TestConfiguration

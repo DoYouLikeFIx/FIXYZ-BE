@@ -5,10 +5,15 @@ import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.OrderSessionRepository;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,11 +26,20 @@ public class OrderSessionMonitoringMetrics {
       OrderSessionStatus.REQUERYING,
       OrderSessionStatus.ESCALATED
   );
+  private static final Duration[] EXECUTION_LATENCY_SLOS = {
+      Duration.ofMillis(50),
+      Duration.ofMillis(100),
+      Duration.ofMillis(250),
+      Duration.ofMillis(500),
+      Duration.ofMillis(1_000),
+      Duration.ofMillis(2_000)
+  };
 
   private final OrderSessionRepository orderSessionRepository;
   private final MeterRegistry meterRegistry;
   private final AtomicLong lastPendingSessionUpdatedEpochSeconds;
   private final AtomicLong lastCompletedExecutionEpochSeconds;
+  private final ConcurrentMap<String, Timer> executionLatencyTimers;
 
   @Autowired
   public OrderSessionMonitoringMetrics(
@@ -36,6 +50,7 @@ public class OrderSessionMonitoringMetrics {
     this.meterRegistry = meterRegistry;
     this.lastPendingSessionUpdatedEpochSeconds = new AtomicLong(seedLatestRecoveryBacklogUpdateEpochSeconds());
     this.lastCompletedExecutionEpochSeconds = new AtomicLong(seedLatestCompletedExecutionEpochSeconds());
+    this.executionLatencyTimers = new ConcurrentHashMap<>();
     Gauge.builder("channel.order.sessions.recovery.backlog", orderSessionRepository, this::countPendingSessions)
         .description("Current recovery backlog sessions awaiting requery or manual intervention")
         .register(meterRegistry);
@@ -62,6 +77,10 @@ public class OrderSessionMonitoringMetrics {
         normalizeExecutionResult(session.getExecutionResult())
     ).increment();
     lastCompletedExecutionEpochSeconds.accumulateAndGet(resolveExecutionEpochSeconds(session), Math::max);
+  }
+
+  public void recordExecutionLatency(String outcome, long elapsedNanos) {
+    executionLatencyTimer(outcome).record(elapsedNanos, TimeUnit.NANOSECONDS);
   }
 
   public void refreshRecoveryBacklogLastUpdated() {
@@ -110,5 +129,24 @@ public class OrderSessionMonitoringMetrics {
       return "unknown";
     }
     return executionResult.toLowerCase(Locale.ROOT);
+  }
+
+  private Timer executionLatencyTimer(String outcome) {
+    String normalizedOutcome = normalizeExecutionOutcome(outcome);
+    return executionLatencyTimers.computeIfAbsent(normalizedOutcome, key ->
+        Timer.builder("channel.order.execution.latency")
+            .description("Latency of the channel execute path from request validation to terminal outcome")
+            .publishPercentileHistogram()
+            .serviceLevelObjectives(EXECUTION_LATENCY_SLOS)
+            .tag("outcome", key)
+            .register(meterRegistry)
+    );
+  }
+
+  private String normalizeExecutionOutcome(String outcome) {
+    if (outcome == null || outcome.isBlank()) {
+      return "unknown";
+    }
+    return outcome.toLowerCase(Locale.ROOT);
   }
 }
