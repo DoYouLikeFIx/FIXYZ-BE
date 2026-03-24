@@ -55,7 +55,8 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
 
   private static final long ACCOUNT_ID = 1L;
   private static final String SYMBOL = "005930";
-  private static final int THREAD_COUNT = 10;
+  private static final int ACCEPTANCE_THREAD_COUNT = 10;
+  private static final int PERFORMANCE_THREAD_COUNT = 100;
   private static final BigDecimal ORDER_QTY = new BigDecimal("100.0000");
   private static final BigDecimal ORDER_PRICE = new BigDecimal("72000.0000");
   private static final Instant EXECUTED_AT = Instant.parse("2026-03-01T10:05:30Z");
@@ -105,6 +106,64 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
   @Tag("epic10-acceptance")
   @Timeout(20)
   void e10_002ShouldAllowExactlyFiveFilledSellOrdersWithoutOversellUnderTenThreadLoad() throws Exception {
+    ConcurrentSellRunResult runResult = runConcurrentSellScenario(
+        ACCEPTANCE_THREAD_COUNT,
+        Duration.ofSeconds(10)
+    );
+
+    assertThat(runResult.elapsed()).isLessThanOrEqualTo(Duration.ofSeconds(5));
+    assertThat(runResult.successes()).hasSize(5);
+    assertThat(runResult.successes())
+        .allSatisfy(outcome -> {
+          assertThat(outcome.status()).isEqualTo("FILLED");
+          assertThat(outcome.executionResult()).isEqualTo("FILLED");
+        });
+    assertThat(runResult.failures()).hasSize(5);
+    assertThat(runResult.failures())
+        .allSatisfy(outcome -> assertThat(outcome.errorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION));
+
+    assertThat(runResult.accountCashBalance()).isEqualByComparingTo("136000000.0000");
+    assertThat(runResult.finalPositionQty()).isEqualByComparingTo("0.0000");
+    assertThat(runResult.finalPositionQty().signum()).isNotNegative();
+    assertThat(runResult.orderCount()).isEqualTo(6);
+    assertThat(runResult.executionCount()).isEqualTo(ACCEPTANCE_THREAD_COUNT);
+    assertThat(runResult.journalEntryCount()).isEqualTo(ACCEPTANCE_THREAD_COUNT);
+    assertThat(runResult.ledgerEntryCount()).isEqualTo(ACCEPTANCE_THREAD_COUNT * 2);
+    assertThat(runResult.ledgerEntryRefCount()).isEqualTo(ACCEPTANCE_THREAD_COUNT * 2);
+
+    verify(fepClient, times(5)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
+  }
+
+  @Test
+  @Tag("epic10-concurrency")
+  @Timeout(40)
+  void e10Conc001ShouldPreservePositionIntegrityAcrossHundredConcurrentSellAttempts() throws Exception {
+    ConcurrentSellRunResult runResult = runConcurrentSellScenario(
+        PERFORMANCE_THREAD_COUNT,
+        Duration.ofSeconds(20)
+    );
+
+    assertThat(runResult.successes()).hasSize(5);
+    assertThat(runResult.failures()).hasSize(PERFORMANCE_THREAD_COUNT - 5);
+    assertThat(runResult.failures())
+        .allSatisfy(outcome -> assertThat(outcome.errorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION));
+
+    assertThat(runResult.accountCashBalance()).isEqualByComparingTo("136000000.0000");
+    assertThat(runResult.finalPositionQty()).isEqualByComparingTo("0.0000");
+    assertThat(runResult.finalPositionQty().signum()).isNotNegative();
+    assertThat(runResult.orderCount()).isEqualTo(6);
+    assertThat(runResult.executionCount()).isGreaterThanOrEqualTo(runResult.successes().size());
+    assertThat(runResult.journalEntryCount()).isEqualTo(runResult.executionCount());
+    assertThat(runResult.ledgerEntryCount()).isEqualTo(runResult.executionCount() * 2);
+    assertThat(runResult.ledgerEntryRefCount()).isEqualTo(runResult.executionCount() * 2);
+
+    verify(fepClient, times(5)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
+  }
+
+  private ConcurrentSellRunResult runConcurrentSellScenario(
+      int threadCount,
+      Duration futureTimeout
+  ) throws Exception {
     seedRestingBuyLiquidity(
         jdbcTemplate,
         orderRepository,
@@ -116,13 +175,13 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
         new BigDecimal("500.0000"),
         ORDER_PRICE
     );
-    CountDownLatch ready = new CountDownLatch(THREAD_COUNT);
+    CountDownLatch ready = new CountDownLatch(threadCount);
     CountDownLatch start = new CountDownLatch(1);
-    ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
+    ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
 
     try {
       List<Future<AttemptOutcome>> futures = new ArrayList<>();
-      for (int i = 0; i < THREAD_COUNT; i++) {
+      for (int i = 0; i < threadCount; i++) {
         String clOrdId = UUID.randomUUID().toString();
         futures.add(executorService.submit(taskFor(clOrdId, SYMBOL, ready, start)));
       }
@@ -134,38 +193,23 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
 
       List<AttemptOutcome> outcomes = new ArrayList<>();
       for (Future<AttemptOutcome> future : futures) {
-        outcomes.add(future.get(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS));
+        outcomes.add(future.get(futureTimeout.toMillis(), TimeUnit.MILLISECONDS));
       }
-      Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+      List<AttemptOutcome> successes = outcomes.stream().filter(AttemptOutcome::success).toList();
+      List<AttemptOutcome> failures = outcomes.stream().filter(outcome -> !outcome.success()).toList();
 
-      List<AttemptOutcome> successes = outcomes.stream()
-          .filter(AttemptOutcome::success)
-          .toList();
-      List<AttemptOutcome> failures = outcomes.stream()
-          .filter(outcome -> !outcome.success())
-          .toList();
-
-      assertThat(elapsed).isLessThanOrEqualTo(Duration.ofSeconds(5));
-      assertThat(successes).hasSize(5);
-      assertThat(successes)
-          .allSatisfy(outcome -> {
-            assertThat(outcome.status()).isEqualTo("FILLED");
-            assertThat(outcome.executionResult()).isEqualTo("FILLED");
-          });
-      assertThat(failures).hasSize(5);
-      assertThat(failures)
-          .allSatisfy(outcome -> assertThat(outcome.errorCode()).isEqualTo(ErrorCode.ORD_INSUFFICIENT_POSITION));
-
-      assertThat(accountCashBalance()).isEqualByComparingTo("136000000.0000");
-      assertThat(positionQuantity(SYMBOL)).isEqualByComparingTo("0.0000");
-      assertThat(positionQuantity(SYMBOL).signum()).isNotNegative();
-      assertThat(count("orders")).isEqualTo(6);
-      assertThat(count("executions")).isEqualTo(10);
-      assertThat(count("journal_entries")).isEqualTo(10);
-      assertThat(count("ledger_entries")).isEqualTo(20);
-      assertThat(count("ledger_entry_refs")).isEqualTo(20);
-
-      verify(fepClient, times(5)).submitOrder(any(FepOutboundOrderPayload.class), anyString());
+      return new ConcurrentSellRunResult(
+          successes,
+          failures,
+          Duration.ofNanos(System.nanoTime() - startedAt),
+          count("orders"),
+          count("executions"),
+          count("journal_entries"),
+          count("ledger_entries"),
+          count("ledger_entry_refs"),
+          accountCashBalance(),
+          positionQuantity(SYMBOL)
+      );
     } finally {
       executorService.shutdownNow();
       executorService.awaitTermination(5, TimeUnit.SECONDS);
@@ -334,5 +378,19 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
     private static AttemptOutcome failure(String clOrdId, ErrorCode errorCode) {
       return new AttemptOutcome(clOrdId, false, null, null, errorCode);
     }
+  }
+
+  private record ConcurrentSellRunResult(
+      List<AttemptOutcome> successes,
+      List<AttemptOutcome> failures,
+      Duration elapsed,
+      int orderCount,
+      int executionCount,
+      int journalEntryCount,
+      int ledgerEntryCount,
+      int ledgerEntryRefCount,
+      BigDecimal accountCashBalance,
+      BigDecimal finalPositionQty
+  ) {
   }
 }

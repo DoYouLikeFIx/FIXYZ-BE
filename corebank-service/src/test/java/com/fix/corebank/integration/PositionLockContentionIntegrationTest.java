@@ -39,6 +39,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -108,8 +109,9 @@ class PositionLockContentionIntegrationTest extends CorebankContainersIntegratio
   }
 
   @Test
+  @Tag("epic10-concurrency")
   @Timeout(20)
-  void shouldReturnCore003WhenSameSymbolPositionLockContentionExceedsTimeout() throws Exception {
+  void e10Conc002ShouldExposeConflictMetricsWhenSameSymbolPositionLockContentionExceedsTimeout() throws Exception {
     String firstClOrdId = UUID.randomUUID().toString();
     String secondClOrdId = UUID.randomUUID().toString();
     CountDownLatch firstPositionLocked = new CountDownLatch(1);
