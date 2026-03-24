@@ -40,10 +40,11 @@ jobs:
             :corebank-domain:test \
             :corebank-service:test \
             :corebank-service:resilienceScenarioTest \
-            :fep-gateway:test \
-            :fep-simulator:test \
-            epic10AcceptanceGate \
-            epic10ConcurrencyPerformanceGate
+              :fep-gateway:test \
+              :fep-simulator:test \
+              epic10AcceptanceGate \
+              epic10ConcurrencyPerformanceGate \
+              epic10ResilienceGate
 
       - name: Verify OpenAPI snapshots
         run: |
