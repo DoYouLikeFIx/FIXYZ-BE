@@ -17,6 +17,7 @@ spring:
     username: ${CHANNEL_DB_USERNAME:fix}
     password: ${CHANNEL_DB_PASSWORD:fix}
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
   flyway:
@@ -44,7 +45,7 @@ springdoc:
 management:
   server:
     port: ${CHANNEL_MANAGEMENT_PORT:18080}
-    address: ${CHANNEL_MANAGEMENT_ADDRESS:0.0.0.0}
+    address: ${CHANNEL_MANAGEMENT_ADDRESS:127.0.0.1}
   endpoints:
     web:
       exposure:
