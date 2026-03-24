@@ -5,31 +5,63 @@ import com.fix.channel.entity.OrderSessionStatus;
 import com.fix.channel.repository.OrderSessionRepository;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class OrderSessionMonitoringMetrics {
 
-  private static final List<OrderSessionStatus> PENDING_STATUSES = List.of(
-      OrderSessionStatus.PENDING_NEW,
-      OrderSessionStatus.AUTHED,
-      OrderSessionStatus.EXECUTING,
-      OrderSessionStatus.REQUERYING
+  private static final List<OrderSessionStatus> RECOVERY_BACKLOG_STATUSES = List.of(
+      OrderSessionStatus.REQUERYING,
+      OrderSessionStatus.ESCALATED
   );
 
   private final OrderSessionRepository orderSessionRepository;
   private final MeterRegistry meterRegistry;
+  private final Clock clock;
+  private final AtomicLong lastPendingSessionUpdatedEpochSeconds;
+  private final AtomicLong lastCompletedExecutionEpochSeconds;
 
+  @Autowired
   public OrderSessionMonitoringMetrics(
       OrderSessionRepository orderSessionRepository,
       MeterRegistry meterRegistry
   ) {
+    this(orderSessionRepository, meterRegistry, Clock.systemUTC());
+  }
+
+  OrderSessionMonitoringMetrics(
+      OrderSessionRepository orderSessionRepository,
+      MeterRegistry meterRegistry,
+      Clock clock
+  ) {
     this.orderSessionRepository = orderSessionRepository;
     this.meterRegistry = meterRegistry;
-    Gauge.builder("channel.order.sessions.pending", orderSessionRepository, this::countPendingSessions)
-        .description("Current non-terminal order sessions awaiting execution or recovery")
+    this.clock = clock;
+    this.lastPendingSessionUpdatedEpochSeconds = new AtomicLong(seedLatestRecoveryBacklogUpdateEpochSeconds());
+    this.lastCompletedExecutionEpochSeconds = new AtomicLong(seedLatestCompletedExecutionEpochSeconds());
+    Gauge.builder("channel.order.sessions.recovery.backlog", orderSessionRepository, this::countPendingSessions)
+        .description("Current recovery backlog sessions awaiting requery or manual intervention")
+        .register(meterRegistry);
+    Gauge.builder(
+        "channel.order.sessions.recovery.backlog.last.updated.epoch.seconds",
+        lastPendingSessionUpdatedEpochSeconds,
+        AtomicLong::get
+    )
+        .description("Epoch seconds of the most recent recovery backlog mutation")
+        .register(meterRegistry);
+    Gauge.builder(
+        "channel.order.execution.last.completed.epoch.seconds",
+        lastCompletedExecutionEpochSeconds,
+        AtomicLong::get
+    )
+        .description("Epoch seconds of the most recent completed order execution")
         .register(meterRegistry);
   }
 
@@ -39,10 +71,44 @@ public class OrderSessionMonitoringMetrics {
         "result",
         normalizeExecutionResult(session.getExecutionResult())
     ).increment();
+    lastCompletedExecutionEpochSeconds.accumulateAndGet(resolveExecutionEpochSeconds(session), Math::max);
+  }
+
+  public void recordRecoveryBacklogMutation() {
+    lastPendingSessionUpdatedEpochSeconds.accumulateAndGet(clock.instant().getEpochSecond(), Math::max);
   }
 
   double countPendingSessions(OrderSessionRepository repository) {
-    return repository.countByStatusIn(PENDING_STATUSES);
+    return repository.countByStatusIn(RECOVERY_BACKLOG_STATUSES);
+  }
+
+  boolean isRecoveryBacklogStatus(OrderSessionStatus status) {
+    return status != null && RECOVERY_BACKLOG_STATUSES.contains(status);
+  }
+
+  private long seedLatestRecoveryBacklogUpdateEpochSeconds() {
+    Optional<OrderSession> latestSession = Optional.ofNullable(
+        orderSessionRepository.findTopByStatusInOrderByUpdatedAtDescIdDesc(RECOVERY_BACKLOG_STATUSES)
+    ).orElse(Optional.empty());
+    return latestSession.map(OrderSession::getUpdatedAt).map(OrderSessionMonitoringMetrics::toEpochSeconds).orElse(0L);
+  }
+
+  private long seedLatestCompletedExecutionEpochSeconds() {
+    Optional<OrderSession> latestExecution =
+        Optional.ofNullable(orderSessionRepository.findTopByExecutedAtIsNotNullOrderByExecutedAtDesc())
+            .orElse(Optional.empty());
+    return latestExecution.map(this::resolveExecutionEpochSeconds).orElse(0L);
+  }
+
+  private long resolveExecutionEpochSeconds(OrderSession session) {
+    if (session.getExecutedAt() != null) {
+      return toEpochSeconds(session.getExecutedAt());
+    }
+    return toEpochSeconds(session.getUpdatedAt());
+  }
+
+  private static long toEpochSeconds(Instant timestamp) {
+    return timestamp == null ? 0L : timestamp.getEpochSecond();
   }
 
   private String normalizeExecutionResult(String executionResult) {
