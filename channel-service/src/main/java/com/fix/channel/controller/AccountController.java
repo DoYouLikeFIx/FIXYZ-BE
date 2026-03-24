@@ -3,7 +3,6 @@ package com.fix.channel.controller;
 import com.fix.channel.dto.request.AccountPositionQueryRequest;
 import com.fix.channel.dto.request.AccountOrderHistoryQueryRequest;
 import com.fix.channel.dto.response.AccountOrderHistoryResponse;
-import com.fix.channel.dto.response.ApiResponseAccountSummaryResponse;
 import com.fix.channel.dto.response.AccountPositionResponse;
 import com.fix.channel.dto.response.AccountSummaryResponse;
 import com.fix.channel.service.AccountOrderHistoryService;
@@ -14,8 +13,6 @@ import com.fix.common.error.ApiResponse;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.List;
@@ -72,19 +69,13 @@ public class AccountController {
   }
 
   @GetMapping("/{accountId}/summary")
-  @Operation(
-      summary = "Get account summary",
-      responses = @io.swagger.v3.oas.annotations.responses.ApiResponse(
-          responseCode = "200",
-          content = @Content(schema = @Schema(implementation = ApiResponseAccountSummaryResponse.class))
-      )
-  )
-  public ApiResponseAccountSummaryResponse getSummary(
+  @Operation(summary = "Get account summary")
+  public ApiResponse<AccountSummaryResponse> getSummary(
       @PathVariable Long accountId,
       HttpServletRequest httpServletRequest
   ) {
     Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
-    return ApiResponseAccountSummaryResponse.success(AccountSummaryResponse.from(
+    return ApiResponse.success(AccountSummaryResponse.from(
         accountPositionService.getAccountSummary(AccountSummaryQueryCommand.of(accountId, memberId))
     ));
   }
