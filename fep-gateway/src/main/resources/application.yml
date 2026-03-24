@@ -55,8 +55,8 @@ springdoc:
 
 management:
   server:
-    port: 18083
-    address: 127.0.0.1
+    port: ${FEP_GATEWAY_MANAGEMENT_PORT:18083}
+    address: ${FEP_GATEWAY_MANAGEMENT_ADDRESS:0.0.0.0}
   endpoints:
     web:
       exposure:

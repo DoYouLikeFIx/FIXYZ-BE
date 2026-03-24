@@ -33,8 +33,8 @@ springdoc:
 
 management:
   server:
-    port: 19081
-    address: 127.0.0.1
+    port: ${COREBANK_MANAGEMENT_PORT:19081}
+    address: ${COREBANK_MANAGEMENT_ADDRESS:0.0.0.0}
   endpoints:
     web:
       exposure:
