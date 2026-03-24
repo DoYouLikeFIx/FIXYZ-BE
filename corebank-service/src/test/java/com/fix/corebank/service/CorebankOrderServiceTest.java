@@ -1761,8 +1761,8 @@ class CorebankOrderServiceTest {
           savedOrderRef[0] = persisted;
           return persisted;
         });
-    when(executionRepository.countByOrderId(anyLong())).thenReturn(0L);
-    when(executionRepository.countByOrderId(9401L)).thenReturn(2L);
+    when(executionRepository.findLatestExecutionSequenceForUpdate(anyLong())).thenReturn(0);
+    when(executionRepository.findLatestExecutionSequenceForUpdate(9401L)).thenReturn(2);
     when(journalEntryRepository.save(any(JournalEntry.class)))
         .thenAnswer(invocation -> withId(invocation.getArgument(0), 7410L));
     when(ledgerEntryRepository.save(any(LedgerEntry.class)))
