@@ -76,43 +76,25 @@ public class AdminOrderIdempotencyReconciliationService {
     OrderSession session = orderSessionRepository.findByClOrdId(clOrdId)
         .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_SESSION_NOT_FOUND, "Order session not found."));
     if (!isReconciliationEligible(session)) {
-      return recordFailure(
+      return completeResult(recordFailure(
           session,
           actor,
           null,
           FAILURE_REASON_SESSION_NOT_EXECUTION_ELIGIBLE,
           "order session is not in a post-execution reconciliation state"
-      );
+      ));
     }
 
     try {
       CorebankOrderSnapshotResult snapshot = corebankClient.getOrderSnapshot(clOrdId, actor.getCorrelationId());
-      String mismatchType = detectMismatchType(session, snapshot);
-      if (mismatchType != null) {
-        return recordMismatch(session, actor, snapshot, mismatchType, "canonical state mismatch detected");
-      }
-
       CorebankOrderSnapshotResult reconciledSnapshot = refreshIfNeeded(snapshot, session, actor.getCorrelationId());
-      mismatchType = detectMismatchType(session, reconciledSnapshot);
-      if (mismatchType != null) {
-        return recordMismatch(session, actor, reconciledSnapshot, mismatchType, "canonical state mismatch detected");
-      }
-      if (!hasConfirmedExternalLinkage(reconciledSnapshot)) {
-        return recordFailure(
-            session,
-            actor,
-            reconciledSnapshot,
-            FAILURE_REASON_DOWNSTREAM_SYNC_UNRESOLVED,
-            "downstream reconciliation did not reach confirmed external linkage"
-        );
-      }
-      return reconcileWithShortLock(clOrdId, actor, reconciledSnapshot);
+      return completeResult(reconcileWithShortLock(clOrdId, actor, reconciledSnapshot));
     } catch (BusinessException ex) {
       String mismatchType = mismatchTypeFor(ex);
       if (mismatchType != null) {
-        return recordMismatch(session, actor, null, mismatchType, ex.getMessage());
+        return completeResult(recordMismatch(session, actor, null, mismatchType, ex.getMessage()));
       }
-      return recordFailure(session, actor, null, ex.getErrorCode().name(), ex.getMessage());
+      return completeResult(recordFailure(session, actor, null, ex.getErrorCode().name(), ex.getMessage()));
     }
   }
 
@@ -121,7 +103,7 @@ public class AdminOrderIdempotencyReconciliationService {
       AdminActorContext actor,
       CorebankOrderSnapshotResult snapshot
   ) {
-    AdminOrderIdempotencyReconciliationResult result = transactionTemplate.execute(status -> {
+    return transactionTemplate.execute(status -> {
       OrderSession lockedSession = orderSessionRepository.findByClOrdIdForUpdate(clOrdId)
           .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_SESSION_NOT_FOUND, "Order session not found."));
       if (!isReconciliationEligible(lockedSession)) {
@@ -160,8 +142,6 @@ public class AdminOrderIdempotencyReconciliationService {
           + ", externalSyncStatus=" + snapshot.getExternalSyncStatus()
           + ", actor=" + actor.getAdminEmail();
       recordAudit(reconciledSession, actor, detail);
-      runSuccessCounter.increment();
-      restoredRecordCounter.increment();
       return AdminOrderIdempotencyReconciliationResult.of(
           clOrdId,
           reconciledSession.getOrderSessionId(),
@@ -176,10 +156,6 @@ public class AdminOrderIdempotencyReconciliationService {
           0
       );
     });
-    if (result == null) {
-      throw new IllegalStateException("transactional reconciliation must return a result");
-    }
-    return result;
   }
 
   private CorebankOrderSnapshotResult refreshIfNeeded(
@@ -241,7 +217,7 @@ public class AdminOrderIdempotencyReconciliationService {
       case "FILLED", "PARTIALLY_FILLED", "ACCEPTED" ->
           sessionStatus == OrderSessionStatus.COMPLETED ? null : "TERMINAL_STATE_MISMATCH";
       case "CANCELED" -> sessionStatus == OrderSessionStatus.CANCELED ? null : "TERMINAL_STATE_MISMATCH";
-      case "REJECTED" -> "TERMINAL_STATE_MISMATCH";
+      case "REJECTED" -> sessionStatus == OrderSessionStatus.FAILED ? null : "TERMINAL_STATE_MISMATCH";
       default -> null;
     };
   }
@@ -281,8 +257,6 @@ public class AdminOrderIdempotencyReconciliationService {
         + ", corebankExternalOrderId=" + (snapshot == null ? null : snapshot.getExternalOrderId())
         + ", actor=" + actor.getAdminEmail();
     recordAudit(session, actor, detail);
-    runSuccessCounter.increment();
-    mismatchedRecordCounter.increment();
     return AdminOrderIdempotencyReconciliationResult.of(
         session.getClOrdId(),
         session.getOrderSessionId(),
@@ -312,8 +286,6 @@ public class AdminOrderIdempotencyReconciliationService {
         + ", actor=" + actor.getAdminEmail()
         + ", message=" + message;
     recordAudit(session, actor, detail);
-    runFailedCounter.increment();
-    failedRecordCounter.increment();
     return AdminOrderIdempotencyReconciliationResult.of(
         session.getClOrdId(),
         session.getOrderSessionId(),
@@ -327,6 +299,34 @@ public class AdminOrderIdempotencyReconciliationService {
         0,
         1
     );
+  }
+
+  private AdminOrderIdempotencyReconciliationResult completeResult(
+      AdminOrderIdempotencyReconciliationResult result
+  ) {
+    if (result == null) {
+      throw new IllegalStateException("transactional reconciliation must return a result");
+    }
+    incrementOutcomeMetrics(result);
+    return result;
+  }
+
+  private void incrementOutcomeMetrics(AdminOrderIdempotencyReconciliationResult result) {
+    String outcome = normalize(result.getOutcome());
+    if (OUTCOME_RESTORED.equals(outcome)) {
+      runSuccessCounter.increment();
+      restoredRecordCounter.increment();
+      return;
+    }
+    if (OUTCOME_MISMATCH.equals(outcome)) {
+      runSuccessCounter.increment();
+      mismatchedRecordCounter.increment();
+      return;
+    }
+    if (OUTCOME_FAILED.equals(outcome)) {
+      runFailedCounter.increment();
+      failedRecordCounter.increment();
+    }
   }
 
   private void recordAudit(OrderSession session, AdminActorContext actor, String detail) {

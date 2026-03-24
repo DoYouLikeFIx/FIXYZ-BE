@@ -207,6 +207,40 @@ class CorebankClientTest {
   }
 
   @Test
+  void shouldRejectSnapshotResponseWhenClOrdIdDoesNotMatchRequestedOrder() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174300"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "orderId": 99,
+                    "accountId": 1,
+                    "clOrdId": "123e4567-e89b-42d3-a456-426614174399",
+                    "status": "FILLED",
+                    "externalSyncStatus": "CONFIRMED",
+                    "externalOrderId": "FEP-300"
+                  }
+                }
+                """)));
+
+    assertThatThrownBy(() -> corebankClient.getOrderSnapshot(
+        "123e4567-e89b-42d3-a456-426614174300",
+        "trace-snapshot-mismatch"
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> {
+          BusinessException businessException = (BusinessException) ex;
+          assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_VALIDATION_FAILED);
+          assertThat(businessException.getMessage()).isEqualTo("status response clOrdId must match request");
+          assertThat(businessException.getMetadata()).isNotNull();
+          assertThat(businessException.getMetadata().operatorCode()).isEqualTo("DOWNSTREAM_CL_ORD_ID_MISMATCH");
+        });
+  }
+
+  @Test
   void shouldMapReplayResponseAndForwardGovernancePayload() {
     wireMockServer.stubFor(post(urlPathEqualTo("/internal/v1/orders/123e4567-e89b-42d3-a456-426614174301/replay"))
         .willReturn(aResponse()
