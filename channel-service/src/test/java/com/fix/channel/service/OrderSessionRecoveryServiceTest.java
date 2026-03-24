@@ -222,6 +222,7 @@ class OrderSessionRecoveryServiceTest {
 
     recoveryService.runRecoveryCycle();
 
+    verify(auditLogService).record(any());
     verify(channelScaffoldService).bootstrapNotification(
         eq(requerying.getMemberId()),
         eq("ORDER"),
@@ -712,7 +713,7 @@ class OrderSessionRecoveryServiceTest {
             && requerying.getOrderSessionId().equals(log.getTargetId())
             && log.getDetail().contains("attemptCount=5")
             && log.getDetail().contains("outcome=ESCALATED")
-            && log.getDetail().contains("IllegalStateException: corebank unavailable")
+            && log.getDetail().contains("note=IllegalStateException")
     ));
     verify(channelScaffoldService).bootstrapNotification(
         eq(requerying.getMemberId()),

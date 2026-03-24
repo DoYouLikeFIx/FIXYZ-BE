@@ -1,6 +1,7 @@
 package com.fix.channel.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -270,6 +271,7 @@ class AdminOrderIdempotencyReconciliationServiceTest {
     OrderSession session = completedSession(CL_ORD_ID, "FEP-LOCAL-1", "CONFIRMED");
     AdminActorContext actor = actor();
     when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(orderSessionRepository.findByClOrdIdForUpdate(CL_ORD_ID)).thenReturn(Optional.of(session));
     when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
         .thenReturn(CorebankOrderSnapshotResult.of(
             9001L,
@@ -308,6 +310,7 @@ class AdminOrderIdempotencyReconciliationServiceTest {
     OrderSession session = canceledSession(CL_ORD_ID, "FEP-KRX-" + CL_ORD_ID, "ESCALATED");
     AdminActorContext actor = actor();
     when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(orderSessionRepository.findByClOrdIdForUpdate(CL_ORD_ID)).thenReturn(Optional.of(session));
     when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
         .thenReturn(CorebankOrderSnapshotResult.of(
             9001L,
@@ -320,7 +323,7 @@ class AdminOrderIdempotencyReconciliationServiceTest {
 
     var result = reconciliationService.reconcile(CL_ORD_ID, actor);
 
-    verify(orderSessionRepository, never()).findByClOrdIdForUpdate(CL_ORD_ID);
+    verify(orderSessionRepository).findByClOrdIdForUpdate(CL_ORD_ID);
     verify(orderSessionService, never()).reconcileExternalLinkage(any(), any(), any());
     verify(auditLogService).record(argThat(log ->
         "ORDER_SESSION_RECONCILIATION".equals(log.getAction())
@@ -402,6 +405,7 @@ class AdminOrderIdempotencyReconciliationServiceTest {
     OrderSession session = completedSession(CL_ORD_ID, null, "FAILED");
     AdminActorContext actor = actor();
     when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(orderSessionRepository.findByClOrdIdForUpdate(CL_ORD_ID)).thenReturn(Optional.of(session));
     when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
         .thenReturn(CorebankOrderSnapshotResult.of(
             9001L,
@@ -441,7 +445,7 @@ class AdminOrderIdempotencyReconciliationServiceTest {
 
     var result = reconciliationService.reconcile(CL_ORD_ID, actor);
 
-    verify(orderSessionRepository, never()).findByClOrdIdForUpdate(CL_ORD_ID);
+    verify(orderSessionRepository).findByClOrdIdForUpdate(CL_ORD_ID);
     verify(orderSessionService, never()).reconcileExternalLinkage(any(), any(), any());
     verify(auditLogService).record(argThat(log ->
         "ORDER_SESSION_RECONCILIATION".equals(log.getAction())
@@ -502,6 +506,102 @@ class AdminOrderIdempotencyReconciliationServiceTest {
     ));
     assertThat(result.getOutcome()).isEqualTo("FAILED");
     assertThat(result.getFailed()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldRecheckMismatchOutcomeUnderRowLockBeforeReturningCanonicalMismatch() {
+    OrderSession session = completedSession(CL_ORD_ID, null, "FAILED");
+    OrderSession lockedSession = canceledSession(CL_ORD_ID, null, "FAILED");
+    OrderSession reconciledSession = canceledSession(CL_ORD_ID, "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    AdminActorContext actor = actor();
+    when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(orderSessionRepository.findByClOrdIdForUpdate(CL_ORD_ID)).thenReturn(Optional.of(lockedSession));
+    when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
+        .thenReturn(CorebankOrderSnapshotResult.of(
+            9001L,
+            lockedSession.getAccountId(),
+            CL_ORD_ID,
+            "CANCELED",
+            "CONFIRMED",
+            "FEP-KRX-" + CL_ORD_ID
+        ));
+    when(orderSessionService.reconcileExternalLinkage(
+        lockedSession,
+        "FEP-KRX-" + CL_ORD_ID,
+        "CONFIRMED"
+    )).thenReturn(reconciledSession);
+
+    var result = reconciliationService.reconcile(CL_ORD_ID, actor);
+
+    verify(orderSessionService).reconcileExternalLinkage(lockedSession, "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    assertThat(result.getOutcome()).isEqualTo("RESTORED");
+    assertThat(result.getExternalOrderId()).isEqualTo("FEP-KRX-" + CL_ORD_ID);
+    assertThat(result.getExternalSyncStatus()).isEqualTo("CONFIRMED");
+  }
+
+  @Test
+  void shouldTreatRejectedSnapshotAsReconciliationCompatibleForFailedSession() {
+    OrderSession session = failedSession(CL_ORD_ID, "FEP_ORDER_REJECTED", null, null);
+    OrderSession reconciledSession = failedSession(CL_ORD_ID, "FEP_ORDER_REJECTED", "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    AdminActorContext actor = actor();
+    when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(orderSessionRepository.findByClOrdIdForUpdate(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
+        .thenReturn(CorebankOrderSnapshotResult.of(
+            9001L,
+            session.getAccountId(),
+            CL_ORD_ID,
+            "REJECTED",
+            "CONFIRMED",
+            "FEP-KRX-" + CL_ORD_ID
+        ));
+    when(orderSessionService.reconcileExternalLinkage(
+        session,
+        "FEP-KRX-" + CL_ORD_ID,
+        "CONFIRMED"
+    )).thenReturn(reconciledSession);
+
+    var result = reconciliationService.reconcile(CL_ORD_ID, actor);
+
+    verify(orderSessionService).reconcileExternalLinkage(session, "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    assertThat(result.getOutcome()).isEqualTo("RESTORED");
+    assertThat(result.getExternalSyncStatus()).isEqualTo("CONFIRMED");
+  }
+
+  @Test
+  void shouldNotPublishRestoredMetricsWhenTransactionCommitFails() {
+    OrderSession session = completedSession(CL_ORD_ID, null, "FAILED");
+    OrderSession reconciledSession = completedSession(CL_ORD_ID, "FEP-KRX-" + CL_ORD_ID, "CONFIRMED");
+    AdminActorContext actor = actor();
+    when(orderSessionRepository.findByClOrdId(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(orderSessionRepository.findByClOrdIdForUpdate(CL_ORD_ID)).thenReturn(Optional.of(session));
+    when(corebankClient.getOrderSnapshot(eq(CL_ORD_ID), eq(actor.getCorrelationId())))
+        .thenReturn(CorebankOrderSnapshotResult.of(
+            9001L,
+            session.getAccountId(),
+            CL_ORD_ID,
+            "FILLED",
+            "CONFIRMED",
+            "FEP-KRX-" + CL_ORD_ID
+        ));
+    when(orderSessionService.reconcileExternalLinkage(
+        session,
+        "FEP-KRX-" + CL_ORD_ID,
+        "CONFIRMED"
+    )).thenReturn(reconciledSession);
+    org.mockito.Mockito.doThrow(new IllegalStateException("commit failed")).when(transactionManager).commit(any());
+
+    assertThatThrownBy(() -> reconciliationService.reconcile(CL_ORD_ID, actor))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("commit failed");
+    assertThat(meterRegistry.get("channel.order.idempotency.reconciliation.runs")
+        .tag("outcome", "success")
+        .counter()
+        .count()).isZero();
+    assertThat(meterRegistry.get("channel.order.idempotency.reconciliation.records")
+        .tag("result", "restored")
+        .counter()
+        .count()).isZero();
   }
 
   private AdminActorContext actor() {
@@ -587,6 +687,34 @@ class AdminOrderIdempotencyReconciliationServiceTest {
         Instant.parse("2026-03-23T02:00:00Z"),
         Instant.parse("2026-03-23T02:01:00Z")
     );
+    return session;
+  }
+
+  private OrderSession failedSession(
+      String clOrdId,
+      String failureReason,
+      String externalOrderId,
+      String externalSyncStatus
+  ) {
+    OrderSession session = OrderSession.initiated(
+        11L,
+        101L,
+        clOrdId,
+        "fp-" + clOrdId,
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(72000),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.parse("2026-03-23T03:00:00Z")
+    );
+    session.startExecuting();
+    session.fail(failureReason);
+    if (externalOrderId != null || externalSyncStatus != null) {
+      session.reconcileExternalLinkage(externalOrderId, externalSyncStatus);
+    }
     return session;
   }
 
