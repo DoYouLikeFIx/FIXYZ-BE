@@ -44,7 +44,7 @@ class FepGatewayReplayTimelineContractTest {
 
   @BeforeEach
   void setUp() {
-    replayCursorRepository.deleteAll();
+    replayCursorRepository.deleteAllInBatch();
   }
 
   @Test

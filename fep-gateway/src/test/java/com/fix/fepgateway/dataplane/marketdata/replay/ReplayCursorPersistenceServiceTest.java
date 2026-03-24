@@ -6,7 +6,7 @@ import com.fix.fepgateway.dataplane.marketdata.ReplayCursorSpec;
 import com.fix.fepgateway.entity.ReplayCursor;
 import com.fix.fepgateway.repository.ReplayCursorRepository;
 import java.math.BigDecimal;
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,9 +22,9 @@ class ReplayCursorPersistenceServiceTest {
   @Autowired
   private ReplayCursorRepository replayCursorRepository;
 
-  @AfterEach
-  void cleanUp() {
-    replayCursorRepository.deleteAll();
+  @BeforeEach
+  void setUp() {
+    replayCursorRepository.deleteAllInBatch();
   }
 
   @Test
