@@ -1,3 +1,7 @@
+import groovy.json.JsonSlurper
+import java.time.Instant
+import javax.xml.parsers.DocumentBuilderFactory
+
 plugins {
   id 'org.springframework.boot'
   id 'io.spring.dependency-management'
@@ -8,6 +12,72 @@ ext.openapiDefaultPort = 28080
 ext.openapiBootRunDependencies = [':core-common:jar', ':channel-domain:jar']
 
 apply from: rootProject.file('gradle/openapi-contract.gradle')
+
+def matchingRegressionBuildId = providers.gradleProperty('matchingRegressionBuildId')
+    .orElse(providers.environmentVariable('MATCHING_REGRESSION_BUILD_ID'))
+    .orElse(providers.environmentVariable('GITHUB_RUN_ID'))
+    .getOrElse('local')
+def executeLatencyWarmupIterations = providers.gradleProperty('story119ExecutePerfWarmupIterations')
+    .orElse(providers.environmentVariable('STORY119_EXECUTE_PERF_WARMUP_ITERATIONS'))
+    .getOrElse('5')
+def executeLatencyMeasuredIterations = providers.gradleProperty('story119ExecutePerfMeasuredIterations')
+    .orElse(providers.environmentVariable('STORY119_EXECUTE_PERF_MEASURED_ITERATIONS'))
+    .getOrElse('25')
+def executeLatencyP95BudgetMs = providers.gradleProperty('story119ExecutePerfP95BudgetMs')
+    .orElse(providers.environmentVariable('STORY119_EXECUTE_PERF_P95_BUDGET_MS'))
+    .getOrElse('1000')
+def matchingRegressionArtifactRoot = new File(
+    rootProject.projectDir.parentFile,
+    "_bmad-output/test-artifacts/matching-regression/${matchingRegressionBuildId}"
+)
+def executeLatencyJunitDir = new File(matchingRegressionArtifactRoot, 'junit/executeLatencySmokeTest')
+def executeLatencyReportFile = new File(matchingRegressionArtifactRoot, 'perf-p95.json')
+
+def parseJUnitSummary = { File xmlDir ->
+  Map<String, Integer> summary = [
+      files: 0,
+      tests: 0,
+      failures: 0,
+      errors: 0,
+      skipped: 0
+  ]
+  if (!xmlDir.exists()) {
+    return summary
+  }
+
+  DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance()
+  factory.setNamespaceAware(false)
+  factory.setExpandEntityReferences(false)
+  factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+
+  xmlDir.eachFileRecurse { File xmlFile ->
+    if (!xmlFile.name.endsWith('.xml')) {
+      return
+    }
+    summary.files += 1
+    def document = factory.newDocumentBuilder().parse(xmlFile)
+    List suites = []
+    if (document.documentElement != null) {
+      if (document.documentElement.tagName == 'testsuite') {
+        suites << document.documentElement
+      } else {
+        def testSuiteNodes = document.getElementsByTagName('testsuite')
+        for (int index = 0; index < testSuiteNodes.length; index++) {
+          suites << testSuiteNodes.item(index)
+        }
+      }
+    }
+
+    suites.each { suite ->
+      summary.tests += (suite.getAttribute('tests') ?: '0').toInteger()
+      summary.failures += (suite.getAttribute('failures') ?: '0').toInteger()
+      summary.errors += (suite.getAttribute('errors') ?: '0').toInteger()
+      summary.skipped += (suite.getAttribute('skipped') ?: '0').toInteger()
+    }
+  }
+
+  return summary
+}
 
 tasks.register('criticalContractSuites', Test) {
   description = 'Runs channel critical contract suites used by CI and local verification.'
@@ -32,6 +102,80 @@ tasks.register('correlationPropagationTests', Test) {
     includeTestsMatching('com.fix.channel.filter.CorrelationIdFilterTest')
     includeTestsMatching('com.fix.channel.client.CorebankClientTest')
     includeTestsMatching('com.fix.channel.integration.ChannelCorrelationPropagationIntegrationTest')
+  }
+}
+
+tasks.register('executeLatencySmokeTest', Test) {
+  description = 'Runs Story 11.9 execute latency smoke coverage with evidence export.'
+  group = 'verification'
+  useJUnitPlatform()
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  ignoreFailures = true
+  filter {
+    includeTestsMatching('com.fix.channel.perf.OrderExecuteLatencySmokeTest')
+  }
+  filter.setFailOnNoMatchingTests(true)
+  reports.junitXml.outputLocation = executeLatencyJunitDir
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/executeLatencySmokeTest')
+  systemProperty 'story119.execute.perf.outputPath', executeLatencyReportFile.absolutePath
+  systemProperty 'story119.execute.perf.warmupIterations', executeLatencyWarmupIterations
+  systemProperty 'story119.execute.perf.measuredIterations', executeLatencyMeasuredIterations
+  systemProperty 'story119.execute.perf.p95BudgetMs', executeLatencyP95BudgetMs
+}
+
+tasks.register('matchingLatencyGate') {
+  description = 'Evaluates Story 11.9 execute latency smoke evidence against the p95 budget.'
+  group = 'verification'
+  dependsOn tasks.named('executeLatencySmokeTest')
+
+  doLast {
+    File perfSummaryFile = new File(matchingRegressionArtifactRoot, 'perf-summary.md')
+    Map<String, Integer> junitSummary = parseJUnitSummary(executeLatencyJunitDir)
+    boolean hasJUnitEvidence = junitSummary.files > 0 && junitSummary.tests > 0
+    boolean hasPerfEvidence = executeLatencyReportFile.exists()
+    long budgetMs = Long.parseLong(executeLatencyP95BudgetMs)
+    Map perfReport = hasPerfEvidence ? (Map) new JsonSlurper().parse(executeLatencyReportFile) : [:]
+    Double p50Ms = perfReport.containsKey('p50Ms') ? ((Number) perfReport.p50Ms).doubleValue() : null
+    Double p95Ms = perfReport.containsKey('p95Ms') ? ((Number) perfReport.p95Ms).doubleValue() : null
+    Double maxMs = perfReport.containsKey('maxMs') ? ((Number) perfReport.maxMs).doubleValue() : null
+    if (perfReport.containsKey('p95BudgetMs')) {
+      budgetMs = ((Number) perfReport.p95BudgetMs).longValue()
+    }
+    String reportResult = hasPerfEvidence ? String.valueOf(perfReport.result) : 'MISSING'
+    String overallResult = hasJUnitEvidence
+        && hasPerfEvidence
+        && (junitSummary.failures + junitSummary.errors) == 0
+        && reportResult == 'PASSED'
+        ? 'PASSED'
+        : 'FAILED'
+
+    perfSummaryFile.text = """# Story 11.9 Execute Latency Summary
+
+- Build ID: `${matchingRegressionBuildId}`
+- Generated At: `${Instant.now()}`
+- Overall Result: `${overallResult}`
+- Perf Evidence: `${hasPerfEvidence ? 'PRESENT' : 'MISSING'}`
+- JUnit Evidence: `${hasJUnitEvidence ? 'PRESENT' : 'MISSING'}`
+- Budget: `${budgetMs} ms`
+- p50: `${p50Ms == null ? 'n/a' : p50Ms} ms`
+- p95: `${p95Ms == null ? 'n/a' : p95Ms} ms`
+- Max: `${maxMs == null ? 'n/a' : maxMs} ms`
+- Perf Result: `${reportResult}`
+- JUnit Totals: tests=${junitSummary.tests}, failures=${junitSummary.failures}, errors=${junitSummary.errors}, skipped=${junitSummary.skipped}
+"""
+
+    if (!hasJUnitEvidence
+        || !hasPerfEvidence
+        || junitSummary.failures + junitSummary.errors > 0
+        || p95Ms == null
+        || p95Ms > budgetMs
+        || reportResult != 'PASSED') {
+      throw new GradleException(
+          "Story 11.9 execute latency gate failed; see ${perfSummaryFile.absolutePath}"
+      )
+    }
   }
 }
 
