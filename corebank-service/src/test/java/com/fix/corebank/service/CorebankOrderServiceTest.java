@@ -95,6 +95,7 @@ class CorebankOrderServiceTest {
   private static final String MARKET_STALE_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174226";
   private static final String LIMIT_RESTING_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174227";
   private static final String LIMIT_CROSS_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174228";
+  private static final String MARKET_PARTIAL_CL_ORD_ID = "123e4567-e89b-42d3-a456-426614174229";
 
   @Mock
   private AccountRepository accountRepository;
@@ -1567,6 +1568,119 @@ class CorebankOrderServiceTest {
     assertThat(makerTwoOrder.getExecutedPrice()).isEqualByComparingTo("70100.0000");
     assertThat(fepClient.lastSubmitPayload()).isNotNull();
     assertThat(fepClient.lastSubmitPayload().orderType()).isEqualTo(com.fix.common.fep.FepOrderType.MARKET);
+  }
+
+  @Test
+  void shouldMarkMarketOrderPartiallyFilledFromPersistedFills() {
+    Account takerAccount = persistedAccount();
+    Position takerPosition = Position.of(ACCOUNT_ID, "005930", BigDecimal.ZERO.setScale(4), BigDecimal.ZERO.setScale(4));
+    Account makerOneAccount = withId(
+        Account.of("ACC-2001", 2001L, "ACTIVE", "KRW", new BigDecimal("1000000.0000"), new BigDecimal("500.0000")),
+        2001L
+    );
+    Account makerTwoAccount = withId(
+        Account.of("ACC-2002", 2002L, "ACTIVE", "KRW", new BigDecimal("1000000.0000"), new BigDecimal("500.0000")),
+        2002L
+    );
+    Position makerOnePosition = Position.of(2001L, "005930", new BigDecimal("2.0000"), new BigDecimal("68000.0000"));
+    Position makerTwoPosition = Position.of(2002L, "005930", new BigDecimal("1.5000"), new BigDecimal("69000.0000"));
+    Order makerOneOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            2001L,
+            "maker-sell-partial-1",
+            "005930",
+            "SELL",
+            "LIMIT",
+            new BigDecimal("2.0000"),
+            new BigDecimal("70000.0000"),
+            null,
+            null,
+            null,
+            null
+        ),
+        9501L
+    ), Instant.parse("2026-03-01T09:59:00Z"));
+    Order makerTwoOrder = withCreatedAt(persistedOrder(
+        Order.accepted(
+            2002L,
+            "maker-sell-partial-2",
+            "005930",
+            "SELL",
+            "LIMIT",
+            new BigDecimal("1.5000"),
+            new BigDecimal("70100.0000"),
+            null,
+            null,
+            null,
+            null
+        ),
+        9502L
+    ), Instant.parse("2026-03-01T10:00:00Z"));
+    Order[] savedOrderRef = new Order[1];
+
+    when(orderRepository.findByClOrdId(MARKET_PARTIAL_CL_ORD_ID))
+        .thenAnswer(invocation -> Optional.ofNullable(savedOrderRef[0]));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(takerAccount));
+    when(accountRepository.findById(2001L)).thenReturn(Optional.of(makerOneAccount));
+    when(accountRepository.findById(2002L)).thenReturn(Optional.of(makerTwoAccount));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930")).thenReturn(Optional.of(takerPosition));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(2001L, "005930")).thenReturn(Optional.of(makerOnePosition));
+    when(positionRepository.findByAccountIdAndSymbolForUpdate(2002L, "005930")).thenReturn(Optional.of(makerTwoPosition));
+    when(orderRepository.lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any()))
+        .thenReturn(List.of(makerOneOrder, makerTwoOrder));
+    when(orderRepository.saveAndFlush(any(Order.class)))
+        .thenAnswer(invocation -> {
+          Order persisted = persistedOrder(invocation.getArgument(0), 9510L);
+          savedOrderRef[0] = persisted;
+          return persisted;
+        });
+    when(journalEntryRepository.save(any(JournalEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 7510L));
+    when(ledgerEntryRepository.save(any(LedgerEntry.class)))
+        .thenAnswer(invocation -> withId(invocation.getArgument(0), 8510L));
+    when(ledgerEntryRefRepository.save(any(LedgerEntryRef.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    fepClient.setSubmitResult(new FepOrderResult(
+        MARKET_PARTIAL_CL_ORD_ID,
+        "FEP-KRX-" + MARKET_PARTIAL_CL_ORD_ID,
+        FepExecType.PENDING_NEW,
+        FepOrdStatus.PENDING,
+        0L,
+        null,
+        5L,
+        Instant.parse("2026-03-01T10:05:30Z"),
+        null,
+        null,
+        null,
+        null,
+        null
+    ));
+
+    InternalOrderResult result = corebankOrderService.createOrder(InternalOrderCreateCommand.of(
+        ACCOUNT_ID,
+        MARKET_PARTIAL_CL_ORD_ID,
+        "005930",
+        "BUY",
+        "MARKET",
+        new BigDecimal("5.0000"),
+        null,
+        "qsnap-market-partial-1",
+        Instant.parse("2026-03-01T10:01:59Z"),
+        FepQuoteSourceMode.LIVE,
+        new BigDecimal("72050.0000")
+    ));
+
+    assertThat(result.getStatus()).isEqualTo("PARTIALLY_FILLED");
+    assertThat(result.getExecutionResult()).isEqualTo("PARTIALLY_FILLED");
+    assertThat(result.getExecutedQty()).isEqualByComparingTo("3.5000");
+    assertThat(result.getLeavesQty()).isEqualByComparingTo("1.5000");
+    assertThat(result.getExecutedPrice()).isEqualByComparingTo("70042.8571");
+    assertThat(savedOrderRef[0]).isNotNull();
+    assertThat(savedOrderRef[0].getStatus()).isEqualTo("PARTIALLY_FILLED");
+    assertThat(savedOrderRef[0].getExecutionResult()).isEqualTo("PARTIALLY_FILLED");
+    assertThat(savedOrderRef[0].getExecutedQty()).isEqualByComparingTo("3.5000");
+    assertThat(savedOrderRef[0].getLeavesQty()).isEqualByComparingTo("1.5000");
+    assertThat(savedOrderRef[0].getExecutedPrice()).isEqualByComparingTo("70042.8571");
   }
 
   @Test

@@ -221,6 +221,8 @@ public class CorebankOrderPersistenceService {
     Instant executedAt = Instant.now();
     BigDecimal totalGross = zeroMoney();
     Map<Long, Integer> nextExecutionSequences = new LinkedHashMap<>();
+    BigDecimal takerExecutedQty = zeroMoney();
+    BigDecimal takerExecutedPrice = null;
     for (CorebankMatchingEngine.MatchFill fill : matchResult.fills()) {
       Order makerOrder = requireMatchedOrder(makerOrders, fill.makerOrderId());
       Account makerAccount = participantLocks.requireAccount(makerOrder.getAccountId());
@@ -247,20 +249,15 @@ public class CorebankOrderPersistenceService {
           executedAt
       );
 
-      applyMatchSummary(makerOrder, fillQty, fillPrice, fill.remainingMakerQty(), executedAt);
+      applyMatchSummary(makerOrder, fillQty, fillPrice, executedAt);
       orderPostingTransactionHook.afterPostingMutation(makerOrder, makerAccount, makerPosition);
       appendExecutionPosting(makerOrder, fillGross);
       totalGross = totalGross.add(fillGross).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+      takerExecutedPrice = weightedAveragePrice(takerExecutedQty, takerExecutedPrice, fillQty, fillPrice);
+      takerExecutedQty = takerExecutedQty.add(fillQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
-    takerOrder.completeExecution(
-        matchResult.executionResult(),
-        matchResult.executionResult(),
-        matchResult.totalExecutedQty(),
-        matchResult.leavesQty(),
-        matchResult.weightedAvgPrice(),
-        executedAt
-    );
+    applyCanonicalExecutionSummary(takerOrder, takerExecutedQty, takerExecutedPrice, executedAt);
     orderPostingTransactionHook.afterPostingMutation(takerOrder, takerAccount, takerPosition);
     appendExecutionPosting(takerOrder, totalGross);
     orderRepository.flush();
@@ -522,20 +519,49 @@ public class CorebankOrderPersistenceService {
       Order order,
       BigDecimal fillQty,
       BigDecimal fillPrice,
-      BigDecimal leavesQty,
       Instant executedAt
   ) {
     BigDecimal currentExecutedQty = zeroIfNull(order.getExecutedQty());
     BigDecimal nextExecutedQty = currentExecutedQty.add(fillQty).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     BigDecimal nextExecutedPrice = weightedAveragePrice(currentExecutedQty, order.getExecutedPrice(), fillQty, fillPrice);
-    BigDecimal normalizedLeavesQty = normalizeMoney(leavesQty);
-    String executionResult = normalizedLeavesQty.signum() == 0 ? "FILLED" : "PARTIALLY_FILLED";
+    applyCanonicalExecutionSummary(order, nextExecutedQty, nextExecutedPrice, executedAt);
+  }
+
+  private void applyCanonicalExecutionSummary(
+      Order order,
+      BigDecimal executedQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
+    CanonicalExecutionSummary summary = canonicalExecutionSummary(order, executedQty, executedPrice, executedAt);
     order.completeExecution(
-        executionResult,
-        executionResult,
-        nextExecutedQty,
+        summary.status(),
+        summary.executionResult(),
+        summary.executedQty(),
+        summary.leavesQty(),
+        summary.executedPrice(),
+        summary.executedAt()
+    );
+  }
+
+  private CanonicalExecutionSummary canonicalExecutionSummary(
+      Order order,
+      BigDecimal executedQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
+    BigDecimal normalizedExecutedQty = normalizeMoney(executedQty);
+    BigDecimal normalizedLeavesQty = normalizeMoney(order.getOrderQty().subtract(normalizedExecutedQty));
+    if (normalizedLeavesQty.signum() < 0) {
+      throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, "executed quantity exceeds order quantity");
+    }
+    String status = normalizedLeavesQty.signum() == 0 ? "FILLED" : "PARTIALLY_FILLED";
+    return new CanonicalExecutionSummary(
+        status,
+        status,
+        normalizedExecutedQty,
         normalizedLeavesQty,
-        nextExecutedPrice,
+        normalizeMoney(executedPrice),
         executedAt
     );
   }
@@ -790,6 +816,16 @@ public class CorebankOrderPersistenceService {
   }
 
   private record ParticipantPositionKey(Long accountId, String symbol) {
+  }
+
+  private record CanonicalExecutionSummary(
+      String status,
+      String executionResult,
+      BigDecimal executedQty,
+      BigDecimal leavesQty,
+      BigDecimal executedPrice,
+      Instant executedAt
+  ) {
   }
 
   private record MarketParticipantLocks(
