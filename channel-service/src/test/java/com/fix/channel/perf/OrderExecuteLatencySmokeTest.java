@@ -97,25 +97,45 @@ class OrderExecuteLatencySmokeTest {
 
   @Test
   void shouldKeepExecuteP95UnderOneSecondBudget() throws Exception {
-    for (int index = 0; index < WARMUP_ITERATIONS; index++) {
-      executeAndMeasure(index);
-    }
-
     List<Double> latencySamplesMs = new ArrayList<>();
-    for (int index = 0; index < MEASURED_ITERATIONS; index++) {
-      latencySamplesMs.add(executeAndMeasure(index + WARMUP_ITERATIONS));
+    Double p50Ms = null;
+    Double p95Ms = null;
+    Double maxMs = null;
+    Throwable failure = null;
+
+    try {
+      validatePerfConfiguration();
+
+      for (int index = 0; index < WARMUP_ITERATIONS; index++) {
+        executeAndMeasure(index);
+      }
+
+      for (int index = 0; index < MEASURED_ITERATIONS; index++) {
+        latencySamplesMs.add(executeAndMeasure(index + WARMUP_ITERATIONS));
+      }
+
+      List<Double> sortedSamples = latencySamplesMs.stream().sorted().toList();
+      p50Ms = percentile(sortedSamples, 0.50d);
+      p95Ms = percentile(sortedSamples, 0.95d);
+      maxMs = sortedSamples.get(sortedSamples.size() - 1);
+
+      assertThat(p95Ms)
+          .as("execute endpoint p95 latency must stay within %s ms budget", P95_BUDGET_MS)
+          .isLessThanOrEqualTo((double) P95_BUDGET_MS);
+    } catch (Throwable throwable) {
+      failure = throwable;
+      throw throwable;
+    } finally {
+      try {
+        writePerfReport(latencySamplesMs, p50Ms, p95Ms, maxMs, failure);
+      } catch (Exception reportFailure) {
+        if (failure != null) {
+          failure.addSuppressed(reportFailure);
+        } else {
+          throw reportFailure;
+        }
+      }
     }
-
-    List<Double> sortedSamples = latencySamplesMs.stream().sorted().toList();
-    double p50Ms = percentile(sortedSamples, 0.50d);
-    double p95Ms = percentile(sortedSamples, 0.95d);
-    double maxMs = sortedSamples.get(sortedSamples.size() - 1);
-
-    writePerfReport(latencySamplesMs, p50Ms, p95Ms, maxMs);
-
-    assertThat(p95Ms)
-        .as("execute endpoint p95 latency must stay within %s ms budget", P95_BUDGET_MS)
-        .isLessThanOrEqualTo((double) P95_BUDGET_MS);
   }
 
   private double executeAndMeasure(int sampleIndex) throws Exception {
@@ -161,11 +181,21 @@ class OrderExecuteLatencySmokeTest {
     return sortedSamples.get(boundedIndex);
   }
 
+  private void validatePerfConfiguration() {
+    if (WARMUP_ITERATIONS < 0) {
+      throw new IllegalStateException("story119.execute.perf.warmupIterations must be >= 0");
+    }
+    if (MEASURED_ITERATIONS <= 0) {
+      throw new IllegalStateException("story119.execute.perf.measuredIterations must be > 0");
+    }
+  }
+
   private void writePerfReport(
       List<Double> latencySamplesMs,
-      double p50Ms,
-      double p95Ms,
-      double maxMs
+      Double p50Ms,
+      Double p95Ms,
+      Double maxMs,
+      Throwable failure
   ) throws Exception {
     String outputPath = System.getProperty("story119.execute.perf.outputPath");
     if (outputPath == null || outputPath.isBlank()) {
@@ -180,11 +210,14 @@ class OrderExecuteLatencySmokeTest {
     report.put("warmupIterations", WARMUP_ITERATIONS);
     report.put("measuredIterations", MEASURED_ITERATIONS);
     report.put("p95BudgetMs", P95_BUDGET_MS);
-    report.put("p50Ms", round(p50Ms));
-    report.put("p95Ms", round(p95Ms));
-    report.put("maxMs", round(maxMs));
+    report.put("completedMeasuredIterations", latencySamplesMs.size());
+    report.put("p50Ms", p50Ms == null ? null : round(p50Ms));
+    report.put("p95Ms", p95Ms == null ? null : round(p95Ms));
+    report.put("maxMs", maxMs == null ? null : round(maxMs));
     report.put("samplesMs", latencySamplesMs.stream().map(OrderExecuteLatencySmokeTest::round).toList());
-    report.put("result", p95Ms <= P95_BUDGET_MS ? "PASSED" : "FAILED");
+    report.put("result", failure == null && p95Ms != null && p95Ms <= P95_BUDGET_MS ? "PASSED" : "FAILED");
+    report.put("failureType", failure == null ? null : failure.getClass().getName());
+    report.put("failureMessage", failure == null ? null : failure.getMessage());
 
     objectMapper.writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
   }

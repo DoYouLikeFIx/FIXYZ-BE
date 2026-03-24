@@ -27,11 +27,14 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.assertj.core.groups.Tuple;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -46,6 +49,7 @@ class CorebankMatchingPersistenceIntegrationTest extends CorebankContainersInteg
 
   private static final long TAKER_ACCOUNT_ID = 1L;
   private static final WireMockServer WIRE_MOCK_SERVER = new WireMockServer(wireMockConfig().dynamicPort());
+  private static final Instant FIXED_QUOTE_AS_OF = Instant.parse("2026-03-01T10:05:29Z");
 
   static {
     WIRE_MOCK_SERVER.start();
@@ -96,7 +100,7 @@ class CorebankMatchingPersistenceIntegrationTest extends CorebankContainersInteg
     CanonicalMatchingScenario scenario = CorebankMatchingScenarioFixtures.marketSweep();
     String clOrdId = UUID.randomUUID().toString();
     String quoteSnapshotId = "qsnap-" + clOrdId;
-    Instant quoteAsOf = Instant.now().minusSeconds(1);
+    Instant quoteAsOf = FIXED_QUOTE_AS_OF;
     seedRestingSellBook(scenario);
     stubGatewayFill(clOrdId, scenario.expected(), "FEP-KRX-" + clOrdId, "FILLED");
 
@@ -252,6 +256,20 @@ class CorebankMatchingPersistenceIntegrationTest extends CorebankContainersInteg
       Instant quoteAsOf,
       FepQuoteSourceMode quoteSourceMode
   ) {
+    List<Tuple> expectedTuples = new ArrayList<>();
+    IntStream.range(0, expected.fills().size())
+        .forEach(index -> {
+          ExpectedFill fill = expected.fills().get(index);
+          expectedTuples.add(tuple(
+              index + 1,
+              fill.executedQty(),
+              fill.executedPrice(),
+              quoteSnapshotId,
+              quoteAsOf,
+              quoteSourceMode
+          ));
+        });
+
     assertThat(executions)
         .extracting(
             Execution::getExecutionSeq,
@@ -261,16 +279,7 @@ class CorebankMatchingPersistenceIntegrationTest extends CorebankContainersInteg
             Execution::getQuoteAsOf,
             Execution::getQuoteSourceMode
         )
-        .containsExactlyElementsOf(expected.fills().stream()
-            .map(fill -> tuple(
-                expected.fills().indexOf(fill) + 1,
-                fill.executedQty(),
-                fill.executedPrice(),
-                quoteSnapshotId,
-                quoteAsOf,
-                quoteSourceMode
-            ))
-            .toList());
+        .containsExactlyElementsOf(expectedTuples);
   }
 
   private void stubGatewayFill(
@@ -291,9 +300,9 @@ class CorebankMatchingPersistenceIntegrationTest extends CorebankContainersInteg
                         "fepOrderId": "%s",
                         "execType": "FILL",
                         "ordStatus": "%s",
-                        "executedQty": %d,
-                        "executedPrice": %d,
-                        "leavesQty": %d,
+                        "executedQty": %s,
+                        "executedPrice": %s,
+                        "leavesQty": %s,
                         "transactTime": "2026-03-01T10:05:30Z"
                       }
                     }
@@ -301,9 +310,9 @@ class CorebankMatchingPersistenceIntegrationTest extends CorebankContainersInteg
                     clOrdId,
                     fepOrderId,
                     ordStatus,
-                    expected.totalExecutedQty().longValueExact(),
-                    expected.weightedAvgPrice().longValueExact(),
-                    expected.leavesQty().longValueExact()
+                    expected.totalExecutedQty().toPlainString(),
+                    expected.weightedAvgPrice().toPlainString(),
+                    expected.leavesQty().toPlainString()
                 ))));
   }
 

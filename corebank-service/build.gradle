@@ -164,11 +164,17 @@ tasks.register('matchingRegressionEvidence') {
       }
 
       Map<String, Integer> summary = parseMatchingRegressionSummary(sourceDir)
+      boolean hasEvidence = summary.files > 0 && summary.tests > 0
+      String suiteResult = !hasEvidence
+          ? 'MISSING'
+          : (summary.failures + summary.errors) == 0 ? 'PASSED' : 'FAILED'
       suiteResults << [
           taskName: taskName,
           scope: suite.scope,
           includes: suite.includes,
-          summary: summary
+          summary: summary,
+          hasEvidence: hasEvidence,
+          suiteResult: suiteResult
       ]
     }
 
@@ -176,7 +182,8 @@ tasks.register('matchingRegressionEvidence') {
     int totalFailures = suiteResults.collect { it.summary.failures }.sum(0)
     int totalErrors = suiteResults.collect { it.summary.errors }.sum(0)
     int totalSkipped = suiteResults.collect { it.summary.skipped }.sum(0)
-    String overallResult = (totalFailures + totalErrors) == 0 ? 'PASSED' : 'FAILED'
+    boolean missingEvidence = suiteResults.any { !it.hasEvidence }
+    String overallResult = !missingEvidence && (totalFailures + totalErrors) == 0 ? 'PASSED' : 'FAILED'
 
     File matrixSummary = new File(matchingRegressionArtifactRoot, 'matrix-summary.md')
     matrixSummary.text = """# Story 11.9 Matching Regression Summary
@@ -186,14 +193,14 @@ tasks.register('matchingRegressionEvidence') {
 - Overall Result: `${overallResult}`
 - Totals: tests=${totalTests}, failures=${totalFailures}, errors=${totalErrors}, skipped=${totalSkipped}
 
-| Task | Scope | Tests | Failures | Errors | Skipped | Included Classes |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Task | Scope | Result | Evidence | Tests | Failures | Errors | Skipped | Included Classes |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
 ${suiteResults.collect { result ->
-  "| `${result.taskName}` | `${result.scope}` | ${result.summary.tests} | ${result.summary.failures} | ${result.summary.errors} | ${result.summary.skipped} | ${result.includes.join('<br/>')} |"
+  "| `${result.taskName}` | `${result.scope}` | `${result.suiteResult}` | `${result.summary.files} xml` | ${result.summary.tests} | ${result.summary.failures} | ${result.summary.errors} | ${result.summary.skipped} | ${result.includes.join('<br/>')} |"
 }.join('\n')}
 """
 
-    if (totalFailures + totalErrors > 0) {
+    if (missingEvidence || totalFailures + totalErrors > 0) {
       throw new GradleException(
           "Story 11.9 matching regression suite failed; see ${matrixSummary.absolutePath}"
       )

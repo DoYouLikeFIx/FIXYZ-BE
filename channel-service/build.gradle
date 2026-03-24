@@ -133,17 +133,21 @@ tasks.register('matchingLatencyGate') {
   doLast {
     File perfSummaryFile = new File(matchingRegressionArtifactRoot, 'perf-summary.md')
     Map<String, Integer> junitSummary = parseJUnitSummary(executeLatencyJunitDir)
-    if (!executeLatencyReportFile.exists()) {
-      throw new GradleException(
-          "Missing Story 11.9 perf evidence at ${executeLatencyReportFile.absolutePath}"
-      )
+    boolean hasJUnitEvidence = junitSummary.files > 0 && junitSummary.tests > 0
+    boolean hasPerfEvidence = executeLatencyReportFile.exists()
+    long budgetMs = Long.parseLong(executeLatencyP95BudgetMs)
+    Map perfReport = hasPerfEvidence ? (Map) new JsonSlurper().parse(executeLatencyReportFile) : [:]
+    Double p50Ms = perfReport.containsKey('p50Ms') ? ((Number) perfReport.p50Ms).doubleValue() : null
+    Double p95Ms = perfReport.containsKey('p95Ms') ? ((Number) perfReport.p95Ms).doubleValue() : null
+    Double maxMs = perfReport.containsKey('maxMs') ? ((Number) perfReport.maxMs).doubleValue() : null
+    if (perfReport.containsKey('p95BudgetMs')) {
+      budgetMs = ((Number) perfReport.p95BudgetMs).longValue()
     }
-
-    Map perfReport = (Map) new JsonSlurper().parse(executeLatencyReportFile)
-    double p95Ms = ((Number) perfReport.p95Ms).doubleValue()
-    long budgetMs = ((Number) perfReport.p95BudgetMs).longValue()
-    String reportResult = String.valueOf(perfReport.result)
-    String overallResult = (junitSummary.failures + junitSummary.errors) == 0 && reportResult == 'PASSED'
+    String reportResult = hasPerfEvidence ? String.valueOf(perfReport.result) : 'MISSING'
+    String overallResult = hasJUnitEvidence
+        && hasPerfEvidence
+        && (junitSummary.failures + junitSummary.errors) == 0
+        && reportResult == 'PASSED'
         ? 'PASSED'
         : 'FAILED'
 
@@ -152,16 +156,24 @@ tasks.register('matchingLatencyGate') {
 - Build ID: `${matchingRegressionBuildId}`
 - Generated At: `${Instant.now()}`
 - Overall Result: `${overallResult}`
+- Perf Evidence: `${hasPerfEvidence ? 'PRESENT' : 'MISSING'}`
+- JUnit Evidence: `${hasJUnitEvidence ? 'PRESENT' : 'MISSING'}`
 - Budget: `${budgetMs} ms`
-- p50: `${perfReport.p50Ms} ms`
-- p95: `${perfReport.p95Ms} ms`
-- Max: `${perfReport.maxMs} ms`
+- p50: `${p50Ms == null ? 'n/a' : p50Ms} ms`
+- p95: `${p95Ms == null ? 'n/a' : p95Ms} ms`
+- Max: `${maxMs == null ? 'n/a' : maxMs} ms`
+- Perf Result: `${reportResult}`
 - JUnit Totals: tests=${junitSummary.tests}, failures=${junitSummary.failures}, errors=${junitSummary.errors}, skipped=${junitSummary.skipped}
 """
 
-    if (junitSummary.failures + junitSummary.errors > 0 || p95Ms > budgetMs || reportResult != 'PASSED') {
+    if (!hasJUnitEvidence
+        || !hasPerfEvidence
+        || junitSummary.failures + junitSummary.errors > 0
+        || p95Ms == null
+        || p95Ms > budgetMs
+        || reportResult != 'PASSED') {
       throw new GradleException(
-          "Story 11.9 execute latency gate failed; see ${executeLatencyReportFile.absolutePath}"
+          "Story 11.9 execute latency gate failed; see ${perfSummaryFile.absolutePath}"
       )
     }
   }

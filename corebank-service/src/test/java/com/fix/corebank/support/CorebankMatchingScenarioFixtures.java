@@ -19,6 +19,7 @@ public final class CorebankMatchingScenarioFixtures {
   public static List<CanonicalMatchingScenario> story119CanonicalScenarios() {
     return List.of(
         limitCross(),
+        limitPartial(),
         limitNonCross(),
         marketSweep(),
         marketPartial(),
@@ -76,11 +77,38 @@ public final class CorebankMatchingScenarioFixtures {
     );
   }
 
+  public static CanonicalMatchingScenario limitPartial() {
+    return new CanonicalMatchingScenario(
+        CanonicalScenarioId.LIMIT_PARTIAL,
+        FepOrderType.LIMIT.name(),
+        "BUY",
+        "005930",
+        amount("5.0000"),
+        amount("70100.0000"),
+        List.of(
+            bookEntry(11L, 101L, "sell-1", "005930", "SELL", "2.0000", "70000.0000", "2026-03-01T09:00:00Z"),
+            bookEntry(12L, 102L, "sell-2", "005930", "SELL", "2.0000", "70100.0000", "2026-03-01T09:01:00Z"),
+            bookEntry(13L, 103L, "sell-3", "005930", "SELL", "3.0000", "70200.0000", "2026-03-01T09:02:00Z")
+        ),
+        new ExpectedOutcome(
+            CorebankMatchingEngine.MatchDecision.PARTIALLY_FILLED,
+            amount("4.0000"),
+            amount("1.0000"),
+            amount("70050.0000"),
+            null,
+            List.of(
+                fill("sell-1", "2.0000", "70000.0000", "0.0000"),
+                fill("sell-2", "2.0000", "70100.0000", "0.0000")
+            )
+        )
+    );
+  }
+
   public static CanonicalMatchingScenario marketSweep() {
     return new CanonicalMatchingScenario(
         CanonicalScenarioId.MARKET_SWEEP,
         FepOrderType.MARKET.name(),
-        null,
+        "BUY",
         "005930",
         amount("4.0000"),
         null,
@@ -108,7 +136,7 @@ public final class CorebankMatchingScenarioFixtures {
     return new CanonicalMatchingScenario(
         CanonicalScenarioId.MARKET_PARTIAL,
         FepOrderType.MARKET.name(),
-        null,
+        "BUY",
         "005930",
         amount("5.0000"),
         null,
@@ -134,7 +162,7 @@ public final class CorebankMatchingScenarioFixtures {
     return new CanonicalMatchingScenario(
         CanonicalScenarioId.MARKET_NO_LIQUIDITY,
         FepOrderType.MARKET.name(),
-        null,
+        "BUY",
         "005930",
         amount("3.0000"),
         null,
@@ -193,6 +221,7 @@ public final class CorebankMatchingScenarioFixtures {
 
   public enum CanonicalScenarioId {
     LIMIT_CROSS,
+    LIMIT_PARTIAL,
     LIMIT_NON_CROSS,
     MARKET_SWEEP,
     MARKET_PARTIAL,

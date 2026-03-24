@@ -45,28 +45,13 @@ class CorebankMatchingEngineTest {
 
   @Test
   void shouldReturnPartialFillForLimitOrderWhenPriceStopsCrossingWithLeavesRemaining() {
-    CorebankMatchingEngine.MatchResult result = matchingEngine.match(
-        CorebankMatchingEngine.MatchRequest.limit(
-            "BUY",
-            new BigDecimal("5.0000"),
-            new BigDecimal("70100.0000"),
-            List.of(
-                bookEntry(11L, 101L, "sell-1", "005930", "SELL", "2.0000", "70000.0000", "2026-03-01T09:00:00Z"),
-                bookEntry(12L, 102L, "sell-2", "005930", "SELL", "2.0000", "70100.0000", "2026-03-01T09:01:00Z"),
-                bookEntry(13L, 103L, "sell-3", "005930", "SELL", "3.0000", "70200.0000", "2026-03-01T09:02:00Z")
-            )
-        )
-    );
+    CanonicalMatchingScenario scenario = CorebankMatchingScenarioFixtures.limitPartial();
+
+    CorebankMatchingEngine.MatchResult result = matchingEngine.match(scenario.toMatchRequest());
 
     assertThat(result.rejected()).isFalse();
     assertThat(result.resting()).isFalse();
-    assertThat(result.decision()).isEqualTo(CorebankMatchingEngine.MatchDecision.PARTIALLY_FILLED);
-    assertThat(result.executionResult()).isEqualTo("PARTIALLY_FILLED");
-    assertThat(result.totalExecutedQty()).isEqualByComparingTo("4.0000");
-    assertThat(result.leavesQty()).isEqualByComparingTo("1.0000");
-    assertThat(result.weightedAvgPrice()).isEqualByComparingTo("70050.0000");
-    assertThat(result.fills()).extracting(CorebankMatchingEngine.MatchFill::makerClOrdId)
-        .containsExactly("sell-1", "sell-2");
+    assertResultMatchesExpected(result, scenario.expected());
   }
 
   @Test
