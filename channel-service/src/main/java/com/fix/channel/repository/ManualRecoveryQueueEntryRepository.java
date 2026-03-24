@@ -14,7 +14,9 @@ import org.springframework.transaction.annotation.Transactional;
 public interface ManualRecoveryQueueEntryRepository extends JpaRepository<ManualRecoveryQueueEntry, Long> {
   Optional<ManualRecoveryQueueEntry> findByOrderSessionId(String orderSessionId);
 
-  List<ManualRecoveryQueueEntry> findByPublishedAtIsNullOrderByEnqueuedAtAscIdAsc(Pageable pageable);
+  Optional<ManualRecoveryQueueEntry> findByOrderSessionIdAndResolvedAtIsNull(String orderSessionId);
+
+  List<ManualRecoveryQueueEntry> findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(Pageable pageable);
 
   @Transactional
   @Modifying(flushAutomatically = true, clearAutomatically = true)
@@ -23,6 +25,7 @@ public interface ManualRecoveryQueueEntryRepository extends JpaRepository<Manual
          SET entry.publishedAt = :publishedAt
        WHERE entry.id = :id
          AND entry.publishedAt IS NULL
+         AND entry.resolvedAt IS NULL
          AND entry.enqueuedAt = :enqueuedAt
       """)
   int markPublishedIfPending(
@@ -39,6 +42,7 @@ public interface ManualRecoveryQueueEntryRepository extends JpaRepository<Manual
              entry.publishClaimedAt = :claimedAt
        WHERE entry.id = :id
          AND entry.publishedAt IS NULL
+         AND entry.resolvedAt IS NULL
          AND entry.enqueuedAt = :enqueuedAt
          AND (
            entry.publishClaimToken IS NULL
@@ -63,6 +67,7 @@ public interface ManualRecoveryQueueEntryRepository extends JpaRepository<Manual
              entry.publishClaimedAt = NULL
        WHERE entry.id = :id
          AND entry.publishedAt IS NULL
+         AND entry.resolvedAt IS NULL
          AND entry.enqueuedAt = :enqueuedAt
          AND entry.publishClaimToken = :claimToken
       """)
@@ -81,6 +86,7 @@ public interface ManualRecoveryQueueEntryRepository extends JpaRepository<Manual
              entry.publishClaimedAt = NULL
        WHERE entry.id = :id
          AND entry.publishedAt IS NULL
+         AND entry.resolvedAt IS NULL
          AND entry.enqueuedAt = :enqueuedAt
          AND entry.publishClaimToken = :claimToken
       """)

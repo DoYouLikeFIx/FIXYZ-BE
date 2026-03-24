@@ -50,6 +50,9 @@ class AdminOrderReplayServiceTest {
   @Mock
   private ChannelScaffoldService channelScaffoldService;
 
+  @Mock
+  private ManualRecoveryQueueService manualRecoveryQueueService;
+
   private AdminOrderReplayService service;
 
   @BeforeEach
@@ -58,7 +61,8 @@ class AdminOrderReplayServiceTest {
         orderSessionRepository,
         corebankClient,
         auditLogService,
-        channelScaffoldService
+        channelScaffoldService,
+        manualRecoveryQueueService
     );
   }
 
@@ -95,6 +99,12 @@ class AdminOrderReplayServiceTest {
     assertThat(result.getProcessedAt()).isEqualTo(PROCESSED_AT);
     verify(corebankClient, never()).replayOrder(any(), any(), any(), any());
     verify(auditLogService, never()).record(any());
+    verify(manualRecoveryQueueService).resolveIfPresent(
+        eq(session.getOrderSessionId()),
+        eq(OPERATOR_ID),
+        eq("COMPLETED"),
+        eq(PROCESSED_AT)
+    );
   }
 
   @Test
@@ -163,6 +173,12 @@ class AdminOrderReplayServiceTest {
     assertThat(session.getManualReplayExecutionSource()).isEqualTo("VIRTUAL_FILL");
     assertThat(result.getExecutionSource()).isEqualTo("VIRTUAL_FILL");
     verify(orderSessionRepository).flush();
+    verify(manualRecoveryQueueService).resolveIfPresent(
+        eq(session.getOrderSessionId()),
+        eq(OPERATOR_ID),
+        eq("COMPLETED"),
+        eq(PROCESSED_AT)
+    );
     verify(auditLogService).record(any());
     ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
     verify(channelScaffoldService).bootstrapTypedNotification(

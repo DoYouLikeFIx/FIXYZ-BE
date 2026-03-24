@@ -57,6 +57,15 @@ public class ManualRecoveryQueueEntry extends BaseTimeEntity {
   @Column(name = "publish_claimed_at")
   private Instant publishClaimedAt;
 
+  @Column(name = "resolved_by", length = 36, columnDefinition = "CHAR(36)")
+  private String resolvedBy;
+
+  @Column(name = "resolution", length = 32)
+  private String resolution;
+
+  @Column(name = "resolved_at")
+  private Instant resolvedAt;
+
   protected ManualRecoveryQueueEntry() {
   }
 
@@ -120,6 +129,18 @@ public class ManualRecoveryQueueEntry extends BaseTimeEntity {
     return publishClaimedAt;
   }
 
+  public String getResolvedBy() {
+    return resolvedBy;
+  }
+
+  public String getResolution() {
+    return resolution;
+  }
+
+  public Instant getResolvedAt() {
+    return resolvedAt;
+  }
+
   public void refresh(int attemptCount, String reason, Instant enqueuedAt) {
     this.attemptCount = attemptCount;
     this.reason = reason;
@@ -141,5 +162,12 @@ public class ManualRecoveryQueueEntry extends BaseTimeEntity {
   public void clearPublishClaim() {
     this.publishClaimToken = null;
     this.publishClaimedAt = null;
+  }
+
+  public void markResolved(String resolvedBy, String resolution, Instant resolvedAt) {
+    this.resolvedBy = resolvedBy;
+    this.resolution = resolution;
+    this.resolvedAt = resolvedAt;
+    clearPublishClaim();
   }
 }

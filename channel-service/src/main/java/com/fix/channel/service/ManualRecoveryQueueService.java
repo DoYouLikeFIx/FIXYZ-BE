@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
@@ -60,7 +61,7 @@ public class ManualRecoveryQueueService {
 
     List<ManualRecoveryQueueEntry> pendingEntries;
     try {
-      pendingEntries = manualRecoveryQueueEntryRepository.findByPublishedAtIsNullOrderByEnqueuedAtAscIdAsc(
+      pendingEntries = manualRecoveryQueueEntryRepository.findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(
           PageRequest.of(0, publishBatchSize)
       );
     } catch (RuntimeException ex) {
@@ -172,6 +173,17 @@ public class ManualRecoveryQueueService {
         entry.getEnqueuedAt(),
         claimToken
     );
+  }
+
+  @Transactional
+  public void resolveIfPresent(
+      String orderSessionId,
+      String resolvedBy,
+      String resolution,
+      Instant resolvedAt
+  ) {
+    manualRecoveryQueueEntryRepository.findByOrderSessionIdAndResolvedAtIsNull(orderSessionId)
+        .ifPresent(entry -> entry.markResolved(resolvedBy, resolution, resolvedAt));
   }
 
   private static DefaultRedisScript<Long> createPublishIfAbsentScript() {

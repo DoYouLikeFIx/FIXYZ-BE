@@ -44,6 +44,7 @@ public class AdminOrderReplayService {
   private final CorebankClient corebankClient;
   private final AuditLogService auditLogService;
   private final ChannelScaffoldService channelScaffoldService;
+  private final ManualRecoveryQueueService manualRecoveryQueueService;
 
   @Transactional
   public AdminOrderReplayResult replay(String clOrdId, AdminOrderReplayCommand command, AdminActorContext actor) {
@@ -63,7 +64,7 @@ public class AdminOrderReplayService {
     );
 
     if (session.getStatus() != OrderSessionStatus.ESCALATED) {
-      return resolveTerminalReplay(session, fingerprint);
+      return resolveTerminalReplay(session, fingerprint, actor);
     }
 
     OrderReplayResult replayResult = corebankClient.replayOrder(clOrdId, command, actor.getOperatorId(), actor.getCorrelationId());
@@ -100,6 +101,12 @@ public class AdminOrderReplayService {
         processedAt
     );
     orderSessionRepository.flush();
+    manualRecoveryQueueService.resolveIfPresent(
+        session.getOrderSessionId(),
+        actor.getOperatorId(),
+        session.getStatus().name(),
+        processedAt
+    );
 
     auditLogService.record(AuditLog.ofOrderSession(
         actor.getAdminMemberId(),
@@ -126,7 +133,11 @@ public class AdminOrderReplayService {
     }
   }
 
-  private AdminOrderReplayResult resolveTerminalReplay(OrderSession session, String fingerprint) {
+  private AdminOrderReplayResult resolveTerminalReplay(
+      OrderSession session,
+      String fingerprint,
+      AdminActorContext actor
+  ) {
     if (session.getManualReplayFingerprint() == null || session.getManualReplayFingerprint().isBlank()) {
       throw new BusinessException(ErrorCode.ORDER_SESSION_NOT_AUTHORIZED, "Replay target is not escalated");
     }
@@ -136,6 +147,12 @@ public class AdminOrderReplayService {
           "manual replay payload conflicts with the previously processed result"
       );
     }
+    manualRecoveryQueueService.resolveIfPresent(
+        session.getOrderSessionId(),
+        session.getManualReplayProcessedBy() != null ? session.getManualReplayProcessedBy() : actor.getOperatorId(),
+        session.getStatus().name(),
+        session.getManualReplayProcessedAt() != null ? session.getManualReplayProcessedAt() : Instant.now()
+    );
     return toPublicResult(session);
   }
 

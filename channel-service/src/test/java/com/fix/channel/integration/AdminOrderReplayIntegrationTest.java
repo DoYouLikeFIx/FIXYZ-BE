@@ -237,6 +237,13 @@ class AdminOrderReplayIntegrationTest extends ChannelContainersIntegrationTestBa
     assertThat(converged.getManualReplayExecutionSource()).isEqualTo("VIRTUAL_FILL");
     assertThat(converged.getExternalOrderId()).isEqualTo("FEP-RES-003");
 
+    ManualRecoveryQueueEntry resolvedQueueEntry =
+        manualRecoveryQueueEntryRepository.findByOrderSessionId(requerying.getOrderSessionId()).orElseThrow();
+    assertThat(resolvedQueueEntry.getPublishedAt()).isNotNull();
+    assertThat(resolvedQueueEntry.getResolvedBy()).isEqualTo(operatorId);
+    assertThat(resolvedQueueEntry.getResolution()).isEqualTo("COMPLETED");
+    assertThat(resolvedQueueEntry.getResolvedAt()).isNotNull();
+
     assertThat(auditLogRepository.findAll())
         .anySatisfy(log -> {
           assertThat(log.getAction()).isEqualTo(AuditAction.MANUAL_REPLAY.value());
