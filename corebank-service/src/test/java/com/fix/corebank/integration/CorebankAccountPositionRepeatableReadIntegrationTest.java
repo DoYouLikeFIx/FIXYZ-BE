@@ -92,8 +92,8 @@ class CorebankAccountPositionRepeatableReadIntegrationTest extends CorebankConta
     jdbcTemplate.update(
         """
         INSERT INTO executions (
-          order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, executed_at, created_at, updated_at, version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, execution_seq, executed_at, created_at, updated_at, version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         0L,
         1L,
@@ -102,6 +102,7 @@ class CorebankAccountPositionRepeatableReadIntegrationTest extends CorebankConta
         "BUY",
         new BigDecimal("130.0000"),
         new BigDecimal("70000.0000"),
+        1,
         Timestamp.from(Instant.parse("2026-03-19T23:50:00Z")),
         Timestamp.from(Instant.parse("2026-03-19T23:50:00Z")),
         Timestamp.from(Instant.parse("2026-03-19T23:50:00Z")),
@@ -110,8 +111,8 @@ class CorebankAccountPositionRepeatableReadIntegrationTest extends CorebankConta
     jdbcTemplate.update(
         """
         INSERT INTO executions (
-          order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, executed_at, created_at, updated_at, version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, execution_seq, executed_at, created_at, updated_at, version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         0L,
         1L,
@@ -120,6 +121,7 @@ class CorebankAccountPositionRepeatableReadIntegrationTest extends CorebankConta
         "SELL",
         new BigDecimal("10.0000"),
         new BigDecimal("70500.0000"),
+        2,
         Timestamp.from(Instant.parse("2026-03-20T00:00:01Z")),
         Timestamp.from(Instant.parse("2026-03-20T00:00:01Z")),
         Timestamp.from(Instant.parse("2026-03-20T00:00:01Z")),
@@ -193,8 +195,8 @@ class CorebankAccountPositionRepeatableReadIntegrationTest extends CorebankConta
         jdbcTemplate.update(
             """
             INSERT INTO executions (
-              order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, executed_at, created_at, updated_at, version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, execution_seq, executed_at, created_at, updated_at, version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             0L,
             1L,
@@ -203,6 +205,7 @@ class CorebankAccountPositionRepeatableReadIntegrationTest extends CorebankConta
             "SELL",
             new BigDecimal("40.0000"),
             new BigDecimal("71000.0000"),
+            3,
             Timestamp.from(Instant.parse("2026-03-20T00:00:02Z")),
             Timestamp.from(mutatedAt),
             Timestamp.from(mutatedAt),
@@ -263,8 +266,8 @@ class CorebankAccountPositionRepeatableReadIntegrationTest extends CorebankConta
         jdbcTemplate.update(
             """
             INSERT INTO executions (
-              order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, executed_at, created_at, updated_at, version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, execution_seq, executed_at, created_at, updated_at, version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             0L,
             1L,
@@ -273,6 +276,7 @@ class CorebankAccountPositionRepeatableReadIntegrationTest extends CorebankConta
             "SELL",
             new BigDecimal("40.0000"),
             new BigDecimal("71000.0000"),
+            3,
             Timestamp.from(Instant.parse("2026-03-20T00:00:02Z")),
             Timestamp.from(mutatedAt),
             Timestamp.from(mutatedAt),

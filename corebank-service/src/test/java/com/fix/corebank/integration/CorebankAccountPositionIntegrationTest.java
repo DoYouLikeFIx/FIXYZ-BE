@@ -87,8 +87,8 @@ class CorebankAccountPositionIntegrationTest {
     jdbcTemplate.update(
         """
         INSERT INTO executions (
-          id, order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, executed_at, created_at, updated_at, version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, execution_seq, executed_at, created_at, updated_at, version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         1L,
         0L,
@@ -98,6 +98,7 @@ class CorebankAccountPositionIntegrationTest {
         "BUY",
         new java.math.BigDecimal("130.0000"),
         new java.math.BigDecimal("70000.0000"),
+        1,
         Timestamp.from(Instant.parse("2026-03-19T23:50:00Z")),
         Timestamp.from(Instant.parse("2026-03-19T23:50:00Z")),
         Timestamp.from(Instant.parse("2026-03-19T23:50:00Z")),
@@ -106,8 +107,8 @@ class CorebankAccountPositionIntegrationTest {
     jdbcTemplate.update(
         """
         INSERT INTO executions (
-          id, order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, executed_at, created_at, updated_at, version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, order_id, account_id, cl_ord_id, symbol, side, exec_qty, exec_price, execution_seq, executed_at, created_at, updated_at, version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         2L,
         0L,
@@ -117,6 +118,7 @@ class CorebankAccountPositionIntegrationTest {
         "SELL",
         new java.math.BigDecimal("10.0000"),
         new java.math.BigDecimal("70500.0000"),
+        2,
         Timestamp.from(Instant.parse("2026-03-20T00:00:01Z")),
         Timestamp.from(Instant.parse("2026-03-20T00:00:01Z")),
         Timestamp.from(Instant.parse("2026-03-20T00:00:01Z")),
