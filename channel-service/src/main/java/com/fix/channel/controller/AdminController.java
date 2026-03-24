@@ -24,6 +24,7 @@ import com.fix.channel.dto.request.AdminOrderReplayRequest;
 import com.fix.channel.dto.request.AdminSecurityEventRequest;
 import com.fix.channel.dto.response.AdminAccountStatusTransitionResponse;
 import com.fix.channel.dto.response.AdminAuditLogQueryResponse;
+import com.fix.channel.dto.response.AdminMonitoringFreshnessResponse;
 import com.fix.channel.dto.response.AdminOrderIdempotencyReconciliationResponse;
 import com.fix.channel.dto.response.AdminOrderReplayResponse;
 import com.fix.channel.dto.response.AdminSecurityEventResponse;
@@ -31,6 +32,7 @@ import com.fix.channel.dto.response.AdminSessionInvalidationResponse;
 import com.fix.channel.service.AdminAccountStatusService;
 import com.fix.channel.service.AdminApiRateLimitService;
 import com.fix.channel.service.AdminAuditLogQueryService;
+import com.fix.channel.service.AdminMonitoringFreshnessService;
 import com.fix.channel.service.AdminOrderIdempotencyReconciliationService;
 import com.fix.channel.service.AdminMemberSessionService;
 import com.fix.channel.service.AdminOrderReplayService;
@@ -58,6 +60,7 @@ public class AdminController {
   private final ChannelScaffoldService channelScaffoldService;
   private final AdminAccountStatusService adminAccountStatusService;
   private final AdminAuditLogQueryService adminAuditLogQueryService;
+  private final AdminMonitoringFreshnessService adminMonitoringFreshnessService;
   private final AdminMemberSessionService adminMemberSessionService;
   private final AdminOrderReplayService adminOrderReplayService;
   private final AdminOrderIdempotencyReconciliationService adminOrderIdempotencyReconciliationService;
@@ -67,6 +70,7 @@ public class AdminController {
       ChannelScaffoldService channelScaffoldService,
       AdminAccountStatusService adminAccountStatusService,
       AdminAuditLogQueryService adminAuditLogQueryService,
+      AdminMonitoringFreshnessService adminMonitoringFreshnessService,
       AdminMemberSessionService adminMemberSessionService,
       AdminOrderReplayService adminOrderReplayService,
       AdminOrderIdempotencyReconciliationService adminOrderIdempotencyReconciliationService,
@@ -75,6 +79,7 @@ public class AdminController {
     this.channelScaffoldService = channelScaffoldService;
     this.adminAccountStatusService = adminAccountStatusService;
     this.adminAuditLogQueryService = adminAuditLogQueryService;
+    this.adminMonitoringFreshnessService = adminMonitoringFreshnessService;
     this.adminMemberSessionService = adminMemberSessionService;
     this.adminOrderReplayService = adminOrderReplayService;
     this.adminOrderIdempotencyReconciliationService = adminOrderIdempotencyReconciliationService;
@@ -111,11 +116,19 @@ public class AdminController {
       @RequestParam(required = false) String eventType,
       HttpServletRequest httpServletRequest
   ) {
-    enforceAdminRateLimit(httpServletRequest);
+    enforceAdminAuditRateLimit(httpServletRequest);
     AdminAuditLogQueryRequest request = new AdminAuditLogQueryRequest(page, size, from, to, memberId, eventType);
     return ApiResponse.success(AdminAuditLogQueryResponse.from(
         adminAuditLogQueryService.query(request.toVo())
     ));
+  }
+
+  @GetMapping("/monitoring/freshness")
+  public ApiResponse<AdminMonitoringFreshnessResponse> monitoringFreshness(
+      HttpServletRequest httpServletRequest
+  ) {
+    enforceAdminMonitoringFreshnessRateLimit(httpServletRequest);
+    return ApiResponse.success(AdminMonitoringFreshnessResponse.from(adminMonitoringFreshnessService.getFreshness()));
   }
 
   @PostMapping(value = "/orders/{clOrdId}/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -208,12 +221,20 @@ public class AdminController {
     ));
   }
 
-  private void enforceAdminRateLimit(HttpServletRequest request) {
+  private void enforceAdminAuditRateLimit(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     if (session == null) {
       throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
     }
     adminApiRateLimitService.enforceAuditLogs(session.getId());
+  }
+
+  private void enforceAdminMonitoringFreshnessRateLimit(HttpServletRequest request) {
+    HttpSession session = request.getSession(false);
+    if (session == null) {
+      throw new BusinessException(ErrorCode.AUTH_REQUIRED, "authentication required");
+    }
+    adminApiRateLimitService.enforceMonitoringFreshness(session.getId());
   }
 
   private AdminActorContext resolveAdminActorContext(HttpServletRequest request) {
