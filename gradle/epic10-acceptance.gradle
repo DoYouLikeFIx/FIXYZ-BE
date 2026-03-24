@@ -6,8 +6,11 @@ def epic10AcceptanceBuildId = providers.gradleProperty('epic10AcceptanceBuildId'
     .orElse(providers.environmentVariable('EPIC10_ACCEPTANCE_BUILD_ID'))
     .orElse(providers.environmentVariable('GITHUB_RUN_ID'))
     .getOrElse('local')
+def epic10AcceptanceBaseDir = providers.environmentVariable('GITHUB_WORKSPACE')
+    .map { new File(it) }
+    .getOrNull() ?: rootProject.projectDir.parentFile
 def epic10AcceptanceArtifactRoot = new File(
-    rootProject.projectDir.parentFile,
+    epic10AcceptanceBaseDir,
     "_bmad-output/test-artifacts/epic-10/${epic10AcceptanceBuildId}"
 )
 def epic10AcceptanceSuites = [
