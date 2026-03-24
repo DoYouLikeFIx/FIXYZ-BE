@@ -13,14 +13,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.AuditAction;
+import com.fix.channel.entity.ManualRecoveryQueueEntry;
 import com.fix.channel.entity.Member;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.repository.AuditLogRepository;
+import com.fix.channel.repository.ManualRecoveryQueueEntryRepository;
 import com.fix.channel.repository.MemberRepository;
 import com.fix.channel.repository.OrderSessionRepository;
 import com.fix.channel.repository.SecurityEventRepository;
 import com.fix.channel.support.ChannelContainersIntegrationTestBase;
 import com.fix.channel.support.ManualReplayIdentitySupport;
+import com.fix.channel.service.OrderSessionRecoveryService;
 import com.fix.common.web.CommonHeaders;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
@@ -31,6 +34,8 @@ import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -75,7 +80,13 @@ class AdminOrderReplayIntegrationTest extends ChannelContainersIntegrationTestBa
   private AuditLogRepository auditLogRepository;
 
   @Autowired
+  private ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository;
+
+  @Autowired
   private SecurityEventRepository securityEventRepository;
+
+  @Autowired
+  private OrderSessionRecoveryService orderSessionRecoveryService;
 
   @Autowired
   private PasswordEncoder passwordEncoder;
@@ -109,12 +120,134 @@ class AdminOrderReplayIntegrationTest extends ChannelContainersIntegrationTestBa
     WIRE_MOCK_SERVER.resetAll();
     securityEventRepository.deleteAll();
     auditLogRepository.deleteAll();
+    manualRecoveryQueueEntryRepository.deleteAll();
     orderSessionRepository.deleteAll();
     memberRepository.deleteAll();
     stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
       connection.serverCommands().flushDb();
       return null;
     });
+  }
+
+  @Test
+  @Tag("epic10-resilience")
+  @DisplayName("[E10-RES-003] unresolved requerying order should escalate and converge through admin replay")
+  void e10Res003ShouldEscalateUnresolvedRequeryingOrderAndConvergeThroughAdminReplay() throws Exception {
+    Member admin = createMember("M-ADMIN-REPLAY-11", "admin-replay-11@fixyz.com", "ROLE_ADMIN");
+    Member member = createMember("M-USER-REPLAY-11", "user-replay-11@fixyz.com", "ROLE_USER");
+    OrderSession requerying = saveRequeryingSession(member.getId(), 1L, "MARKET", null);
+    String operatorId = ManualReplayIdentitySupport.operatorIdFor(admin.getMemberNo());
+
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
+            urlPathEqualTo("/internal/v1/orders/" + CL_ORD_ID + "/requery"))
+        .withQueryParam("attemptCount", equalTo("1"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "orderId": 711,
+                    "clOrdId": "%s",
+                    "status": "REJECTED",
+                    "externalSyncStatus": "REJECTED",
+                    "executionResult": "DECLINED",
+                    "executedQty": null,
+                    "leavesQty": null,
+                    "executedPrice": null,
+                    "externalOrderId": null,
+                    "executedAt": null,
+                    "canceledAt": null,
+                    "message": "requires manual intervention",
+                    "retriable": false,
+                    "escalationRequired": false,
+                    "attemptCount": 1,
+                    "maxRetryCount": 5
+                  }
+                }
+                """.formatted(CL_ORD_ID))));
+
+    orderSessionRecoveryService.runRecoveryCycle();
+
+    OrderSession escalated = orderSessionRepository.findByOrderSessionId(requerying.getOrderSessionId()).orElseThrow();
+    assertThat(escalated.getStatus().name()).isEqualTo("ESCALATED");
+    assertThat(escalated.getFailureReason()).isEqualTo(OrderSession.ESCALATED_MANUAL_REVIEW);
+
+    ManualRecoveryQueueEntry queueEntry =
+        manualRecoveryQueueEntryRepository.findByOrderSessionId(requerying.getOrderSessionId()).orElseThrow();
+    assertThat(queueEntry.getAttemptCount()).isEqualTo(1);
+    assertThat(queueEntry.getReason()).isEqualTo(OrderSession.ESCALATED_MANUAL_REVIEW);
+    assertThat(queueEntry.getPublishedAt()).isNotNull();
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo(AuditAction.ORDER_SESSION_RECOVERY_ATTEMPT.value());
+          assertThat(log.getOrderSessionId()).isEqualTo(escalated.getId());
+          assertThat(log.getDetail()).contains("attemptCount=1");
+          assertThat(log.getDetail()).contains("outcome=ESCALATED");
+          assertThat(log.getDetail()).contains("recoveryStatus=REJECTED");
+        });
+
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(
+            urlPathEqualTo("/internal/v1/orders/" + CL_ORD_ID + "/replay"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "clOrdId": "%s",
+                    "finalStatus": "COMPLETED",
+                    "executionResult": "FILLED",
+                    "executionSource": "VIRTUAL_FILL",
+                    "executedQty": 10.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": 72000.0000,
+                    "externalOrderId": "FEP-RES-003",
+                    "externalSyncStatus": "CONFIRMED",
+                    "executedAt": "2026-03-24T10:15:00Z",
+                    "canceledAt": null,
+                    "processedBy": "%s",
+                    "processedAt": "2026-03-24T10:16:00Z"
+                  }
+                }
+                """.formatted(CL_ORD_ID, operatorId))));
+
+    String adminSessionId = createAuthenticatedSession(admin, "ROLE_ADMIN");
+    String csrfToken = fetchCsrfToken(adminSessionId);
+
+    mockMvc.perform(post("/api/v1/admin/orders/{clOrdId}/replay", CL_ORD_ID)
+            .cookie(sessionCookie(adminSessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .header(CommonHeaders.X_CORRELATION_ID, "c8d6f0a7-6c91-48f6-b59e-7d5ab53e4e11")
+            .header(HttpHeaders.USER_AGENT, "JUnit-Admin-Replay/1.0")
+            .contentType("application/json")
+            .content(requestJson("APPROVE", 72000L)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.clOrdId").value(CL_ORD_ID))
+        .andExpect(jsonPath("$.data.finalStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.executionSource").value("VIRTUAL_FILL"))
+        .andExpect(jsonPath("$.data.processedBy").value(operatorId));
+
+    OrderSession converged = orderSessionRepository.findByOrderSessionId(requerying.getOrderSessionId()).orElseThrow();
+    assertThat(converged.getStatus().name()).isEqualTo("COMPLETED");
+    assertThat(converged.getManualReplayProcessedBy()).isEqualTo(operatorId);
+    assertThat(converged.getManualReplayExecutionSource()).isEqualTo("VIRTUAL_FILL");
+    assertThat(converged.getExternalOrderId()).isEqualTo("FEP-RES-003");
+
+    assertThat(auditLogRepository.findAll())
+        .anySatisfy(log -> {
+          assertThat(log.getAction()).isEqualTo(AuditAction.MANUAL_REPLAY.value());
+          assertThat(log.getOrderSessionId()).isEqualTo(converged.getId());
+          assertThat(log.getDetail()).contains("evidenceRef=OPS-INC-20260319-42");
+        });
+
+    WIRE_MOCK_SERVER.verify(1, com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor(
+        urlPathEqualTo("/internal/v1/orders/" + CL_ORD_ID + "/requery"))
+        .withQueryParam("attemptCount", equalTo("1")));
+    WIRE_MOCK_SERVER.verify(1, postRequestedFor(urlPathEqualTo("/internal/v1/orders/" + CL_ORD_ID + "/replay")));
   }
 
   @Test
@@ -525,6 +658,26 @@ class AdminOrderReplayIntegrationTest extends ChannelContainersIntegrationTestBa
 
   private OrderSession saveEscalatedSession(Long memberId, Long accountId) {
     return saveEscalatedSession(memberId, accountId, "LIMIT", BigDecimal.valueOf(72000));
+  }
+
+  private OrderSession saveRequeryingSession(Long memberId, Long accountId, String orderType, BigDecimal price) {
+    OrderSession session = OrderSession.initiated(
+        memberId,
+        accountId,
+        CL_ORD_ID,
+        "prepare-fingerprint",
+        "005930",
+        "BUY",
+        orderType,
+        BigDecimal.TEN,
+        price,
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.parse("2026-03-19T13:00:00Z")
+    );
+    session.startExecuting();
+    session.beginRequerying("EXECUTING_TIMEOUT");
+    return orderSessionRepository.saveAndFlush(session);
   }
 
   private OrderSession saveEscalatedSession(Long memberId, Long accountId, String orderType, BigDecimal price) {
