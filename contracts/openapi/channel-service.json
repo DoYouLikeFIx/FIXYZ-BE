@@ -2428,7 +2428,7 @@
                         "content": {
                             "*/*": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/ApiResponseAccountPositionResponse"
+                                    "$ref": "#/components/schemas/ApiResponseAccountSummaryResponse"
                                 }
                             }
                         }
@@ -4330,7 +4330,66 @@
                     }
                 }
             },
+            "AccountSummaryResponse": {
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "quantity": {
+                        "type": "number"
+                    },
+                    "availableQuantity": {
+                        "type": "number"
+                    },
+                    "availableQty": {
+                        "type": "number"
+                    },
+                    "balance": {
+                        "type": "number"
+                    },
+                    "availableBalance": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "asOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "ApiResponseAccountSummaryResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AccountSummaryResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
             "AccountPositionResponse": {
+                "required": [
+                    "valuationStatus"
+                ],
                 "type": "object",
                 "properties": {
                     "accountId": {
@@ -4366,22 +4425,56 @@
                         "type": "string",
                         "format": "date-time"
                     },
+                    "avgPrice": {
+                        "type": "number",
+                        "nullable": true
+                    },
                     "marketPrice": {
-                        "type": "number"
+                        "type": "number",
+                        "nullable": true
                     },
                     "quoteSnapshotId": {
-                        "type": "string"
+                        "type": "string",
+                        "nullable": true
                     },
                     "quoteAsOf": {
                         "type": "string",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "nullable": true
                     },
                     "quoteSourceMode": {
                         "type": "string",
+                        "nullable": true,
                         "enum": [
                             "LIVE",
                             "DELAYED",
                             "REPLAY"
+                        ]
+                    },
+                    "unrealizedPnl": {
+                        "type": "number",
+                        "nullable": true
+                    },
+                    "realizedPnlDaily": {
+                        "type": "number",
+                        "nullable": true
+                    },
+                    "valuationStatus": {
+                        "type": "string",
+                        "nullable": false,
+                        "enum": [
+                            "FRESH",
+                            "STALE",
+                            "UNAVAILABLE"
+                        ]
+                    },
+                    "valuationUnavailableReason": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "STALE_QUOTE",
+                            "QUOTE_MISSING",
+                            "PROVIDER_UNAVAILABLE"
                         ]
                     }
                 }
