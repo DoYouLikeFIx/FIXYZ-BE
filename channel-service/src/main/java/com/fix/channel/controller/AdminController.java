@@ -24,12 +24,14 @@ import com.fix.channel.dto.request.AdminOrderReplayRequest;
 import com.fix.channel.dto.request.AdminSecurityEventRequest;
 import com.fix.channel.dto.response.AdminAccountStatusTransitionResponse;
 import com.fix.channel.dto.response.AdminAuditLogQueryResponse;
+import com.fix.channel.dto.response.AdminOrderIdempotencyReconciliationResponse;
 import com.fix.channel.dto.response.AdminOrderReplayResponse;
 import com.fix.channel.dto.response.AdminSecurityEventResponse;
 import com.fix.channel.dto.response.AdminSessionInvalidationResponse;
 import com.fix.channel.service.AdminAccountStatusService;
 import com.fix.channel.service.AdminApiRateLimitService;
 import com.fix.channel.service.AdminAuditLogQueryService;
+import com.fix.channel.service.AdminOrderIdempotencyReconciliationService;
 import com.fix.channel.service.AdminMemberSessionService;
 import com.fix.channel.service.AdminOrderReplayService;
 import com.fix.channel.service.ChannelScaffoldService;
@@ -58,6 +60,7 @@ public class AdminController {
   private final AdminAuditLogQueryService adminAuditLogQueryService;
   private final AdminMemberSessionService adminMemberSessionService;
   private final AdminOrderReplayService adminOrderReplayService;
+  private final AdminOrderIdempotencyReconciliationService adminOrderIdempotencyReconciliationService;
   private final AdminApiRateLimitService adminApiRateLimitService;
 
   public AdminController(
@@ -66,6 +69,7 @@ public class AdminController {
       AdminAuditLogQueryService adminAuditLogQueryService,
       AdminMemberSessionService adminMemberSessionService,
       AdminOrderReplayService adminOrderReplayService,
+      AdminOrderIdempotencyReconciliationService adminOrderIdempotencyReconciliationService,
       AdminApiRateLimitService adminApiRateLimitService
   ) {
     this.channelScaffoldService = channelScaffoldService;
@@ -73,6 +77,7 @@ public class AdminController {
     this.adminAuditLogQueryService = adminAuditLogQueryService;
     this.adminMemberSessionService = adminMemberSessionService;
     this.adminOrderReplayService = adminOrderReplayService;
+    this.adminOrderIdempotencyReconciliationService = adminOrderIdempotencyReconciliationService;
     this.adminApiRateLimitService = adminApiRateLimitService;
   }
 
@@ -142,6 +147,31 @@ public class AdminController {
     adminApiRateLimitService.enforceOrderReplay(actor.getSessionId());
     return ApiResponse.success(AdminOrderReplayResponse.from(
         adminOrderReplayService.replay(clOrdId, request.toVo(), actor)
+    ));
+  }
+
+  @PostMapping("/orders/{clOrdId}/idempotency-reconciliation")
+  @ApiResponses({
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Unauthorized",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Forbidden",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Not Found",
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class))),
+      @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "429", description = "Too Many Requests",
+          headers = @Header(name = "Retry-After", description = "Seconds until the rate-limit window resets",
+              schema = @Schema(type = "string")),
+          content = @Content(schema = @Schema(implementation = com.fix.common.error.ApiErrorResponse.class)))
+  })
+  public ApiResponse<AdminOrderIdempotencyReconciliationResponse> reconcileOrderIdempotency(
+      @PathVariable String clOrdId,
+      HttpServletRequest httpServletRequest
+  ) {
+    AdminActorContext actor = resolveAdminActorContext(httpServletRequest);
+    adminApiRateLimitService.enforceOrderReconciliation(actor.getSessionId());
+    return ApiResponse.success(AdminOrderIdempotencyReconciliationResponse.from(
+        adminOrderIdempotencyReconciliationService.reconcile(clOrdId, actor)
     ));
   }
 

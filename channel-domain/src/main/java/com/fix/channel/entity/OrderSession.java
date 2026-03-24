@@ -22,6 +22,7 @@ import java.util.UUID;
 public class OrderSession extends BaseTimeEntity {
 
   public static final String ESCALATED_MANUAL_REVIEW = "ESCALATED_MANUAL_REVIEW";
+  private static final String OTP_EXCEEDED = "OTP_EXCEEDED";
 
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -628,6 +629,30 @@ public class OrderSession extends BaseTimeEntity {
     this.manualReplayProcessedBy = processedBy;
     this.manualReplayExecutionSource = executionSource;
     this.manualReplayProcessedAt = processedAt;
+  }
+
+  public boolean isExternalLinkageReconciliationEligible() {
+    if (this.status == null) {
+      return false;
+    }
+    if (this.status == OrderSessionStatus.REQUERYING
+        || this.status == OrderSessionStatus.ESCALATED
+        || this.status == OrderSessionStatus.COMPLETED
+        || this.status == OrderSessionStatus.CANCELED) {
+      return true;
+    }
+    if (this.status == OrderSessionStatus.FAILED) {
+      return !OTP_EXCEEDED.equals(this.failureReason);
+    }
+    return false;
+  }
+
+  public void reconcileExternalLinkage(String externalOrderId, String externalSyncStatus) {
+    if (!isExternalLinkageReconciliationEligible()) {
+      throw invalidTransition("order session is not eligible for post-execution reconciliation");
+    }
+    this.externalOrderId = externalOrderId;
+    this.externalSyncStatus = externalSyncStatus;
   }
 
   private void transitionTo(OrderSessionStatus nextStatus, String message) {

@@ -1059,6 +1059,91 @@
                 }
             }
         },
+        "/internal/v1/orders/{clOrdId}": {
+            "get": {
+                "tags": [
+                    "internal-corebank-controller"
+                ],
+                "summary": "Order Snapshot",
+                "operationId": "orderSnapshot",
+                "parameters": [
+                    {
+                        "name": "clOrdId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "X-Internal-Secret",
+                        "in": "header",
+                        "description": "Shared secret required for internal service-to-service requests",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseInternalOrderSnapshotResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/internal/v1/orders/{clOrdId}/requery": {
             "get": {
                 "tags": [
@@ -2578,6 +2663,49 @@
                     },
                     "todaySellQuantity": {
                         "type": "number"
+                    }
+                }
+            },
+            "ApiResponseInternalOrderSnapshotResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalOrderSnapshotResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalOrderSnapshotResponse": {
+                "type": "object",
+                "properties": {
+                    "orderId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "clOrdId": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "externalSyncStatus": {
+                        "type": "string"
+                    },
+                    "externalOrderId": {
+                        "type": "string"
                     }
                 }
             },

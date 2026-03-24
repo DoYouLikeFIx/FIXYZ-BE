@@ -3,6 +3,7 @@ package com.fix.channel.service;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,6 +95,45 @@ class OrderExecutionServiceTest {
   }
 
   @Test
+  void shouldForwardCanonicalClOrdIdToCorebankCommand() {
+    OrderSession authedSession = createAuthedSession();
+    OrderSession completedSession = createAuthedSession();
+    when(orderSessionService.requireOwnedSession(1L, authedSession.getOrderSessionId())).thenReturn(authedSession);
+    when(orderSessionService.beginExecution(authedSession)).thenReturn(authedSession);
+    corebankClient.willReturn(OrderExecuteResult.of(
+        1004L,
+        authedSession.getClOrdId(),
+        "FILLED",
+        false,
+        BigDecimal.TEN,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "EXT-CLORD",
+        "CONFIRMED",
+        Instant.parse("2026-03-21T00:00:02Z")
+    ));
+    when(orderSessionService.completeExecution(
+        eq(authedSession),
+        any(),
+        any(),
+        any(),
+        any(),
+        any(),
+        any(),
+        any()
+    )).thenReturn(completedSession);
+    when(orderSessionService.toResult(completedSession, false, false)).thenReturn(mockResult());
+
+    orderExecutionService.execute(1L, authedSession.getOrderSessionId());
+
+    assertThat(corebankClient.lastCommand).isNotNull();
+    assertThat(corebankClient.lastCommand.getClOrdId())
+        .isEqualTo(authedSession.getClOrdId());
+  }
+
+  @Test
   void shouldPersistFailedNotificationWhenExecutionThrowsNonEscalationError() {
     OrderSession authedSession = createAuthedSession();
     when(orderSessionService.requireOwnedSession(1L, authedSession.getOrderSessionId())).thenReturn(authedSession);
@@ -172,6 +212,70 @@ class OrderExecutionServiceTest {
   }
 
   @Test
+  void shouldEscalateWhenCorebankReturnsNonConfirmedNonFailedSyncStatus() {
+    OrderSession authedSession = createAuthedSession();
+    OrderSession escalatedSession = createAuthedSession();
+    escalatedSession.startExecuting();
+    escalatedSession.escalate(
+        OrderSession.ESCALATED_MANUAL_REVIEW,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "EXT-ESCALATED",
+        "PENDING_CONFIRMATION",
+        Instant.parse("2026-03-18T00:01:00Z")
+    );
+    when(orderSessionService.requireOwnedSession(1L, authedSession.getOrderSessionId())).thenReturn(authedSession);
+    when(orderSessionService.beginExecution(authedSession)).thenReturn(authedSession);
+    corebankClient.willReturn(OrderExecuteResult.of(
+        1005L,
+        authedSession.getClOrdId(),
+        "PENDING",
+        false,
+        BigDecimal.TEN,
+        "FILLED",
+        BigDecimal.TEN,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(72000),
+        "EXT-ESCALATED",
+        "PENDING_CONFIRMATION",
+        Instant.parse("2026-03-18T00:01:00Z")
+    ));
+    when(orderSessionService.markEscalated(
+        eq(authedSession),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("FILLED"),
+        eq(BigDecimal.TEN),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("EXT-ESCALATED"),
+        eq("PENDING_CONFIRMATION"),
+        eq(Instant.parse("2026-03-18T00:01:00Z"))
+    )).thenReturn(escalatedSession);
+    when(orderSessionService.toResult(escalatedSession, false, false)).thenReturn(mockResult());
+
+    orderExecutionService.execute(1L, authedSession.getOrderSessionId());
+
+    verify(orderSessionService).markEscalated(
+        eq(authedSession),
+        eq(OrderSession.ESCALATED_MANUAL_REVIEW),
+        eq("FILLED"),
+        eq(BigDecimal.TEN),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("EXT-ESCALATED"),
+        eq("PENDING_CONFIRMATION"),
+        eq(Instant.parse("2026-03-18T00:01:00Z"))
+    );
+    verify(channelScaffoldService).bootstrapNotification(
+        eq(1L),
+        eq("ORDER"),
+        startsWith("orderSessionId=" + escalatedSession.getOrderSessionId() + " status=ESCALATED")
+    );
+  }
+
+  @Test
   void shouldForwardMarketQuoteContextFromSession() {
     OrderSession authedSession = OrderSession.initiated(
         1L,
@@ -222,16 +326,16 @@ class OrderExecutionServiceTest {
 
     orderExecutionService.execute(1L, authedSession.getOrderSessionId());
 
-    assert corebankClient.lastCommand != null;
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getOrderType()).isEqualTo("MARKET");
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getPrice()).isNull();
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteSnapshotId())
+    assertThat(corebankClient.lastCommand).isNotNull();
+    assertThat(corebankClient.lastCommand.getOrderType()).isEqualTo("MARKET");
+    assertThat(corebankClient.lastCommand.getPrice()).isNull();
+    assertThat(corebankClient.lastCommand.getQuoteSnapshotId())
         .isEqualTo("qsnap-20260321-0001");
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteAsOf())
+    assertThat(corebankClient.lastCommand.getQuoteAsOf())
         .isEqualTo(Instant.parse("2026-03-21T00:00:00Z"));
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getQuoteSourceMode())
+    assertThat(corebankClient.lastCommand.getQuoteSourceMode())
         .isEqualTo(FepQuoteSourceMode.LIVE);
-    org.assertj.core.api.Assertions.assertThat(corebankClient.lastCommand.getPreTradePrice())
+    assertThat(corebankClient.lastCommand.getPreTradePrice())
         .isEqualByComparingTo("72100");
   }
 

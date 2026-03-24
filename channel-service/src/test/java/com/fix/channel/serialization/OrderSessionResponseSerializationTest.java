@@ -59,6 +59,7 @@ class OrderSessionResponseSerializationTest {
     JsonNode data = objectMapper.readTree(objectMapper.writeValueAsString(response));
 
     assertThat(data.path("status").asText()).isEqualTo("AUTHED");
+    assertThat(data.path("clOrdId").asText()).isEqualTo("cl-1");
     assertThat(data.has("expiresAt")).isTrue();
     assertThat(data.has("remainingSeconds")).isTrue();
     assertThat(data.has("executionResult")).isTrue();
@@ -111,6 +112,7 @@ class OrderSessionResponseSerializationTest {
     JsonNode data = objectMapper.readTree(objectMapper.writeValueAsString(response));
 
     assertThat(data.path("status").asText()).isEqualTo("COMPLETED");
+    assertThat(data.path("clOrdId").asText()).isEqualTo("cl-2");
     assertThat(data.has("expiresAt")).isFalse();
     assertThat(data.has("remainingSeconds")).isFalse();
     assertThat(data.path("executionResult").asText()).isEqualTo("FILLED");
@@ -162,6 +164,7 @@ class OrderSessionResponseSerializationTest {
     JsonNode data = objectMapper.readTree(objectMapper.writeValueAsString(response));
 
     assertThat(data.path("status").asText()).isEqualTo("FAILED");
+    assertThat(data.path("clOrdId").asText()).isEqualTo("cl-3");
     assertThat(data.has("expiresAt")).isFalse();
     assertThat(data.has("remainingSeconds")).isFalse();
     assertThat(data.has("executionResult")).isTrue();
@@ -212,6 +215,7 @@ class OrderSessionResponseSerializationTest {
     JsonNode data = objectMapper.readTree(objectMapper.writeValueAsString(response));
 
     assertThat(data.path("status").asText()).isEqualTo("REQUERYING");
+    assertThat(data.path("clOrdId").asText()).isEqualTo("cl-rq");
     assertThat(data.path("executionResult").isNull()).isTrue();
     assertThat(data.path("executedQty").isNull()).isTrue();
     assertThat(data.path("leavesQty").isNull()).isTrue();
@@ -260,6 +264,7 @@ class OrderSessionResponseSerializationTest {
     JsonNode data = objectMapper.readTree(objectMapper.writeValueAsString(response));
 
     assertThat(data.path("status").asText()).isEqualTo("ESCALATED");
+    assertThat(data.path("clOrdId").asText()).isEqualTo("cl-esc");
     assertThat(data.has("expiresAt")).isFalse();
     assertThat(data.has("remainingSeconds")).isFalse();
     assertThat(data.path("executionResult").isNull()).isTrue();
@@ -311,6 +316,7 @@ class OrderSessionResponseSerializationTest {
     JsonNode data = objectMapper.readTree(objectMapper.writeValueAsString(response));
 
     assertThat(data.path("status").asText()).isEqualTo("CANCELED");
+    assertThat(data.path("clOrdId").asText()).isEqualTo("cl-4");
     assertThat(data.has("expiresAt")).isFalse();
     assertThat(data.has("remainingSeconds")).isFalse();
     assertThat(data.path("executionResult").asText()).isEqualTo("PARTIAL_FILL_CANCEL");

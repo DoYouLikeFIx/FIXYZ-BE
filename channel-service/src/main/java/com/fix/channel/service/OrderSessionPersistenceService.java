@@ -351,6 +351,18 @@ public class OrderSessionPersistenceService {
     return managedSession;
   }
 
+  @Transactional
+  OrderSession reconcileExternalLinkage(
+      OrderSession session,
+      String externalOrderId,
+      String externalSyncStatus
+  ) {
+    OrderSession managedSession = managedSession(session);
+    managedSession.reconcileExternalLinkage(externalOrderId, externalSyncStatus);
+    orderSessionRepository.flush();
+    return managedSession;
+  }
+
   @Transactional(readOnly = true)
   List<OrderSession> findTimedOutExecutingSessions(Instant cutoffTime, int batchSize) {
     int effectiveBatchSize = Math.max(1, batchSize);

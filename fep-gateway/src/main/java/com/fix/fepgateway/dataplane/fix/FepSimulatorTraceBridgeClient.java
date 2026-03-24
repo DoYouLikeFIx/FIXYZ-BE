@@ -24,7 +24,7 @@ public class FepSimulatorTraceBridgeClient {
   public FepSimulatorTraceBridgeClient(
       RestClient.Builder restClientBuilder,
       @Value("${fep.simulator.control-plane-base-url:http://fep-simulator:8082}") String baseUrl,
-      @Value("${internal.secret:local-internal-secret}") String internalSecret,
+      @Value("${internal.secret}") String internalSecret,
       @Value("${fep.simulator.trace-bridge-enabled:true}") boolean enabled
   ) {
     this.restClient = restClientBuilder

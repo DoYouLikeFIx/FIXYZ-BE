@@ -12,6 +12,7 @@ import com.fix.channel.vo.AccountOrderHistoryQueryCommand;
 import com.fix.channel.vo.AccountOrderHistoryItemResult;
 import com.fix.channel.vo.AccountOrderHistoryResult;
 import com.fix.channel.vo.AdminOrderReplayCommand;
+import com.fix.channel.vo.CorebankOrderSnapshotResult;
 import com.fix.channel.vo.OrderExecuteCommand;
 import com.fix.channel.vo.OrderExecuteResult;
 import com.fix.channel.vo.OrderReplayResult;
@@ -30,9 +31,12 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
@@ -44,6 +48,7 @@ import org.springframework.web.client.ResourceAccessException;
 public class CorebankClient {
 
   private static final String COREBANK_ORDERS_PATH = "/internal/v1/orders";
+  private static final String COREBANK_ORDER_SNAPSHOT_PATH = "/internal/v1/orders/{clOrdId}";
   private static final String COREBANK_ORDER_REQUERY_PATH = "/internal/v1/orders/{clOrdId}/requery";
   private static final String COREBANK_ORDER_REPLAY_PATH = "/internal/v1/orders/{clOrdId}/replay";
   private static final String COREBANK_ACCOUNT_POSITION_PATH = "/internal/v1/accounts/{accountId}/positions";
@@ -60,14 +65,16 @@ public class CorebankClient {
   public CorebankClient(
       RestClient.Builder restClientBuilder,
       @Value("${corebank.internal.base-url:${corebank.base-url:http://localhost:8081}}") String corebankBaseUrl,
-      @Value("${corebank.internal.secret:${internal.secret:${INTERNAL_SECRET:local-internal-secret}}}") String internalSecret
+      @Value("${corebank.internal.secret:}") String corebankInternalSecret,
+      @Value("${internal.secret:}") String internalSecret,
+      Environment environment
   ) {
     this(
         restClientBuilder
             .requestFactory(new HttpComponentsClientHttpRequestFactory())
             .baseUrl(corebankBaseUrl)
             .build(),
-        internalSecret
+        resolveInternalSecret(corebankInternalSecret, internalSecret, environment)
     );
   }
 
@@ -75,6 +82,29 @@ public class CorebankClient {
     this.restClient = restClient;
     this.internalSecret = internalSecret;
     this.objectMapper = new ObjectMapper();
+  }
+
+  private static String resolveInternalSecret(String corebankInternalSecret, String internalSecret, Environment environment) {
+    if (StringUtils.hasText(corebankInternalSecret)) {
+      return corebankInternalSecret;
+    }
+    if (StringUtils.hasText(internalSecret)) {
+      return internalSecret;
+    }
+    if (environment != null && environment.acceptsProfiles(Profiles.of("prod", "staging"))) {
+      throw new IllegalStateException("corebank.internal.secret or internal.secret must be configured");
+    }
+    return "local-internal-secret";
+  }
+
+  private static String resolveInternalSecret(String corebankInternalSecret, String internalSecret) {
+    if (StringUtils.hasText(corebankInternalSecret)) {
+      return corebankInternalSecret;
+    }
+    if (StringUtils.hasText(internalSecret)) {
+      return internalSecret;
+    }
+    throw new IllegalStateException("corebank.internal.secret or internal.secret must be configured");
   }
 
   public OrderExecuteResult executeOrder(OrderExecuteCommand command, String correlationId) {
@@ -105,6 +135,32 @@ public class CorebankClient {
           responseBody.externalOrderId(),
           responseBody.externalSyncStatus(),
           responseBody.executedAt()
+      );
+    } catch (RestClientException ex) {
+      throw translateFailure(ex);
+    }
+  }
+
+  public CorebankOrderSnapshotResult getOrderSnapshot(String clOrdId, String correlationId) {
+    try {
+      String traceparent = TraceparentSupport.currentOrGenerate();
+      CorebankApiResponse<CorebankOrderSnapshotResponse> response = restClient.get()
+          .uri(COREBANK_ORDER_SNAPSHOT_PATH, clOrdId)
+          .header(CommonHeaders.X_INTERNAL_SECRET, internalSecret)
+          .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+          .header(CommonHeaders.TRACEPARENT, traceparent)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+
+      CorebankOrderSnapshotResponse responseBody = extractBody(response);
+      return CorebankOrderSnapshotResult.of(
+          responseBody.orderId(),
+          responseBody.accountId(),
+          responseBody.clOrdId(),
+          responseBody.status(),
+          responseBody.externalSyncStatus(),
+          responseBody.externalOrderId()
       );
     } catch (RestClientException ex) {
       throw translateFailure(ex);
@@ -593,6 +649,17 @@ public class CorebankClient {
       String externalOrderId,
       String externalSyncStatus,
       Instant executedAt
+  ) {
+  }
+
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private record CorebankOrderSnapshotResponse(
+      Long orderId,
+      Long accountId,
+      String clOrdId,
+      String status,
+      String externalSyncStatus,
+      String externalOrderId
   ) {
   }
 

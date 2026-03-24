@@ -375,6 +375,14 @@ public class OrderSessionService {
     return orderSessionPersistenceService.markFailed(session, failureReason);
   }
 
+  public OrderSession reconcileExternalLinkage(
+      OrderSession session,
+      String externalOrderId,
+      String externalSyncStatus
+  ) {
+    return orderSessionPersistenceService.reconcileExternalLinkage(session, externalOrderId, externalSyncStatus);
+  }
+
   public void expireSession(String orderSessionId) {
     orderSessionPersistenceService.expireSession(orderSessionId);
   }

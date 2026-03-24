@@ -20,11 +20,13 @@ public class AdminApiRateLimitService {
   private static final String ENDPOINT_DEFAULT = "default";
   private static final String ENDPOINT_AUDIT_LOGS = "audit-logs";
   private static final String ENDPOINT_ORDER_REPLAY = "order-replay";
+  private static final String ENDPOINT_ORDER_RECONCILIATION = "order-reconciliation";
   private static final String ENDPOINT_SESSION_INVALIDATION = "session-invalidation";
   private static final Set<String> ALLOWED_ENDPOINTS = Set.of(
       ENDPOINT_DEFAULT,
       ENDPOINT_AUDIT_LOGS,
       ENDPOINT_ORDER_REPLAY,
+      ENDPOINT_ORDER_RECONCILIATION,
       ENDPOINT_SESSION_INVALIDATION
   );
 
@@ -42,6 +44,9 @@ public class AdminApiRateLimitService {
   @Value("${channel.admin.rate-limit.order-replay.max-attempts:20}")
   private int orderReplayMaxAttempts;
 
+  @Value("${channel.admin.rate-limit.order-reconciliation.max-attempts:20}")
+  private int orderReconciliationMaxAttempts;
+
   @Value("${channel.admin.rate-limit.session-invalidation.max-attempts:20}")
   private int sessionInvalidationMaxAttempts;
 
@@ -58,6 +63,10 @@ public class AdminApiRateLimitService {
 
   public void enforceOrderReplay(String sessionId) {
     enforceForEndpoint(sessionId, ENDPOINT_ORDER_REPLAY);
+  }
+
+  public void enforceOrderReconciliation(String sessionId) {
+    enforceForEndpoint(sessionId, ENDPOINT_ORDER_RECONCILIATION);
   }
 
   public void enforceSessionInvalidation(String sessionId) {
@@ -117,6 +126,9 @@ public class AdminApiRateLimitService {
     }
     if (ENDPOINT_ORDER_REPLAY.equals(endpointKey)) {
       return Math.max(1, orderReplayMaxAttempts);
+    }
+    if (ENDPOINT_ORDER_RECONCILIATION.equals(endpointKey)) {
+      return Math.max(1, orderReconciliationMaxAttempts);
     }
     if (ENDPOINT_SESSION_INVALIDATION.equals(endpointKey)) {
       return Math.max(1, sessionInvalidationMaxAttempts);

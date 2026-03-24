@@ -23,6 +23,8 @@ class CorebankOpenApiCompatibilityTest {
     JsonNode paths = contract.path("paths");
     JsonNode apiErrorSchema = contract.path("components").path("schemas").path("ApiErrorResponse");
     JsonNode orderResponse = contract.path("components").path("schemas").path("ApiResponseInternalOrderResponse");
+    JsonNode orderSnapshotResponse = contract.path("components").path("schemas")
+        .path("ApiResponseInternalOrderSnapshotResponse");
     JsonNode portfolioResponse = contract.path("components").path("schemas").path("ApiResponseInternalPortfolioResponse");
     JsonNode accountPositionResponse = contract.path("components").path("schemas")
         .path("ApiResponseInternalAccountPositionResponse");
@@ -55,6 +57,9 @@ class CorebankOpenApiCompatibilityTest {
         ledgerIntegritySummarySchema.path("properties").path("latestFailedIdentifiers").path("items").path("$ref").asText()
     );
     JsonNode internalOrderSchema = contract.path("components").path("schemas").path("InternalOrderResponse");
+    JsonNode internalOrderSnapshotSchema = contract.path("components").path("schemas")
+        .path("InternalOrderSnapshotResponse");
+    JsonNode orderSnapshotOperation = paths.path("/internal/v1/orders/{clOrdId}").path("get");
     JsonNode requeryOperation = paths.path("/internal/v1/orders/{clOrdId}/requery").path("get");
     JsonNode requeryParameters = requeryOperation.path("parameters");
     JsonNode attemptCountParameter = parameterByName(requeryParameters, "attemptCount");
@@ -67,6 +72,7 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(fieldNames(paths))
         .contains(
             "/internal/v1/orders",
+            "/internal/v1/orders/{clOrdId}",
             "/internal/v1/orders/{clOrdId}/requery",
             "/internal/v1/portfolio",
             "/internal/v1/accounts/{accountId}/positions",
@@ -92,6 +98,8 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(apiErrorSchema.path("additionalProperties").asBoolean()).isTrue();
 
     assertThat(orderResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(orderSnapshotResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(portfolioResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
@@ -207,6 +215,10 @@ class CorebankOpenApiCompatibilityTest {
             "externalOrderId",
             "executedAt"
         );
+    assertThat(fieldNames(internalOrderSnapshotSchema.path("properties")))
+        .contains("orderId", "accountId", "clOrdId", "status", "externalSyncStatus", "externalOrderId");
+    assertThat(orderSnapshotOperation.path("responses").path("200").path("content").path("*/*").path("schema")
+        .path("$ref").asText()).isEqualTo("#/components/schemas/ApiResponseInternalOrderSnapshotResponse");
     assertThat(requeryParameters.isArray()).isTrue();
     assertThat(attemptCountParameter.path("name").asText()).isEqualTo("attemptCount");
     assertThat(attemptCountParameter.path("in").asText()).isEqualTo("query");

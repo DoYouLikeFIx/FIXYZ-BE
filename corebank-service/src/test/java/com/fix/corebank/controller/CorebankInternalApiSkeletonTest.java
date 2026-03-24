@@ -8,8 +8,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fix.common.error.BusinessException;
@@ -50,6 +48,7 @@ import com.fix.corebank.vo.InternalOrderReplayResult;
 import com.fix.corebank.vo.InternalOrderRequeryCommand;
 import com.fix.corebank.vo.LedgerIntegrityFailedIdentifier;
 import com.fix.corebank.vo.LedgerIntegrityObservabilitySummary;
+import com.fix.corebank.vo.InternalOrderSnapshotResult;
 import com.fix.corebank.vo.PortfolioQueryCommand;
 import com.fix.corebank.vo.PortfolioResult;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -254,6 +253,15 @@ class CorebankInternalApiSkeletonTest {
         1,
         5
     ));
+    corebankOrderService.setOrderSnapshotResult(InternalOrderSnapshotResult.of(
+        1001L,
+        1L,
+        CORE_CL_ORD_ID_1,
+        "FILLED",
+        "CONFIRMED",
+        "FEP-KRX-" + CORE_CL_ORD_ID_1
+    ));
+    corebankOrderService.expectOrderSnapshotClOrdId(CORE_CL_ORD_ID_1);
     corebankOrderService.setAccountStatusTransitionResult(AccountStatusTransitionResult.of(
         1L,
         301L,
@@ -397,6 +405,16 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(jsonPath("$.data.executedPrice").value(70100.0))
         .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-" + CORE_CL_ORD_ID_1))
         .andExpect(jsonPath("$.data.executedAt").exists());
+
+    mockMvc.perform(get("/internal/v1/orders/{clOrdId}", CORE_CL_ORD_ID_1)
+            .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.orderId").value(1001L))
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.clOrdId").value(CORE_CL_ORD_ID_1))
+        .andExpect(jsonPath("$.data.status").value("FILLED"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("CONFIRMED"))
+        .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-" + CORE_CL_ORD_ID_1));
 
     mockMvc.perform(get("/internal/v1/orders/{clOrdId}/requery", CORE_CL_ORD_ID_1)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")
@@ -889,6 +907,8 @@ class CorebankInternalApiSkeletonTest {
     private AccountOrderHistoryResult accountOrderHistoryResult;
     private RuntimeException accountOrderHistoryFailure;
     private InternalOrderResult createOrderResult;
+    private InternalOrderSnapshotResult orderSnapshotResult;
+    private String expectedOrderSnapshotClOrdId;
     private InternalOrderResult requeryOrderResult;
     private RuntimeException createOrderFailure;
     private int createOrderCalls;
@@ -983,6 +1003,14 @@ class CorebankInternalApiSkeletonTest {
       return requeryOrderResult;
     }
 
+    @Override
+    public InternalOrderSnapshotResult getOrderSnapshot(String clOrdId) {
+      if (expectedOrderSnapshotClOrdId != null) {
+        org.assertj.core.api.Assertions.assertThat(clOrdId).isEqualTo(expectedOrderSnapshotClOrdId);
+      }
+      return orderSnapshotResult;
+    }
+
     private void setPortfolioResult(PortfolioResult portfolioResult) {
       this.portfolioResult = portfolioResult;
     }
@@ -1041,6 +1069,14 @@ class CorebankInternalApiSkeletonTest {
 
     private void setCreateOrderResult(InternalOrderResult createOrderResult) {
       this.createOrderResult = createOrderResult;
+    }
+
+    private void setOrderSnapshotResult(InternalOrderSnapshotResult orderSnapshotResult) {
+      this.orderSnapshotResult = orderSnapshotResult;
+    }
+
+    private void expectOrderSnapshotClOrdId(String expectedOrderSnapshotClOrdId) {
+      this.expectedOrderSnapshotClOrdId = expectedOrderSnapshotClOrdId;
     }
 
     private void setRequeryOrderResult(InternalOrderResult requeryOrderResult) {
