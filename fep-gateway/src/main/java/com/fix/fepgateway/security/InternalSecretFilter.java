@@ -28,7 +28,7 @@ public class InternalSecretFilter extends OncePerRequestFilter {
   private final ObjectMapper objectMapper;
 
   public InternalSecretFilter(
-      @Value("${internal.secret:local-internal-secret}") String expectedSecret,
+      @Value("${internal.secret}") String expectedSecret,
       ObjectMapper objectMapper
   ) {
     this.expectedSecret = expectedSecret;

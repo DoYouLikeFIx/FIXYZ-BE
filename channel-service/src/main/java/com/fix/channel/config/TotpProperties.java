@@ -41,9 +41,12 @@ public class TotpProperties {
 
   public static class Vault {
 
-    private String baseUrl = "http://localhost:8200";
-    private String token = "root-token";
+    private String baseUrl = "";
+    private String token = "";
     private String mount = "secret";
+    private String trustStorePath = "";
+    private String trustStorePassword = "";
+    private String trustStoreType = "PKCS12";
     private Duration connectTimeout = Duration.ofSeconds(2);
     private Duration readTimeout = Duration.ofSeconds(5);
 
@@ -69,6 +72,30 @@ public class TotpProperties {
 
     public void setMount(String mount) {
       this.mount = mount;
+    }
+
+    public String getTrustStorePath() {
+      return trustStorePath;
+    }
+
+    public void setTrustStorePath(String trustStorePath) {
+      this.trustStorePath = trustStorePath;
+    }
+
+    public String getTrustStorePassword() {
+      return trustStorePassword;
+    }
+
+    public void setTrustStorePassword(String trustStorePassword) {
+      this.trustStorePassword = trustStorePassword;
+    }
+
+    public String getTrustStoreType() {
+      return trustStoreType;
+    }
+
+    public void setTrustStoreType(String trustStoreType) {
+      this.trustStoreType = trustStoreType;
     }
 
     public Duration getConnectTimeout() {
