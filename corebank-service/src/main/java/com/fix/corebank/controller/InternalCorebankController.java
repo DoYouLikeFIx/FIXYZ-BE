@@ -35,8 +35,10 @@ import com.fix.corebank.dto.request.InternalOrderReplayRequest;
 import com.fix.corebank.dto.request.InternalOrderRequeryRequest;
 import com.fix.corebank.dto.request.InternalPortfolioProvisioningRequest;
 import com.fix.corebank.dto.request.InternalPortfolioRequest;
+import com.fix.corebank.dto.response.ApiResponseInternalAccountSummaryResponse;
 import com.fix.corebank.dto.response.InternalAccountOrderHistoryResponse;
 import com.fix.corebank.dto.response.InternalAccountPositionResponse;
+import com.fix.corebank.dto.response.InternalAccountSummaryResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusTransitionResponse;
 import com.fix.corebank.dto.response.InternalLedgerIntegritySummaryResponse;
@@ -54,6 +56,9 @@ import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.LedgerIntegrityObservabilityService;
 import com.fix.corebank.service.LedgerReconciliationService;
 import com.fix.corebank.service.LedgerRepairService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
@@ -102,11 +107,18 @@ public class InternalCorebankController {
   }
 
   @GetMapping("/accounts/{accountId}/summary")
-  public ApiResponse<InternalAccountPositionResponse> accountSummary(
+  @Operation(
+      summary = "Get account summary",
+      responses = @io.swagger.v3.oas.annotations.responses.ApiResponse(
+          responseCode = "200",
+          content = @Content(schema = @Schema(implementation = ApiResponseInternalAccountSummaryResponse.class))
+      )
+  )
+  public ApiResponseInternalAccountSummaryResponse accountSummary(
       @PathVariable Long accountId,
       @Valid @ModelAttribute InternalAccountSummaryRequest request
   ) {
-    return ApiResponse.success(InternalAccountPositionResponse.from(
+    return ApiResponseInternalAccountSummaryResponse.success(InternalAccountSummaryResponse.from(
         corebankOrderService.getAccountSummary(request.toVo(accountId))
     ));
   }
