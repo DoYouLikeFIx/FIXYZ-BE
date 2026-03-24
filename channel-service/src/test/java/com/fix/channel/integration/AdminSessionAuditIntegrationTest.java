@@ -223,7 +223,7 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
         "ORDER_SESSION_RECOVERY_ATTEMPT",
         "ORDER_SESSION",
         "recovery-target-1",
-        "clOrdId=CL-REC-1, attemptCount=3, outcome=ESCALATED, note=IllegalStateException: corebank unavailable",
+        "clOrdId=CL-REC-1, attemptCount=3, outcome=ESCALATED, note=IllegalStateException",
         "127.0.0.1",
         "junit",
         "corr-rec-1"
@@ -254,7 +254,7 @@ class AdminSessionAuditIntegrationTest extends ChannelContainersIntegrationTestB
         .andExpect(jsonPath("$.data.content[0].clOrdId").value("CL-REC-1"))
         .andExpect(jsonPath("$.data.content[0].orderSessionId").value(77))
         .andExpect(jsonPath("$.data.content[0].description").value(
-            "clOrdId=CL-REC-1, attemptCount=3, outcome=ESCALATED, note=IllegalStateException: corebank unavailable"
+            "clOrdId=CL-REC-1, attemptCount=3, outcome=ESCALATED, note=IllegalStateException"
         ));
   }
 
