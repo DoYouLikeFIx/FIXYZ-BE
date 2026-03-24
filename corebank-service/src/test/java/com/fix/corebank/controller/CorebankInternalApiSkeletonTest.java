@@ -616,7 +616,7 @@ class CorebankInternalApiSkeletonTest {
   @Test
   void shouldRejectLedgerIntegritySummaryWithoutInternalSecret() throws Exception {
     mockMvc.perform(get("/internal/v1/ledger-integrity/summary"))
-        .andExpect(status().isUnauthorized())
+        .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value(ErrorCode.AUTH_REQUIRED.code()))
         .andExpect(jsonPath("$.message").value("Missing or invalid X-Internal-Secret"));
   }
