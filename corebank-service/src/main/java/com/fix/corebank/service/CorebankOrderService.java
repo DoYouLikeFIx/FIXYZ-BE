@@ -8,6 +8,8 @@ import com.fix.common.fep.FepOrderType;
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.fep.FepSecurityExchange;
 import com.fix.common.fep.FepSide;
+import com.fix.common.valuation.ValuationStatus;
+import com.fix.common.valuation.ValuationUnavailableReason;
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.corebank.client.FepQuoteSnapshotClient;
 import com.fix.corebank.client.FepQuoteSnapshotResult;
@@ -18,6 +20,7 @@ import com.fix.corebank.entity.Account;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
+import com.fix.corebank.entity.Execution;
 import com.fix.corebank.entity.Order;
 import com.fix.corebank.entity.Position;
 import com.fix.corebank.repository.AccountRepository;
@@ -42,10 +45,12 @@ import com.fix.corebank.vo.PortfolioQueryCommand;
 import com.fix.corebank.vo.PortfolioResult;
 import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,6 +65,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class CorebankOrderService {
+
+  private static final int DECIMAL_SCALE = 4;
 
   private final AccountRepository accountRepository;
   private final PositionRepository positionRepository;
@@ -121,57 +128,36 @@ public class CorebankOrderService {
     );
   }
 
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public AccountPositionResult getAccountPosition(AccountPositionQueryCommand command) {
     CorebankAccountPositionQueryService.AccountPositionSnapshot snapshot =
         accountPositionQueryService.getOwnedAccountPosition(command);
-    QuoteValuation quoteValuation = loadFreshQuoteValuation(command.getSymbol());
-    Optional<Position> positionOptional = snapshot.position();
-    BigDecimal quantity = positionOptional.map(Position::getQty).orElse(BigDecimal.ZERO);
-    BigDecimal availableQuantity = quantity;
-
-    return AccountPositionResult.of(
-        snapshot.account().getId(),
-        command.getMemberId(),
-        command.getSymbol(),
-        quantity,
-        availableQuantity,
-        snapshot.account().getCashBalance(),
-        snapshot.account().getCurrency(),
-        resolveAsOf(snapshot.account(), positionOptional),
-        quoteValuation.marketPrice(),
-        quoteValuation.quoteSnapshotId(),
-        quoteValuation.quoteAsOf(),
-        quoteValuation.quoteSourceMode()
-    );
+    return toInquiryAccountPositionResult(snapshot.account(), command.getMemberId(), command.getSymbol(), snapshot.position());
   }
 
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public List<AccountPositionResult> getAccountPositions(AccountPositionsQueryCommand command) {
     CorebankAccountPositionQueryService.AccountPositionsSnapshot snapshot =
         accountPositionQueryService.getOwnedPositiveAccountPositions(command);
-    Map<String, QuoteValuation> quoteValuations = loadFreshQuoteValuations(
+    Map<String, QuoteValuation> quoteValuations = loadInquiryQuoteValuations(
         snapshot.positions().stream()
             .map(Position::getSymbol)
             .toList()
     );
+    Map<String, BigDecimal> realizedPnlDailyBySymbol = loadInquiryRealizedPnlDailyBySymbol(
+        snapshot.account().getId(),
+        snapshot.positions(),
+        quoteValuations
+    );
 
     return snapshot.positions().stream()
-        .map(position -> {
-          QuoteValuation quoteValuation = quoteValuations.get(position.getSymbol());
-          return AccountPositionResult.of(
-              snapshot.account().getId(),
-              command.getMemberId(),
-              position.getSymbol(),
-              position.getQty(),
-              position.getQty(),
-              snapshot.account().getCashBalance(),
-              snapshot.account().getCurrency(),
-              resolveAsOf(snapshot.account(), Optional.of(position)),
-              quoteValuation.marketPrice(),
-              quoteValuation.quoteSnapshotId(),
-              quoteValuation.quoteAsOf(),
-              quoteValuation.quoteSourceMode()
-          );
-        })
+        .map(position -> toInquiryAccountPositionResult(
+            snapshot.account(),
+            command.getMemberId(),
+            position,
+            quoteValuations.getOrDefault(position.getSymbol(), QuoteValuation.unavailable(ValuationUnavailableReason.QUOTE_MISSING)),
+            realizedPnlDailyBySymbol.get(position.getSymbol())
+        ))
         .toList();
   }
 
@@ -211,33 +197,29 @@ public class CorebankOrderService {
     );
   }
 
+  @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
   public List<AccountPositionResult> getAccountPositions(AccountStatusQueryCommand command) {
     CorebankAccountPositionQueryService.AccountPositionsSnapshot snapshot =
         accountPositionQueryService.getOwnedAccountPositions(command);
-    Map<String, QuoteValuation> quoteValuations = loadFreshQuoteValuations(
+    Map<String, QuoteValuation> quoteValuations = loadInquiryQuoteValuations(
         snapshot.positions().stream()
             .map(Position::getSymbol)
             .toList()
     );
+    Map<String, BigDecimal> realizedPnlDailyBySymbol = loadInquiryRealizedPnlDailyBySymbol(
+        snapshot.account().getId(),
+        snapshot.positions(),
+        quoteValuations
+    );
 
     return snapshot.positions().stream()
-        .map(position -> {
-          QuoteValuation quoteValuation = quoteValuations.get(position.getSymbol());
-          return AccountPositionResult.of(
-              snapshot.account().getId(),
-              snapshot.account().getMemberId(),
-              position.getSymbol(),
-              position.getQty(),
-              position.getQty(),
-              snapshot.account().getCashBalance(),
-              snapshot.account().getCurrency(),
-              resolveAsOf(snapshot.account(), Optional.of(position)),
-              quoteValuation.marketPrice(),
-              quoteValuation.quoteSnapshotId(),
-              quoteValuation.quoteAsOf(),
-              quoteValuation.quoteSourceMode()
-          );
-        })
+        .map(position -> toInquiryAccountPositionResult(
+            snapshot.account(),
+            snapshot.account().getMemberId(),
+            position,
+            quoteValuations.getOrDefault(position.getSymbol(), QuoteValuation.unavailable(ValuationUnavailableReason.QUOTE_MISSING)),
+            realizedPnlDailyBySymbol.get(position.getSymbol())
+        ))
         .toList();
   }
 
@@ -800,8 +782,11 @@ public class CorebankOrderService {
   }
 
   private QuoteValuation loadFreshQuoteValuation(String symbol) {
-    FepQuoteSnapshotResult snapshot = queryLatestQuoteSnapshot(symbol);
-    return toFreshQuoteValuation(symbol, snapshot);
+    try {
+      return toFreshQuoteValuation(symbol, queryLatestQuoteSnapshotRaw(symbol));
+    } catch (BusinessException ex) {
+      throw translateQuoteSnapshotFailure(symbol, ex);
+    }
   }
 
   private Map<String, QuoteValuation> loadFreshQuoteValuations(List<String> symbols) {
@@ -809,7 +794,15 @@ public class CorebankOrderService {
       return Map.of();
     }
 
-    Map<String, FepQuoteSnapshotResult> snapshots = queryLatestQuoteSnapshots(symbols);
+    Map<String, FepQuoteSnapshotResult> snapshots;
+    try {
+      snapshots = queryLatestQuoteSnapshotsRaw(symbols);
+    } catch (BusinessException ex) {
+      if (ex.getErrorCode() == ErrorCode.NOT_FOUND && !symbols.isEmpty()) {
+        throw missingQuoteSnapshot(symbols.get(0));
+      }
+      throw ex;
+    }
     Map<String, QuoteValuation> quoteValuations = new java.util.LinkedHashMap<>();
     for (String symbol : symbols) {
       FepQuoteSnapshotResult snapshot = snapshots.get(symbol);
@@ -826,7 +819,7 @@ public class CorebankOrderService {
     if (decision.stale()) {
       throw staleQuote(symbol, snapshot, decision.snapshotAgeMs());
     }
-    return new QuoteValuation(
+    return QuoteValuation.fresh(
         resolveMarketPrice(snapshot),
         snapshot.quoteSnapshotId(),
         snapshot.quoteAsOf(),
@@ -834,7 +827,67 @@ public class CorebankOrderService {
     );
   }
 
-  private FepQuoteSnapshotResult queryLatestQuoteSnapshot(String symbol) {
+  private QuoteValuation loadInquiryQuoteValuation(String symbol) {
+    try {
+      return toInquiryQuoteValuation(symbol, queryLatestQuoteSnapshotRaw(symbol));
+    } catch (BusinessException ex) {
+      return unavailableQuoteValuation(ex);
+    }
+  }
+
+  private Map<String, QuoteValuation> loadInquiryQuoteValuations(List<String> symbols) {
+    if (symbols.isEmpty()) {
+      return Map.of();
+    }
+
+    Map<String, FepQuoteSnapshotResult> snapshots;
+    try {
+      snapshots = queryLatestQuoteSnapshotsRaw(symbols);
+    } catch (BusinessException ex) {
+      QuoteValuation unavailableQuoteValuation = unavailableQuoteValuation(ex);
+      java.util.LinkedHashMap<String, QuoteValuation> unavailable = new java.util.LinkedHashMap<>();
+      for (String symbol : symbols) {
+        unavailable.put(symbol, unavailableQuoteValuation);
+      }
+      return unavailable;
+    }
+
+    java.util.LinkedHashMap<String, QuoteValuation> quoteValuations = new java.util.LinkedHashMap<>();
+    for (String symbol : symbols) {
+      FepQuoteSnapshotResult snapshot = snapshots.get(symbol);
+      if (snapshot == null) {
+        quoteValuations.put(symbol, QuoteValuation.unavailable(ValuationUnavailableReason.QUOTE_MISSING));
+      } else {
+        quoteValuations.put(symbol, toInquiryQuoteValuation(symbol, snapshot));
+      }
+    }
+    return quoteValuations;
+  }
+
+  private QuoteValuation toInquiryQuoteValuation(String symbol, FepQuoteSnapshotResult snapshot) {
+    QuoteFreshnessDecision decision = quoteFreshnessPolicy.evaluate(snapshot.quoteAsOf());
+    if (decision.stale()) {
+      return QuoteValuation.stale(snapshot.quoteSnapshotId(), snapshot.quoteAsOf(), snapshot.quoteSourceMode());
+    }
+    return QuoteValuation.fresh(
+        resolveMarketPrice(snapshot),
+        snapshot.quoteSnapshotId(),
+        snapshot.quoteAsOf(),
+        snapshot.quoteSourceMode()
+    );
+  }
+
+  private QuoteValuation unavailableQuoteValuation(BusinessException ex) {
+    if (ex.getErrorCode() == ErrorCode.NOT_FOUND) {
+      return QuoteValuation.unavailable(ValuationUnavailableReason.QUOTE_MISSING);
+    }
+    if (ex.getErrorCode() == ErrorCode.FEP_GATEWAY_UNAVAILABLE || ex.getErrorCode() == ErrorCode.FEP_GATEWAY_TIMEOUT) {
+      return QuoteValuation.unavailable(ValuationUnavailableReason.PROVIDER_UNAVAILABLE);
+    }
+    throw ex;
+  }
+
+  private FepQuoteSnapshotResult queryLatestQuoteSnapshotRaw(String symbol) {
     try {
       return fepQuoteSnapshotClient.queryLatestQuoteSnapshot(
           symbol,
@@ -842,11 +895,11 @@ public class CorebankOrderService {
           correlationId("quote", symbol)
       );
     } catch (BusinessException ex) {
-      throw translateQuoteSnapshotFailure(symbol, ex);
+      throw ex;
     }
   }
 
-  private Map<String, FepQuoteSnapshotResult> queryLatestQuoteSnapshots(List<String> symbols) {
+  private Map<String, FepQuoteSnapshotResult> queryLatestQuoteSnapshotsRaw(List<String> symbols) {
     try {
       return fepQuoteSnapshotClient.queryLatestQuoteSnapshots(
           symbols,
@@ -854,9 +907,6 @@ public class CorebankOrderService {
           correlationId("quote-batch", String.join(",", symbols))
       );
     } catch (BusinessException ex) {
-      if (ex.getErrorCode() == ErrorCode.NOT_FOUND && !symbols.isEmpty()) {
-        throw missingQuoteSnapshot(symbols.get(0));
-      }
       throw ex;
     }
   }
@@ -930,6 +980,353 @@ public class CorebankOrderService {
       );
     }
     return BigDecimal.valueOf(rawMarketPrice).setScale(4);
+  }
+
+  private AccountPositionResult toInquiryAccountPositionResult(
+      Account account,
+      Long memberId,
+      String symbol,
+      Optional<Position> positionOptional
+  ) {
+    QuoteValuation quoteValuation = loadInquiryQuoteValuation(symbol);
+    return toInquiryAccountPositionResult(
+        account,
+        memberId,
+        symbol,
+        positionOptional,
+        quoteValuation
+    );
+  }
+
+  private AccountPositionResult toInquiryAccountPositionResult(
+      Account account,
+      Long memberId,
+      Position position,
+      QuoteValuation quoteValuation
+  ) {
+    return toInquiryAccountPositionResult(account, memberId, position, quoteValuation, null);
+  }
+
+  private AccountPositionResult toInquiryAccountPositionResult(
+      Account account,
+      Long memberId,
+      Position position,
+      QuoteValuation quoteValuation,
+      BigDecimal realizedPnlDaily
+  ) {
+    return toInquiryAccountPositionResult(
+        account,
+        memberId,
+        position.getSymbol(),
+        Optional.of(position),
+        quoteValuation,
+        realizedPnlDaily
+    );
+  }
+
+  private AccountPositionResult toInquiryAccountPositionResult(
+      Account account,
+      Long memberId,
+      String symbol,
+      Optional<Position> positionOptional,
+      QuoteValuation quoteValuation
+  ) {
+    return toInquiryAccountPositionResult(account, memberId, symbol, positionOptional, quoteValuation, null);
+  }
+
+  private AccountPositionResult toInquiryAccountPositionResult(
+      Account account,
+      Long memberId,
+      String symbol,
+      Optional<Position> positionOptional,
+      QuoteValuation quoteValuation,
+      BigDecimal precomputedRealizedPnlDaily
+  ) {
+    BigDecimal quantity = scale(positionOptional.map(Position::getQty).orElse(BigDecimal.ZERO));
+    BigDecimal availableQuantity = quantity;
+    BigDecimal avgPrice = resolveAvgPrice(positionOptional, quantity);
+    BigDecimal unrealizedPnl = resolveUnrealizedPnl(quantity, avgPrice, quoteValuation);
+    BigDecimal realizedPnlDaily = precomputedRealizedPnlDaily != null
+        ? resolveRealizedPnlDaily(quoteValuation, precomputedRealizedPnlDaily)
+        : resolveRealizedPnlDaily(account.getId(), symbol, quoteValuation);
+
+    return AccountPositionResult.of(
+        account.getId(),
+        memberId,
+        symbol,
+        quantity,
+        availableQuantity,
+        account.getCashBalance(),
+        account.getCurrency(),
+        resolveAsOf(account, positionOptional),
+        avgPrice,
+        quoteValuation.marketPrice(),
+        quoteValuation.quoteSnapshotId(),
+        quoteValuation.quoteAsOf(),
+        quoteValuation.quoteSourceMode(),
+        unrealizedPnl,
+        realizedPnlDaily,
+        quoteValuation.valuationStatus(),
+        quoteValuation.valuationUnavailableReason()
+    );
+  }
+
+  private BigDecimal resolveAvgPrice(Optional<Position> positionOptional, BigDecimal quantity) {
+    if (quantity.signum() == 0) {
+      return null;
+    }
+    Position position = positionOptional.orElseThrow(() -> new BusinessException(
+        ErrorCode.CONTRACT_VALIDATION_FAILED,
+        "position row is required when quantity is positive"
+    ));
+    return scale(position.getAvgPrice());
+  }
+
+  private BigDecimal resolveUnrealizedPnl(BigDecimal quantity, BigDecimal avgPrice, QuoteValuation quoteValuation) {
+    if (!quoteValuation.isFresh()) {
+      return null;
+    }
+    if (quantity.signum() == 0) {
+      return zero();
+    }
+    if (avgPrice == null || quoteValuation.marketPrice() == null) {
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          "avgPrice and marketPrice are required for unrealized PnL"
+      );
+    }
+    return scale(quoteValuation.marketPrice().subtract(avgPrice).multiply(quantity));
+  }
+
+  private BigDecimal resolveRealizedPnlDaily(Long accountId, String symbol, QuoteValuation quoteValuation) {
+    if (!quoteValuation.isFresh()) {
+      return null;
+    }
+    return calculateRealizedPnlDaily(accountId, symbol);
+  }
+
+  private BigDecimal resolveRealizedPnlDaily(QuoteValuation quoteValuation, BigDecimal realizedPnlDaily) {
+    if (!quoteValuation.isFresh()) {
+      return null;
+    }
+    return realizedPnlDaily != null ? scale(realizedPnlDaily) : zero();
+  }
+
+  private Map<String, BigDecimal> loadInquiryRealizedPnlDailyBySymbol(
+      Long accountId,
+      List<Position> positions,
+      Map<String, QuoteValuation> quoteValuations
+  ) {
+    if (positions.isEmpty()) {
+      return Map.of();
+    }
+
+    List<String> freshSymbols = positions.stream()
+        .map(Position::getSymbol)
+        .filter(symbol -> {
+          QuoteValuation quoteValuation = quoteValuations.get(symbol);
+          return quoteValuation != null && quoteValuation.isFresh();
+        })
+        .distinct()
+        .toList();
+    if (freshSymbols.isEmpty()) {
+      return Map.of();
+    }
+
+    Instant from = startOfLimitWindowDay();
+    Instant to = startOfNextLimitWindowDay();
+    List<Execution> sameDayExecutions = executionRepository
+        .findAllByAccountIdAndSymbolInAndExecutedAtGreaterThanEqualAndExecutedAtLessThanOrderBySymbolAscExecutedAtAscIdAsc(
+        accountId,
+        freshSymbols,
+        from,
+        to
+    );
+    java.util.LinkedHashMap<String, java.util.List<Execution>> sameDayExecutionsBySymbol = new java.util.LinkedHashMap<>();
+    for (String symbol : freshSymbols) {
+      sameDayExecutionsBySymbol.put(symbol, new java.util.ArrayList<>());
+    }
+    for (Execution execution : sameDayExecutions) {
+      java.util.List<Execution> symbolExecutions = sameDayExecutionsBySymbol.get(execution.getSymbol());
+      if (symbolExecutions != null) {
+        symbolExecutions.add(execution);
+      }
+    }
+
+    java.util.LinkedHashMap<String, BigDecimal> realizedPnlDailyBySymbol = new java.util.LinkedHashMap<>();
+    java.util.LinkedHashMap<String, Position> positionsBySymbol = new java.util.LinkedHashMap<>();
+    for (Position position : positions) {
+      if (freshSymbols.contains(position.getSymbol())) {
+        positionsBySymbol.put(position.getSymbol(), position);
+      }
+    }
+    java.util.ArrayList<String> fallbackSymbols = new java.util.ArrayList<>();
+    for (String symbol : freshSymbols) {
+      Position position = positionsBySymbol.get(symbol);
+      BigDecimal optimizedRealizedPnlDaily = tryCalculateSameDayRealizedPnlFromCurrentPosition(
+          position,
+          sameDayExecutionsBySymbol.getOrDefault(symbol, List.of())
+      );
+      if (optimizedRealizedPnlDaily != null) {
+        realizedPnlDailyBySymbol.put(symbol, optimizedRealizedPnlDaily);
+      } else {
+        fallbackSymbols.add(symbol);
+      }
+    }
+    if (!fallbackSymbols.isEmpty()) {
+      List<Execution> historicalExecutions = executionRepository.findAllByAccountIdAndSymbolInOrderBySymbolAscExecutedAtAscIdAsc(
+          accountId,
+          fallbackSymbols
+      );
+      java.util.LinkedHashMap<String, java.util.List<Execution>> historicalExecutionsBySymbol = new java.util.LinkedHashMap<>();
+      for (String symbol : fallbackSymbols) {
+        historicalExecutionsBySymbol.put(symbol, new java.util.ArrayList<>());
+      }
+      for (Execution execution : historicalExecutions) {
+        java.util.List<Execution> symbolExecutions = historicalExecutionsBySymbol.get(execution.getSymbol());
+        if (symbolExecutions != null) {
+          symbolExecutions.add(execution);
+        }
+      }
+      for (String symbol : fallbackSymbols) {
+        realizedPnlDailyBySymbol.put(
+            symbol,
+            calculateRealizedPnlDaily(historicalExecutionsBySymbol.getOrDefault(symbol, List.of()))
+        );
+      }
+    }
+    return realizedPnlDailyBySymbol;
+  }
+
+  private BigDecimal tryCalculateSameDayRealizedPnlFromCurrentPosition(
+      Position currentPosition,
+      List<Execution> sameDayExecutions
+  ) {
+    if (currentPosition == null) {
+      return null;
+    }
+    BigDecimal currentQuantity = scale(currentPosition.getQty());
+    if (currentQuantity == null || currentQuantity.signum() <= 0) {
+      return null;
+    }
+    if (sameDayExecutions.isEmpty()) {
+      return zero();
+    }
+
+    BigDecimal runningQuantity = currentQuantity;
+    BigDecimal runningAvgPrice = scale(currentPosition.getAvgPrice());
+    if (runningAvgPrice == null) {
+      return null;
+    }
+    BigDecimal realizedPnlDaily = zero();
+
+    List<Execution> reverseChronologicalExecutions = sameDayExecutions.stream()
+        .sorted(Comparator.comparing(Execution::getExecutedAt).thenComparing(Execution::getId).reversed())
+        .toList();
+    for (Execution execution : reverseChronologicalExecutions) {
+      String side = normalizeExecutionSide(execution.getSide());
+      BigDecimal execQty = scale(execution.getExecQty());
+      BigDecimal execPrice = scale(execution.getExecPrice());
+      if (execQty == null || execPrice == null) {
+        return null;
+      }
+      if ("SELL".equals(side)) {
+        if (runningQuantity.signum() == 0 || runningAvgPrice.signum() == 0) {
+          return null;
+        }
+        realizedPnlDaily = realizedPnlDaily.add(scale(execPrice.subtract(runningAvgPrice).multiply(execQty)));
+        runningQuantity = scale(runningQuantity.add(execQty));
+        continue;
+      }
+      if ("BUY".equals(side)) {
+        BigDecimal previousQuantity = scale(runningQuantity.subtract(execQty));
+        if (previousQuantity == null || previousQuantity.signum() < 0) {
+          return null;
+        }
+        if (previousQuantity.signum() == 0) {
+          runningQuantity = zero();
+          runningAvgPrice = zero();
+          continue;
+        }
+        BigDecimal totalCostAfterBuy = scale(runningAvgPrice.multiply(runningQuantity));
+        BigDecimal previousTotalCost = scale(totalCostAfterBuy.subtract(execPrice.multiply(execQty)));
+        if (previousTotalCost == null || previousTotalCost.signum() < 0) {
+          return null;
+        }
+        runningQuantity = previousQuantity;
+        runningAvgPrice = scale(previousTotalCost.divide(previousQuantity, DECIMAL_SCALE, RoundingMode.HALF_UP));
+        continue;
+      }
+      return null;
+    }
+
+    return scale(realizedPnlDaily);
+  }
+
+  private BigDecimal calculateRealizedPnlDaily(Long accountId, String symbol) {
+    return calculateRealizedPnlDaily(
+        executionRepository.findAllByAccountIdAndSymbolOrderByExecutedAtAsc(accountId, symbol)
+    );
+  }
+
+  private BigDecimal calculateRealizedPnlDaily(List<Execution> executions) {
+    Instant from = startOfLimitWindowDay();
+    Instant to = startOfNextLimitWindowDay();
+    List<Execution> orderedExecutions = executions.stream()
+        .sorted(Comparator.comparing(Execution::getExecutedAt).thenComparing(Execution::getId))
+        .toList();
+
+    if (orderedExecutions.isEmpty()) {
+      return zero();
+    }
+
+    Execution firstExecution = orderedExecutions.get(0);
+    Position rebuilt = Position.of(firstExecution.getAccountId(), firstExecution.getSymbol(), zero(), zero());
+    BigDecimal realizedPnlDaily = zero();
+    for (Execution execution : orderedExecutions) {
+      String side = normalizeExecutionSide(execution.getSide());
+      if ("BUY".equals(side)) {
+        rebuilt.applyBuy(execution.getExecQty(), execution.getExecPrice());
+        continue;
+      }
+      if ("SELL".equals(side)) {
+        BigDecimal avgPriceAtSell = scale(rebuilt.getAvgPrice());
+        if (!execution.getExecutedAt().isBefore(from) && execution.getExecutedAt().isBefore(to)) {
+          BigDecimal realizedPnl = execution.getExecPrice()
+              .subtract(avgPriceAtSell)
+              .multiply(execution.getExecQty());
+          realizedPnlDaily = realizedPnlDaily.add(scale(realizedPnl));
+        }
+        rebuilt.applySell(execution.getExecQty());
+        continue;
+      }
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          "unsupported execution side for realized pnl calculation: " + execution.getSide()
+      );
+    }
+    return scale(realizedPnlDaily);
+  }
+
+  private String normalizeExecutionSide(String side) {
+    if (side == null || side.isBlank()) {
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          "execution side is required for realized pnl calculation"
+      );
+    }
+    return side.trim().toUpperCase(java.util.Locale.ROOT);
+  }
+
+  private BigDecimal scale(BigDecimal value) {
+    if (value == null) {
+      return null;
+    }
+    return value.setScale(DECIMAL_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal zero() {
+    return BigDecimal.ZERO.setScale(DECIMAL_SCALE, RoundingMode.HALF_UP);
   }
 
   private Long firstNonNull(Long... candidates) {
@@ -1059,10 +1456,58 @@ public class CorebankOrderService {
   }
 
   private record QuoteValuation(
+      ValuationStatus valuationStatus,
+      ValuationUnavailableReason valuationUnavailableReason,
       BigDecimal marketPrice,
       String quoteSnapshotId,
       Instant quoteAsOf,
       FepQuoteSourceMode quoteSourceMode
   ) {
+
+    private static QuoteValuation fresh(
+        BigDecimal marketPrice,
+        String quoteSnapshotId,
+        Instant quoteAsOf,
+        FepQuoteSourceMode quoteSourceMode
+    ) {
+      return new QuoteValuation(
+          ValuationStatus.FRESH,
+          null,
+          marketPrice,
+          quoteSnapshotId,
+          quoteAsOf,
+          quoteSourceMode
+      );
+    }
+
+    private static QuoteValuation stale(
+        String quoteSnapshotId,
+        Instant quoteAsOf,
+        FepQuoteSourceMode quoteSourceMode
+    ) {
+      return new QuoteValuation(
+          ValuationStatus.STALE,
+          ValuationUnavailableReason.STALE_QUOTE,
+          null,
+          quoteSnapshotId,
+          quoteAsOf,
+          quoteSourceMode
+      );
+    }
+
+    private static QuoteValuation unavailable(ValuationUnavailableReason reason) {
+      return new QuoteValuation(
+          ValuationStatus.UNAVAILABLE,
+          reason,
+          null,
+          null,
+          null,
+          null
+      );
+    }
+
+    private boolean isFresh() {
+      return valuationStatus == ValuationStatus.FRESH;
+    }
   }
 }
