@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fix.common.fep.FepQuoteSourceMode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 
 class MarketDataMetricsTest {
@@ -12,7 +14,8 @@ class MarketDataMetricsTest {
   @Test
   void shouldExposeGaugesAndCountersForMarketDataPipelines() {
     SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-    MarketDataMetrics metrics = new MarketDataMetrics(meterRegistry);
+    Clock clock = Clock.fixed(Instant.parse("2026-03-24T09:30:00Z"), ZoneOffset.UTC);
+    MarketDataMetrics metrics = new MarketDataMetrics(meterRegistry, null, clock);
 
     metrics.updateKisState(2, 1, true);
     metrics.updateReplayState(3, 2);
@@ -59,5 +62,7 @@ class MarketDataMetricsTest {
         .tag("source_mode", "REPLAY")
         .counter()
         .count()).isEqualTo(1.0d);
+    assertThat(meterRegistry.get("fep.marketdata.snapshots.last.persisted.epoch.seconds").gauge().value())
+        .isEqualTo((double) Instant.parse("2026-03-24T09:30:00Z").getEpochSecond());
   }
 }
