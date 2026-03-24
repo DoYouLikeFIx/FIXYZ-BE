@@ -1,6 +1,7 @@
 package com.fix.channel.dto.response;
 
 import com.fix.channel.vo.AdminMonitoringFreshnessResult;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 
@@ -19,6 +20,7 @@ public record AdminMonitoringFreshnessResponse(List<Item> items) {
     );
   }
 
+  @Schema(name = "AdminMonitoringFreshnessItem")
   public record Item(
       String key,
       String status,
