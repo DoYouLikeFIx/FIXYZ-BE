@@ -893,6 +893,7 @@ class OrderSessionServiceTest {
         ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository,
         OrderSessionRepository orderSessionRepository,
         AuditLogService auditLogService,
+        OrderSessionMonitoringMetrics orderSessionMonitoringMetrics,
         Clock clock,
         PlatformTransactionManager transactionManager,
         InMemoryOrderSessionTtlStore orderSessionTtlStore
@@ -901,6 +902,7 @@ class OrderSessionServiceTest {
           manualRecoveryQueueEntryRepository,
           orderSessionRepository,
           auditLogService,
+          orderSessionMonitoringMetrics,
           clock,
           transactionManager,
           orderSessionTtlStore
@@ -997,11 +999,18 @@ class OrderSessionServiceTest {
         ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository,
         OrderSessionRepository orderSessionRepository,
         AuditLogService auditLogService,
+        OrderSessionMonitoringMetrics orderSessionMonitoringMetrics,
         Clock clock,
         PlatformTransactionManager transactionManager,
         InMemoryOrderSessionTtlStore orderSessionTtlStore
     ) {
-      super(manualRecoveryQueueEntryRepository, orderSessionRepository, auditLogService, clock);
+      super(
+          manualRecoveryQueueEntryRepository,
+          orderSessionRepository,
+          auditLogService,
+          orderSessionMonitoringMetrics,
+          clock
+      );
       this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
       this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
       this.orderSessionTtlStore = orderSessionTtlStore;
