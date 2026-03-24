@@ -4333,13 +4333,31 @@
                     }
                 }
             },
+            "AdminMonitoringFreshnessItem": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "statusMessage": {
+                        "type": "string"
+                    },
+                    "lastUpdatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
             "AdminMonitoringFreshnessResponse": {
                 "type": "object",
                 "properties": {
                     "items": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Item"
+                            "$ref": "#/components/schemas/AdminMonitoringFreshnessItem"
                         }
                     }
                 }
@@ -4357,24 +4375,6 @@
                         "$ref": "#/components/schemas/ApiErrorResponse"
                     },
                     "timestamp": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                }
-            },
-            "Item": {
-                "type": "object",
-                "properties": {
-                    "key": {
-                        "type": "string"
-                    },
-                    "status": {
-                        "type": "string"
-                    },
-                    "statusMessage": {
-                        "type": "string"
-                    },
-                    "lastUpdatedAt": {
                         "type": "string",
                         "format": "date-time"
                     }
@@ -4654,13 +4654,46 @@
                     }
                 }
             },
+            "AccountOrderHistoryItem": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "symbolName": {
+                        "type": "string"
+                    },
+                    "side": {
+                        "type": "string"
+                    },
+                    "qty": {
+                        "type": "number"
+                    },
+                    "unitPrice": {
+                        "type": "number"
+                    },
+                    "totalAmount": {
+                        "type": "number"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "clOrdId": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
             "AccountOrderHistoryResponse": {
                 "type": "object",
                 "properties": {
                     "content": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Item"
+                            "$ref": "#/components/schemas/AccountOrderHistoryItem"
                         }
                     },
                     "totalElements": {
