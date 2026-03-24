@@ -45,6 +45,8 @@ public interface OrderSessionRepository extends JpaRepository<OrderSession, Long
 
   List<OrderSession> findByStatusOrderByUpdatedAtAscOrderSessionIdAsc(OrderSessionStatus status, Pageable pageable);
 
+  long countByStatusIn(Collection<OrderSessionStatus> statuses);
+
   @Query("""
       SELECT os
       FROM OrderSession os

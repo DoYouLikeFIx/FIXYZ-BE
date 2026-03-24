@@ -177,23 +177,29 @@ class ChannelErrorContractTest {
         .withQueryParam("memberId", equalTo("301"))
         .withQueryParam("symbol", equalTo("005930"))
         .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
-            .withStatus(422)
+            .withStatus(200)
             .withHeader("Content-Type", "application/json")
             .withBody("""
                 {
-                  "code": "VALIDATION-003",
-                  "message": "Stale quote",
-                  "path": "/internal/v1/accounts/1/positions",
-                  "correlationId": "trace-core-stale-quote",
-                  "userMessageKey": "error.quote.stale",
-                  "operatorCode": "STALE_QUOTE",
-                  "details": {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
                     "symbol": "005930",
-                    "snapshotAgeMs": 5001,
+                    "quantity": 120.0000,
+                    "availableQuantity": 120.0000,
+                    "availableQty": 120.0000,
+                    "balance": 1000000.0000,
+                    "availableBalance": 1000000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-20T00:00:06Z",
+                    "avgPrice": 70000.0000,
                     "quoteSnapshotId": "qsnap-005930-live-001",
-                    "quoteSourceMode": "LIVE"
-                  },
-                  "timestamp": "2026-03-20T00:00:00Z"
+                    "quoteAsOf": "2026-03-20T00:00:00.999Z",
+                    "quoteSourceMode": "LIVE",
+                    "valuationStatus": "STALE",
+                    "valuationUnavailableReason": "STALE_QUOTE"
+                  }
                 }
                 """)));
 
@@ -220,7 +226,7 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.userMessageKey").value("error.quote.stale"))
         .andExpect(jsonPath("$.operatorCode").value("STALE_QUOTE"))
         .andExpect(jsonPath("$.details.symbol").value("005930"))
-        .andExpect(jsonPath("$.details.snapshotAgeMs").value(5001))
+        .andExpect(jsonPath("$.details.snapshotAgeMs").value(org.hamcrest.Matchers.greaterThan(5_000)))
         .andExpect(jsonPath("$.details.quoteSnapshotId").value("qsnap-005930-live-001"))
         .andExpect(jsonPath("$.details.quoteSourceMode").value("LIVE"))
         .andExpect(jsonPath("$.correlationId").value("trace-channel-stale-quote"));
@@ -611,7 +617,16 @@ class ChannelErrorContractTest {
                     "balance": 1000000.0000,
                     "availableBalance": 1000000.0000,
                     "currency": "KRW",
-                    "asOf": "2026-03-10T00:00:00Z"
+                    "asOf": "2026-03-10T00:00:00Z",
+                    "avgPrice": 70000.0000,
+                    "marketPrice": 72050.0000,
+                    "quoteSnapshotId": "qsnap-005930-live-001",
+                    "quoteAsOf": "2026-03-10T00:00:00Z",
+                    "quoteSourceMode": "LIVE",
+                    "unrealizedPnl": 246000.0000,
+                    "realizedPnlDaily": 5000.0000,
+                    "valuationStatus": "FRESH",
+                    "valuationUnavailableReason": null
                   }
                 }
                 """)));
@@ -630,13 +645,145 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.data.balance").value(1000000.0))
         .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
         .andExpect(jsonPath("$.data.currency").value("KRW"))
-        .andExpect(jsonPath("$.data.asOf").value("2026-03-10T00:00:00Z"));
+        .andExpect(jsonPath("$.data.asOf").value("2026-03-10T00:00:00Z"))
+        .andExpect(jsonPath("$.data.avgPrice").value(70000.0))
+        .andExpect(jsonPath("$.data.marketPrice").value(72050.0))
+        .andExpect(jsonPath("$.data.quoteSnapshotId").value("qsnap-005930-live-001"))
+        .andExpect(jsonPath("$.data.unrealizedPnl").value(246000.0))
+        .andExpect(jsonPath("$.data.realizedPnlDaily").value(5000.0))
+        .andExpect(jsonPath("$.data.valuationStatus").value("FRESH"))
+        .andExpect(jsonPath("$.data.valuationUnavailableReason").value(org.hamcrest.Matchers.nullValue()));
 
     WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions"))
         .withQueryParam("memberId", equalTo("301"))
         .withQueryParam("symbol", equalTo("005930"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-position")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldExposeExplicitNullValuationFieldsWhenCorebankReturnsUnavailablePosition() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "005930",
+                    "quantity": 120.0000,
+                    "availableQuantity": 120.0000,
+                    "availableQty": 120.0000,
+                    "balance": 1000000.0000,
+                    "availableBalance": 1000000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z",
+                    "avgPrice": 70000.0000,
+                    "marketPrice": null,
+                    "quoteSnapshotId": null,
+                    "quoteAsOf": null,
+                    "quoteSourceMode": null,
+                    "unrealizedPnl": null,
+                    "realizedPnlDaily": null,
+                    "valuationStatus": "UNAVAILABLE",
+                    "valuationUnavailableReason": "QUOTE_MISSING"
+                  }
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-position-unavailable")
+            .param("symbol", "005930"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-position-unavailable"))
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.symbol").value("005930"))
+        .andExpect(jsonPath("$.data.avgPrice").value(70000.0))
+        .andExpect(jsonPath("$.data.marketPrice").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.quoteSnapshotId").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.quoteAsOf").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.quoteSourceMode").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.unrealizedPnl").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.realizedPnlDaily").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.valuationStatus").value("UNAVAILABLE"))
+        .andExpect(jsonPath("$.data.valuationUnavailableReason").value("QUOTE_MISSING"));
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-position-unavailable")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldExposeProviderUnavailableValuationReasonWhenCorebankCannotReachQuoteProvider() throws Exception {
+    String correlationId = "trace-ch-pos-provider-unav";
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "005930",
+                    "quantity": 120.0000,
+                    "availableQuantity": 120.0000,
+                    "availableQty": 120.0000,
+                    "balance": 1000000.0000,
+                    "availableBalance": 1000000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z",
+                    "avgPrice": 70000.0000,
+                    "marketPrice": null,
+                    "quoteSnapshotId": null,
+                    "quoteAsOf": null,
+                    "quoteSourceMode": null,
+                    "unrealizedPnl": null,
+                    "realizedPnlDaily": null,
+                    "valuationStatus": "UNAVAILABLE",
+                    "valuationUnavailableReason": "PROVIDER_UNAVAILABLE"
+                  }
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, correlationId)
+            .param("symbol", "005930"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, correlationId))
+        .andExpect(jsonPath("$.data.accountId").value(1L))
+        .andExpect(jsonPath("$.data.symbol").value("005930"))
+        .andExpect(jsonPath("$.data.avgPrice").value(70000.0))
+        .andExpect(jsonPath("$.data.marketPrice").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.quoteSnapshotId").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.quoteAsOf").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.quoteSourceMode").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.unrealizedPnl").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.realizedPnlDaily").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.valuationStatus").value("UNAVAILABLE"))
+        .andExpect(jsonPath("$.data.valuationUnavailableReason").value("PROVIDER_UNAVAILABLE"));
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo("005930"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo(correlationId)));
   }
 
   @Test
@@ -740,7 +887,16 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.data.balance").value(1000000.0))
         .andExpect(jsonPath("$.data.availableBalance").value(1000000.0))
         .andExpect(jsonPath("$.data.currency").value("KRW"))
-        .andExpect(jsonPath("$.data.asOf").value("2026-03-10T00:00:00Z"));
+        .andExpect(jsonPath("$.data.asOf").value("2026-03-10T00:00:00Z"))
+        .andExpect(jsonPath("$.data.avgPrice").doesNotExist())
+        .andExpect(jsonPath("$.data.marketPrice").doesNotExist())
+        .andExpect(jsonPath("$.data.quoteSnapshotId").doesNotExist())
+        .andExpect(jsonPath("$.data.quoteAsOf").doesNotExist())
+        .andExpect(jsonPath("$.data.quoteSourceMode").doesNotExist())
+        .andExpect(jsonPath("$.data.unrealizedPnl").doesNotExist())
+        .andExpect(jsonPath("$.data.realizedPnlDaily").doesNotExist())
+        .andExpect(jsonPath("$.data.valuationStatus").doesNotExist())
+        .andExpect(jsonPath("$.data.valuationUnavailableReason").doesNotExist());
 
     WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/summary"))
         .withQueryParam("memberId", equalTo("301"))
@@ -772,7 +928,15 @@ class ChannelErrorContractTest {
                       "balance": 98500000.0000,
                       "availableBalance": 98500000.0000,
                       "currency": "KRW",
-                      "asOf": "2026-03-10T00:00:00Z"
+                      "asOf": "2026-03-10T00:00:00Z",
+                      "avgPrice": 120000.0000,
+                      "marketPrice": 120250.0000,
+                      "quoteSnapshotId": "qsnap-000660-live-001",
+                      "quoteAsOf": "2026-03-10T00:00:00Z",
+                      "quoteSourceMode": "LIVE",
+                      "unrealizedPnl": 3750.0000,
+                      "realizedPnlDaily": 0.0000,
+                      "valuationStatus": "FRESH"
                     },
                     {
                       "accountId": 1,
@@ -784,7 +948,15 @@ class ChannelErrorContractTest {
                       "balance": 100000000.0000,
                       "availableBalance": 100000000.0000,
                       "currency": "KRW",
-                      "asOf": "2026-03-10T00:01:00Z"
+                      "asOf": "2026-03-10T00:01:00Z",
+                      "avgPrice": 70000.0000,
+                      "marketPrice": 72050.0000,
+                      "quoteSnapshotId": "qsnap-005930-live-001",
+                      "quoteAsOf": "2026-03-10T00:01:00Z",
+                      "quoteSourceMode": "LIVE",
+                      "unrealizedPnl": 246000.0000,
+                      "realizedPnlDaily": 5000.0000,
+                      "valuationStatus": "FRESH"
                     }
                   ]
                 }
@@ -798,12 +970,109 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.data[0].symbol").value("000660"))
         .andExpect(jsonPath("$.data[1].symbol").value("005930"))
         .andExpect(jsonPath("$.data[1].availableQuantity").value(120.0))
-        .andExpect(jsonPath("$.data[1].availableQty").value(120.0));
+        .andExpect(jsonPath("$.data[1].availableQty").value(120.0))
+        .andExpect(jsonPath("$.data[0].valuationStatus").value("FRESH"))
+        .andExpect(jsonPath("$.data[1].avgPrice").value(70000.0))
+        .andExpect(jsonPath("$.data[1].marketPrice").value(72050.0))
+        .andExpect(jsonPath("$.data[1].realizedPnlDaily").value(5000.0))
+        .andExpect(jsonPath("$.data[1].valuationUnavailableReason").value(org.hamcrest.Matchers.nullValue()));
 
     WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
         .withQueryParam("memberId", equalTo("301"))
         .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
         .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-position-list")));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldExposeMixedDegradedValuationStatesForOwnedPositionList() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
+            urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
+        .withQueryParam("memberId", equalTo("301"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": [
+                    {
+                      "accountId": 1,
+                      "memberId": 301,
+                      "symbol": "000660",
+                      "quantity": 15.0000,
+                      "availableQuantity": 15.0000,
+                      "availableQty": 15.0000,
+                      "balance": 98500000.0000,
+                      "availableBalance": 98500000.0000,
+                      "currency": "KRW",
+                      "asOf": "2026-03-10T00:00:00Z",
+                      "avgPrice": 120000.0000,
+                      "marketPrice": null,
+                      "quoteSnapshotId": "qsnap-000660-stale-001",
+                      "quoteAsOf": "2026-03-09T23:59:50Z",
+                      "quoteSourceMode": "LIVE",
+                      "unrealizedPnl": null,
+                      "realizedPnlDaily": null,
+                      "valuationStatus": "STALE",
+                      "valuationUnavailableReason": "STALE_QUOTE"
+                    },
+                    {
+                      "accountId": 1,
+                      "memberId": 301,
+                      "symbol": "005930",
+                      "quantity": 120.0000,
+                      "availableQuantity": 120.0000,
+                      "availableQty": 120.0000,
+                      "balance": 100000000.0000,
+                      "availableBalance": 100000000.0000,
+                      "currency": "KRW",
+                      "asOf": "2026-03-10T00:01:00Z",
+                      "avgPrice": 70000.0000,
+                      "marketPrice": null,
+                      "quoteSnapshotId": null,
+                      "quoteAsOf": null,
+                      "quoteSourceMode": null,
+                      "unrealizedPnl": null,
+                      "realizedPnlDaily": null,
+                      "valuationStatus": "UNAVAILABLE",
+                      "valuationUnavailableReason": "PROVIDER_UNAVAILABLE"
+                    }
+                  ]
+                }
+                """)));
+
+    mockMvc.perform(get("/api/v1/accounts/{accountId}/positions/list", 1L)
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-position-list-degraded"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-position-list-degraded"))
+        .andExpect(jsonPath("$.data[0].symbol").value("000660"))
+        .andExpect(jsonPath("$.data[0].avgPrice").value(120000.0))
+        .andExpect(jsonPath("$.data[0].marketPrice").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[0].quoteSnapshotId").value("qsnap-000660-stale-001"))
+        .andExpect(jsonPath("$.data[0].quoteAsOf").value("2026-03-09T23:59:50Z"))
+        .andExpect(jsonPath("$.data[0].quoteSourceMode").value("LIVE"))
+        .andExpect(jsonPath("$.data[0].unrealizedPnl").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[0].realizedPnlDaily").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[0].valuationStatus").value("STALE"))
+        .andExpect(jsonPath("$.data[0].valuationUnavailableReason").value("STALE_QUOTE"))
+        .andExpect(jsonPath("$.data[1].symbol").value("005930"))
+        .andExpect(jsonPath("$.data[1].avgPrice").value(70000.0))
+        .andExpect(jsonPath("$.data[1].marketPrice").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[1].quoteSnapshotId").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[1].quoteAsOf").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[1].quoteSourceMode").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[1].unrealizedPnl").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[1].realizedPnlDaily").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data[1].valuationStatus").value("UNAVAILABLE"))
+        .andExpect(jsonPath("$.data[1].valuationUnavailableReason").value("PROVIDER_UNAVAILABLE"));
+
+    WIRE_MOCK_SERVER.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-position-list-degraded")));
   }
 
   @Test

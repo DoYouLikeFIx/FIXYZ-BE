@@ -42,6 +42,9 @@ springdoc:
     path: /swagger-ui/index.html
 
 management:
+  server:
+    port: ${CHANNEL_MANAGEMENT_PORT:18080}
+    address: ${CHANNEL_MANAGEMENT_ADDRESS:0.0.0.0}
   endpoints:
     web:
       exposure:

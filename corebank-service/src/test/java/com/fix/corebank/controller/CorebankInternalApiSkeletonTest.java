@@ -14,6 +14,7 @@ import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepQuoteSourceMode;
+import com.fix.common.valuation.ValuationStatus;
 import com.fix.common.web.CommonHeaders;
 import com.fix.corebank.filter.CorrelationIdFilter;
 import com.fix.corebank.repository.AccountRepository;
@@ -138,10 +139,15 @@ class CorebankInternalApiSkeletonTest {
         new BigDecimal("1000000.0000"),
         "KRW",
         Instant.parse("2026-03-01T10:01:00Z"),
+        new BigDecimal("70000.0000"),
         new BigDecimal("72050.0000"),
         "qsnap-005930-live-001",
         Instant.parse("2026-03-01T10:00:59Z"),
-        FepQuoteSourceMode.LIVE
+        FepQuoteSourceMode.LIVE,
+        new BigDecimal("246000.0000"),
+        new BigDecimal("5000.0000"),
+        ValuationStatus.FRESH,
+        null
     ));
     corebankOrderService.setAccountSummaryResult(AccountPositionResult.of(
         1L,
@@ -163,10 +169,15 @@ class CorebankInternalApiSkeletonTest {
             new BigDecimal("98500000.0000"),
             "KRW",
             Instant.parse("2026-03-01T10:01:30Z"),
+            new BigDecimal("120000.0000"),
             new BigDecimal("120250.0000"),
             "qsnap-000660-live-001",
             Instant.parse("2026-03-01T10:01:20Z"),
-            FepQuoteSourceMode.LIVE
+            FepQuoteSourceMode.LIVE,
+            new BigDecimal("3750.0000"),
+            BigDecimal.ZERO.setScale(4),
+            ValuationStatus.FRESH,
+            null
         ),
         AccountPositionResult.of(
             1L,
@@ -177,10 +188,15 @@ class CorebankInternalApiSkeletonTest {
             new BigDecimal("1000000.0000"),
             "KRW",
             Instant.parse("2026-03-01T10:01:00Z"),
+            new BigDecimal("70000.0000"),
             new BigDecimal("72050.0000"),
             "qsnap-005930-live-001",
             Instant.parse("2026-03-01T10:00:59Z"),
-            FepQuoteSourceMode.LIVE
+            FepQuoteSourceMode.LIVE,
+            new BigDecimal("246000.0000"),
+            new BigDecimal("5000.0000"),
+            ValuationStatus.FRESH,
+            null
         )
     ));
     corebankOrderService.setAccountStatusResult(AccountStatusResult.of(
@@ -338,7 +354,9 @@ class CorebankInternalApiSkeletonTest {
         .andExpect(jsonPath("$.data.accountId").value(1L))
         .andExpect(jsonPath("$.data.memberId").value(301L))
         .andExpect(jsonPath("$.data.symbol").value(""))
-        .andExpect(jsonPath("$.data.balance").value(1000000.0));
+        .andExpect(jsonPath("$.data.balance").value(1000000.0))
+        .andExpect(jsonPath("$.data.marketPrice").doesNotExist())
+        .andExpect(jsonPath("$.data.valuationStatus").doesNotExist());
 
     mockMvc.perform(get("/internal/v1/accounts/{accountId}/positions/list", 1L)
             .header(CommonHeaders.X_INTERNAL_SECRET, "test-secret")

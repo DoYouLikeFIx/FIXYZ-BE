@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -17,6 +18,8 @@ import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.fep.FepQuoteSourceMode;
+import com.fix.common.valuation.ValuationStatus;
+import com.fix.common.valuation.ValuationUnavailableReason;
 import com.fix.corebank.client.FepClient;
 import com.fix.corebank.client.FepOrderResult;
 import com.fix.corebank.client.FepOutboundOrderPayload;
@@ -164,6 +167,15 @@ class CorebankOrderServiceTest {
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)));
     lenient().when(accountRepository.existsById(anyLong()))
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)).isPresent());
+    lenient().when(executionRepository.findAllByAccountIdAndSymbolInOrderBySymbolAscExecutedAtAscIdAsc(anyLong(), any()))
+        .thenReturn(List.of());
+    lenient().when(executionRepository
+        .findAllByAccountIdAndSymbolInAndExecutedAtGreaterThanEqualAndExecutedAtLessThanOrderBySymbolAscExecutedAtAscIdAsc(
+            anyLong(),
+            any(),
+            any(),
+            any()
+        )).thenReturn(List.of());
     corebankOrderService = new CorebankOrderService(
         accountRepository,
         positionRepository,
@@ -285,10 +297,15 @@ class CorebankOrderServiceTest {
     assertThat(result.getBalance()).isEqualByComparingTo("100000000.0000");
     assertThat(result.getCurrency()).isEqualTo("KRW");
     assertThat(result.getAsOf()).isEqualTo(positionUpdatedAt);
+    assertThat(result.getAvgPrice()).isEqualByComparingTo("70000.0000");
     assertThat(result.getMarketPrice()).isEqualByComparingTo("72050.0000");
     assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-005930-1");
     assertThat(result.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-01T10:01:59Z"));
     assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(result.getUnrealizedPnl()).isEqualByComparingTo("246000.0000");
+    assertThat(result.getRealizedPnlDaily()).isEqualByComparingTo("0.0000");
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.FRESH);
+    assertThat(result.getValuationUnavailableReason()).isNull();
   }
 
   @Test
@@ -307,9 +324,14 @@ class CorebankOrderServiceTest {
     assertThat(result.getAvailableQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
     assertThat(result.getBalance()).isEqualByComparingTo("100000000.0000");
     assertThat(result.getAsOf()).isEqualTo(accountUpdatedAt);
+    assertThat(result.getAvgPrice()).isNull();
     assertThat(result.getMarketPrice()).isEqualByComparingTo("120250.0000");
     assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-000660-1");
     assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(result.getUnrealizedPnl()).isEqualByComparingTo("0.0000");
+    assertThat(result.getRealizedPnlDaily()).isEqualByComparingTo("0.0000");
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.FRESH);
+    assertThat(result.getValuationUnavailableReason()).isNull();
   }
 
   @Test
@@ -342,15 +364,32 @@ class CorebankOrderServiceTest {
     assertThat(result.get(0).getQuantity()).isEqualByComparingTo("40.0000");
     assertThat(result.get(0).getBalance()).isEqualByComparingTo("100000000.0000");
     assertThat(result.get(0).getAsOf()).isEqualTo(hynixUpdatedAt);
+    assertThat(result.get(0).getAvgPrice()).isEqualByComparingTo("120000.0000");
     assertThat(result.get(0).getMarketPrice()).isEqualByComparingTo("120250.0000");
     assertThat(result.get(0).getQuoteSnapshotId()).isEqualTo("qsnap-000660-1");
+    assertThat(result.get(0).getUnrealizedPnl()).isEqualByComparingTo("10000.0000");
+    assertThat(result.get(0).getRealizedPnlDaily()).isEqualByComparingTo("0.0000");
+    assertThat(result.get(0).getValuationStatus()).isEqualTo(ValuationStatus.FRESH);
     assertThat(result.get(1).getSymbol()).isEqualTo("005930");
     assertThat(result.get(1).getQuantity()).isEqualByComparingTo("120.0000");
     assertThat(result.get(1).getAsOf()).isEqualTo(samsungUpdatedAt);
+    assertThat(result.get(1).getAvgPrice()).isEqualByComparingTo("70000.0000");
     assertThat(result.get(1).getMarketPrice()).isEqualByComparingTo("72050.0000");
     assertThat(result.get(1).getQuoteSnapshotId()).isEqualTo("qsnap-005930-1");
+    assertThat(result.get(1).getUnrealizedPnl()).isEqualByComparingTo("246000.0000");
+    assertThat(result.get(1).getRealizedPnlDaily()).isEqualByComparingTo("0.0000");
+    assertThat(result.get(1).getValuationStatus()).isEqualTo(ValuationStatus.FRESH);
     assertThat(fepQuoteSnapshotClient.singleQueryCalls()).isZero();
     assertThat(fepQuoteSnapshotClient.batchQueryCalls()).isEqualTo(1);
+    verify(executionRepository, times(1))
+        .findAllByAccountIdAndSymbolInAndExecutedAtGreaterThanEqualAndExecutedAtLessThanOrderBySymbolAscExecutedAtAscIdAsc(
+            eq(ACCOUNT_ID),
+            argThat(symbols -> symbols.equals(List.of("000660", "005930"))),
+            any(),
+            any()
+        );
+    verify(executionRepository, times(0))
+        .findAllByAccountIdAndSymbolInOrderBySymbolAscExecutedAtAscIdAsc(anyLong(), any());
   }
 
   @Test
@@ -411,10 +450,12 @@ class CorebankOrderServiceTest {
   }
 
   @Test
-  void shouldRejectAccountPositionWhenQuoteSnapshotAgeExceedsThresholdByOneMillisecond() {
+  void shouldReturnStaleAccountPositionWhenQuoteSnapshotAgeExceedsThresholdByOneMillisecond() {
     Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
     Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
     when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbol(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
     fepQuoteSnapshotClient.setQuoteResult("005930", quoteSnapshot(
         "qsnap-005930-threshold-over",
         "005930",
@@ -424,23 +465,28 @@ class CorebankOrderServiceTest {
         72050L
     ));
 
-    assertThatThrownBy(() -> corebankOrderService.getAccountPosition(
+    AccountPositionResult result = corebankOrderService.getAccountPosition(
         AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
-    ))
-        .isInstanceOfSatisfying(BusinessException.class, ex -> {
-          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STALE_QUOTE);
-          assertThat(ex.getDetails()).containsEntry("symbol", "005930");
-          assertThat(ex.getDetails()).containsEntry("snapshotAgeMs", 5_001L);
-          assertThat(ex.getDetails()).containsEntry("quoteSourceMode", "LIVE");
-          assertThat(ex.getDetails()).containsEntry("quoteSnapshotId", "qsnap-005930-threshold-over");
-        });
+    );
+
+    assertThat(result.getAvgPrice()).isEqualByComparingTo("70000.0000");
+    assertThat(result.getMarketPrice()).isNull();
+    assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-005930-threshold-over");
+    assertThat(result.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-01T10:01:54.999Z"));
+    assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(result.getUnrealizedPnl()).isNull();
+    assertThat(result.getRealizedPnlDaily()).isNull();
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.STALE);
+    assertThat(result.getValuationUnavailableReason()).isEqualTo(ValuationUnavailableReason.STALE_QUOTE);
   }
 
   @Test
-  void shouldRejectAccountPositionWhenQuoteSnapshotIsStale() {
+  void shouldReturnStaleAccountPositionWhenQuoteSnapshotIsStale() {
     Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
     Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
     when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbol(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
     fepQuoteSnapshotClient.setQuoteResult("005930", quoteSnapshot(
         "qsnap-005930-stale",
         "005930",
@@ -450,32 +496,70 @@ class CorebankOrderServiceTest {
         72050L
     ));
 
-    assertThatThrownBy(() -> corebankOrderService.getAccountPosition(
+    AccountPositionResult result = corebankOrderService.getAccountPosition(
         AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
-    ))
-        .isInstanceOfSatisfying(BusinessException.class, ex -> {
-          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STALE_QUOTE);
-          assertThat(ex.getDetails()).containsEntry("symbol", "005930");
-          assertThat(ex.getDetails()).containsEntry("snapshotAgeMs", 6_000L);
-          assertThat(ex.getDetails()).containsEntry("quoteSourceMode", "LIVE");
-        });
+    );
+
+    assertThat(result.getAvgPrice()).isEqualByComparingTo("70000.0000");
+    assertThat(result.getMarketPrice()).isNull();
+    assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-005930-stale");
+    assertThat(result.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-01T10:01:54Z"));
+    assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(result.getUnrealizedPnl()).isNull();
+    assertThat(result.getRealizedPnlDaily()).isNull();
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.STALE);
+    assertThat(result.getValuationUnavailableReason()).isEqualTo(ValuationUnavailableReason.STALE_QUOTE);
   }
 
   @Test
-  void shouldRejectAccountPositionWhenQuoteSnapshotIsMissing() {
+  void shouldReturnUnavailableAccountPositionWhenQuoteSnapshotIsMissing() {
     Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
     Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
     when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbol(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
     fepQuoteSnapshotClient.setQuoteFailure("005930", new BusinessException(ErrorCode.NOT_FOUND, "quote snapshot not found"));
 
-    assertThatThrownBy(() -> corebankOrderService.getAccountPosition(
+    AccountPositionResult result = corebankOrderService.getAccountPosition(
         AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
-    ))
-        .isInstanceOfSatisfying(BusinessException.class, ex -> {
-          assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.STALE_QUOTE);
-          assertThat(ex.getDetails()).containsEntry("symbol", "005930");
-          assertThat(ex.getDetails()).containsEntry("reason", "QUOTE_SNAPSHOT_NOT_FOUND");
-        });
+    );
+
+    assertThat(result.getAvgPrice()).isEqualByComparingTo("70000.0000");
+    assertThat(result.getMarketPrice()).isNull();
+    assertThat(result.getQuoteSnapshotId()).isNull();
+    assertThat(result.getQuoteAsOf()).isNull();
+    assertThat(result.getQuoteSourceMode()).isNull();
+    assertThat(result.getUnrealizedPnl()).isNull();
+    assertThat(result.getRealizedPnlDaily()).isNull();
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.UNAVAILABLE);
+    assertThat(result.getValuationUnavailableReason()).isEqualTo(ValuationUnavailableReason.QUOTE_MISSING);
+  }
+
+  @Test
+  void shouldReturnUnavailableAccountPositionWhenQuoteProviderIsUnavailable() {
+    Instant accountUpdatedAt = Instant.parse("2026-03-01T10:00:00Z");
+    Account account = withUpdatedAt(persistedAccount(), accountUpdatedAt);
+    Position position = Position.of(ACCOUNT_ID, "005930", new BigDecimal("120.0000"), new BigDecimal("70000.0000"));
+    when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+    when(positionRepository.findByAccountIdAndSymbol(ACCOUNT_ID, "005930")).thenReturn(Optional.of(position));
+    fepQuoteSnapshotClient.setQuoteFailure("005930", new BusinessException(
+        ErrorCode.FEP_GATEWAY_UNAVAILABLE,
+        ErrorCode.FEP_GATEWAY_UNAVAILABLE.defaultMessage()
+    ));
+
+    AccountPositionResult result = corebankOrderService.getAccountPosition(
+        AccountPositionQueryCommand.of(ACCOUNT_ID, OWNER_MEMBER_ID, "005930")
+    );
+
+    assertThat(result.getAvgPrice()).isEqualByComparingTo("70000.0000");
+    assertThat(result.getMarketPrice()).isNull();
+    assertThat(result.getQuoteSnapshotId()).isNull();
+    assertThat(result.getQuoteAsOf()).isNull();
+    assertThat(result.getQuoteSourceMode()).isNull();
+    assertThat(result.getUnrealizedPnl()).isNull();
+    assertThat(result.getRealizedPnlDaily()).isNull();
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.UNAVAILABLE);
+    assertThat(result.getValuationUnavailableReason()).isEqualTo(ValuationUnavailableReason.PROVIDER_UNAVAILABLE);
   }
 
   @Test

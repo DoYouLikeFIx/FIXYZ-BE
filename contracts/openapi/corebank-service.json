@@ -1323,7 +1323,7 @@
                 "tags": [
                     "internal-corebank-controller"
                 ],
-                "summary": "Account Summary",
+                "summary": "Get account summary",
                 "operationId": "accountSummary",
                 "parameters": [
                     {
@@ -1359,7 +1359,7 @@
                         "content": {
                             "*/*": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/ApiResponseInternalAccountPositionResponse"
+                                    "$ref": "#/components/schemas/ApiResponseInternalAccountSummaryResponse"
                                 }
                             }
                         }
@@ -2817,26 +2817,14 @@
                     }
                 }
             },
-            "InternalAccountSummaryRequest": {
-                "required": [
-                    "memberId"
-                ],
-                "type": "object",
-                "properties": {
-                    "memberId": {
-                        "type": "integer",
-                        "format": "int64"
-                    }
-                }
-            },
-            "ApiResponseInternalAccountPositionResponse": {
+            "ApiResponseInternalAccountSummaryResponse": {
                 "type": "object",
                 "properties": {
                     "success": {
                         "type": "boolean"
                     },
                     "data": {
-                        "$ref": "#/components/schemas/InternalAccountPositionResponse"
+                        "$ref": "#/components/schemas/InternalAccountSummaryResponse"
                     },
                     "error": {
                         "$ref": "#/components/schemas/ApiErrorResponse"
@@ -2847,7 +2835,7 @@
                     }
                 }
             },
-            "InternalAccountPositionResponse": {
+            "InternalAccountSummaryResponse": {
                 "type": "object",
                 "properties": {
                     "accountId": {
@@ -2882,24 +2870,18 @@
                     "asOf": {
                         "type": "string",
                         "format": "date-time"
-                    },
-                    "marketPrice": {
-                        "type": "number"
-                    },
-                    "quoteSnapshotId": {
-                        "type": "string"
-                    },
-                    "quoteAsOf": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "quoteSourceMode": {
-                        "type": "string",
-                        "enum": [
-                            "LIVE",
-                            "DELAYED",
-                            "REPLAY"
-                        ]
+                    }
+                }
+            },
+            "InternalAccountSummaryRequest": {
+                "required": [
+                    "memberId"
+                ],
+                "type": "object",
+                "properties": {
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
                     }
                 }
             },
@@ -2976,6 +2958,117 @@
                     "symbol": {
                         "minLength": 1,
                         "type": "string"
+                    }
+                }
+            },
+            "ApiResponseInternalAccountPositionResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/InternalAccountPositionResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "InternalAccountPositionResponse": {
+                "required": [
+                    "valuationStatus"
+                ],
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "memberId": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "symbol": {
+                        "type": "string"
+                    },
+                    "quantity": {
+                        "type": "number"
+                    },
+                    "availableQuantity": {
+                        "type": "number"
+                    },
+                    "availableQty": {
+                        "type": "number"
+                    },
+                    "balance": {
+                        "type": "number"
+                    },
+                    "availableBalance": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "asOf": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "avgPrice": {
+                        "type": "number",
+                        "nullable": true
+                    },
+                    "marketPrice": {
+                        "type": "number",
+                        "nullable": true
+                    },
+                    "quoteSnapshotId": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "quoteAsOf": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "quoteSourceMode": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "LIVE",
+                            "DELAYED",
+                            "REPLAY"
+                        ]
+                    },
+                    "unrealizedPnl": {
+                        "type": "number",
+                        "nullable": true
+                    },
+                    "realizedPnlDaily": {
+                        "type": "number",
+                        "nullable": true
+                    },
+                    "valuationStatus": {
+                        "type": "string",
+                        "nullable": false,
+                        "enum": [
+                            "FRESH",
+                            "STALE",
+                            "UNAVAILABLE"
+                        ]
+                    },
+                    "valuationUnavailableReason": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "STALE_QUOTE",
+                            "QUOTE_MISSING",
+                            "PROVIDER_UNAVAILABLE"
+                        ]
                     }
                 }
             },

@@ -354,6 +354,7 @@ class LogPiiComplianceTest {
             manualRecoveryQueueEntryRepository,
             orderSessionRepository,
             capturingAuditLogService,
+            org.mockito.Mockito.mock(com.fix.channel.service.OrderSessionMonitoringMetrics.class),
             clock
         );
     ReflectionTestUtils.setField(orderSessionPersistenceService, "entityManager", entityManager);
@@ -683,6 +684,7 @@ class LogPiiComplianceTest {
             manualRecoveryQueueEntryRepository,
             orderSessionRepository,
             capturingAuditLogService,
+            org.mockito.Mockito.mock(com.fix.channel.service.OrderSessionMonitoringMetrics.class),
             clock
         );
     ReflectionTestUtils.setField(persistenceService, "entityManager", entityManager);

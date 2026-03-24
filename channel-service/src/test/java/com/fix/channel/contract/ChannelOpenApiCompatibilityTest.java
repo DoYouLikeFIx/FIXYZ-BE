@@ -48,6 +48,9 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode accountPositionResponse = contract.path("components").path("schemas")
         .path("ApiResponseAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas").path("AccountPositionResponse");
+    JsonNode accountSummaryResponse = contract.path("components").path("schemas")
+        .path("ApiResponseAccountSummaryResponse");
+    JsonNode accountSummarySchema = contract.path("components").path("schemas").path("AccountSummaryResponse");
     JsonNode orderSessionCreateRequestSchema = contract.path("components").path("schemas").path("OrderSessionCreateRequest");
     JsonNode orderSessionOtpVerifyRequestSchema = contract.path("components").path("schemas")
         .path("OrderSessionOtpVerifyRequest");
@@ -130,6 +133,8 @@ class ChannelOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountSummaryResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountPositionListResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountOrderHistoryResponse.path("properties").path("error").path("$ref").asText())
@@ -168,15 +173,61 @@ class ChannelOpenApiCompatibilityTest {
             "balance",
             "availableBalance",
             "asOf",
+            "avgPrice",
             "marketPrice",
             "quoteSnapshotId",
             "quoteAsOf",
-            "quoteSourceMode"
+            "quoteSourceMode",
+            "unrealizedPnl",
+            "realizedPnlDaily",
+            "valuationStatus",
+            "valuationUnavailableReason"
         );
+    assertThat(accountPositionSchema.path("properties").path("avgPrice").path("type").asText()).isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("avgPrice").path("nullable").asBoolean()).isTrue();
     assertThat(accountPositionSchema.path("properties").path("marketPrice").path("type").asText()).isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("marketPrice").path("nullable").asBoolean()).isTrue();
     assertThat(accountPositionSchema.path("properties").path("quoteSnapshotId").path("type").asText()).isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("quoteSnapshotId").path("nullable").asBoolean()).isTrue();
     assertThat(accountPositionSchema.path("properties").path("quoteAsOf").path("format").asText()).isEqualTo("date-time");
+    assertThat(accountPositionSchema.path("properties").path("quoteAsOf").path("nullable").asBoolean()).isTrue();
     assertThat(accountPositionSchema.path("properties").path("quoteSourceMode").path("type").asText()).isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("quoteSourceMode").path("nullable").asBoolean()).isTrue();
+    assertThat(accountPositionSchema.path("properties").path("unrealizedPnl").path("type").asText()).isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("unrealizedPnl").path("nullable").asBoolean()).isTrue();
+    assertThat(accountPositionSchema.path("properties").path("realizedPnlDaily").path("type").asText()).isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("realizedPnlDaily").path("nullable").asBoolean()).isTrue();
+    assertThat(accountPositionSchema.path("properties").path("valuationStatus").path("type").asText()).isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("valuationStatus").path("nullable").asBoolean()).isFalse();
+    assertThat(enumValues(accountPositionSchema.path("properties").path("valuationStatus")))
+        .containsExactly("FRESH", "STALE", "UNAVAILABLE");
+    assertThat(requiredFields(accountPositionSchema)).contains("valuationStatus");
+    assertThat(accountPositionSchema.path("properties").path("valuationUnavailableReason").path("type").asText())
+        .isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("valuationUnavailableReason").path("nullable").asBoolean())
+        .isTrue();
+    assertThat(enumValues(accountPositionSchema.path("properties").path("valuationUnavailableReason")))
+        .containsExactly("STALE_QUOTE", "QUOTE_MISSING", "PROVIDER_UNAVAILABLE");
+    assertThat(fieldNames(accountSummarySchema.path("properties")))
+        .contains(
+            "quantity",
+            "availableQuantity",
+            "availableQty",
+            "balance",
+            "availableBalance",
+            "asOf"
+        )
+        .doesNotContain(
+            "avgPrice",
+            "marketPrice",
+            "quoteSnapshotId",
+            "quoteAsOf",
+            "quoteSourceMode",
+            "unrealizedPnl",
+            "realizedPnlDaily",
+            "valuationStatus",
+            "valuationUnavailableReason"
+        );
     assertThat(fieldNames(orderSessionCreateRequestSchema.path("properties")))
         .contains("accountId", "symbol", "side", "orderType", "qty", "price");
     assertThat(fieldNames(orderSessionOtpVerifyRequestSchema.path("properties")))
@@ -239,7 +290,7 @@ class ChannelOpenApiCompatibilityTest {
     assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
     assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
-        .isEqualTo("#/components/schemas/ApiResponseAccountPositionResponse");
+        .isEqualTo("#/components/schemas/ApiResponseAccountSummaryResponse");
     assertThat(positionsListOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseListAccountPositionResponse");
     assertThat(accountPositionListResponse.path("properties").path("data").path("type").asText())
@@ -331,6 +382,16 @@ class ChannelOpenApiCompatibilityTest {
     return names;
   }
 
+  private Set<String> requiredFields(JsonNode schema) {
+    Set<String> names = new TreeSet<>();
+    JsonNode requiredNode = schema.path("required");
+    if (!requiredNode.isArray()) {
+      return names;
+    }
+    requiredNode.forEach(node -> names.add(node.asText()));
+    return names;
+  }
+
   private Set<String> parameterNames(JsonNode node) {
     Set<String> names = new TreeSet<>();
     node.forEach(parameter -> names.add(parameter.path("name").asText()));
@@ -354,5 +415,14 @@ class ChannelOpenApiCompatibilityTest {
       return content.path(content.fieldNames().next()).path("schema").path("$ref").asText();
     }
     return "";
+  }
+
+  private java.util.List<String> enumValues(JsonNode schema) {
+    java.util.List<String> values = new java.util.ArrayList<>();
+    JsonNode enumNode = schema.path("enum");
+    if (enumNode.isArray()) {
+      enumNode.forEach(value -> values.add(value.asText()));
+    }
+    return values;
   }
 }

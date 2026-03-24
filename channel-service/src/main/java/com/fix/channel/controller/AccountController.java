@@ -4,6 +4,7 @@ import com.fix.channel.dto.request.AccountPositionQueryRequest;
 import com.fix.channel.dto.request.AccountOrderHistoryQueryRequest;
 import com.fix.channel.dto.response.AccountOrderHistoryResponse;
 import com.fix.channel.dto.response.AccountPositionResponse;
+import com.fix.channel.dto.response.AccountSummaryResponse;
 import com.fix.channel.service.AccountOrderHistoryService;
 import com.fix.channel.service.AccountPositionService;
 import com.fix.channel.vo.AccountPositionsQueryCommand;
@@ -69,12 +70,12 @@ public class AccountController {
 
   @GetMapping("/{accountId}/summary")
   @Operation(summary = "Get account summary")
-  public ApiResponse<AccountPositionResponse> getSummary(
+  public ApiResponse<AccountSummaryResponse> getSummary(
       @PathVariable Long accountId,
       HttpServletRequest httpServletRequest
   ) {
     Long memberId = resolveAuthenticatedMemberId(httpServletRequest);
-    return ApiResponse.success(AccountPositionResponse.from(
+    return ApiResponse.success(AccountSummaryResponse.from(
         accountPositionService.getAccountSummary(AccountSummaryQueryCommand.of(accountId, memberId))
     ));
   }

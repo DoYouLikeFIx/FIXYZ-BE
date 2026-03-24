@@ -29,6 +29,8 @@ import com.fix.channel.vo.OrderRequeryResult;
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
 import com.fix.common.fep.FepQuoteSourceMode;
+import com.fix.common.valuation.ValuationStatus;
+import com.fix.common.valuation.ValuationUnavailableReason;
 import com.fix.common.web.CommonHeaders;
 import com.fix.common.web.CorrelationIdSupport;
 import com.fix.common.web.TraceparentSupport;
@@ -432,7 +434,8 @@ class CorebankClientTest {
                     "availableQty": 90.0000,
                     "availableBalance": 500000.0000,
                     "currency": "KRW",
-                    "asOf": "2026-03-10T00:00:00Z"
+                    "asOf": "2026-03-10T00:00:00Z",
+                    "valuationStatus": "FRESH"
                   }
                 }
                 """)));
@@ -472,20 +475,29 @@ class CorebankClientTest {
                     "balance": 500000.0000,
                     "currency": "KRW",
                     "asOf": "2026-03-10T00:00:00Z",
+                    "avgPrice": 70000.0000,
                     "marketPrice": 72100.0000,
                     "quoteSnapshotId": "qsnap-005930-live-001",
                     "quoteAsOf": "2026-03-10T00:00:59Z",
-                    "quoteSourceMode": "LIVE"
+                    "quoteSourceMode": "LIVE",
+                    "unrealizedPnl": 252000.0000,
+                    "realizedPnlDaily": 5000.0000,
+                    "valuationStatus": "FRESH"
                   }
                 }
                 """)));
 
     AccountPositionResult result = corebankClient.getAccountPosition(command(), "trace-channel-quote");
 
+    assertThat(result.getAvgPrice()).isEqualByComparingTo("70000.0000");
     assertThat(result.getMarketPrice()).isEqualByComparingTo("72100.0000");
     assertThat(result.getQuoteSnapshotId()).isEqualTo("qsnap-005930-live-001");
     assertThat(result.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-10T00:00:59Z"));
     assertThat(result.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+    assertThat(result.getUnrealizedPnl()).isEqualByComparingTo("252000.0000");
+    assertThat(result.getRealizedPnlDaily()).isEqualByComparingTo("5000.0000");
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.FRESH);
+    assertThat(result.getValuationUnavailableReason()).isNull();
   }
 
   @Test
@@ -555,10 +567,14 @@ class CorebankClientTest {
                       "availableBalance": 98500000.0000,
                       "currency": "KRW",
                       "asOf": "2026-03-10T00:00:00Z",
+                      "avgPrice": 120000.0000,
                       "marketPrice": 120250.0000,
                       "quoteSnapshotId": "qsnap-000660-live-001",
                       "quoteAsOf": "2026-03-10T00:00:58Z",
-                      "quoteSourceMode": "LIVE"
+                      "quoteSourceMode": "LIVE",
+                      "unrealizedPnl": 3750.0000,
+                      "realizedPnlDaily": 0.0000,
+                      "valuationStatus": "FRESH"
                     },
                     {
                       "accountId": 1,
@@ -571,10 +587,14 @@ class CorebankClientTest {
                       "availableBalance": 100000000.0000,
                       "currency": "KRW",
                       "asOf": "2026-03-10T00:01:00Z",
+                      "avgPrice": 70000.0000,
                       "marketPrice": 72050.0000,
                       "quoteSnapshotId": "qsnap-005930-live-001",
                       "quoteAsOf": "2026-03-10T00:00:59Z",
-                      "quoteSourceMode": "LIVE"
+                      "quoteSourceMode": "LIVE",
+                      "unrealizedPnl": 246000.0000,
+                      "realizedPnlDaily": 5000.0000,
+                      "valuationStatus": "FRESH"
                     }
                   ]
                 }
@@ -586,21 +606,113 @@ class CorebankClientTest {
           AccountPositionResult first = results.get(0);
           AccountPositionResult second = results.get(1);
           assertThat(first.getSymbol()).isEqualTo("000660");
+          assertThat(first.getAvgPrice()).isEqualByComparingTo("120000.0000");
           assertThat(first.getMarketPrice()).isEqualByComparingTo("120250.0000");
           assertThat(first.getQuoteSnapshotId()).isEqualTo("qsnap-000660-live-001");
           assertThat(first.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-10T00:00:58Z"));
           assertThat(first.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+          assertThat(first.getUnrealizedPnl()).isEqualByComparingTo("3750.0000");
+          assertThat(first.getValuationStatus()).isEqualTo(ValuationStatus.FRESH);
           assertThat(second.getSymbol()).isEqualTo("005930");
+          assertThat(second.getAvgPrice()).isEqualByComparingTo("70000.0000");
           assertThat(second.getMarketPrice()).isEqualByComparingTo("72050.0000");
           assertThat(second.getQuoteSnapshotId()).isEqualTo("qsnap-005930-live-001");
           assertThat(second.getQuoteAsOf()).isEqualTo(Instant.parse("2026-03-10T00:00:59Z"));
           assertThat(second.getQuoteSourceMode()).isEqualTo(FepQuoteSourceMode.LIVE);
+          assertThat(second.getRealizedPnlDaily()).isEqualByComparingTo("5000.0000");
+          assertThat(second.getValuationStatus()).isEqualTo(ValuationStatus.FRESH);
         });
 
     wireMockServer.verify(getRequestedFor(urlPathEqualTo("/internal/v1/accounts/1/positions/list"))
         .withQueryParam("memberId", equalTo("301"))
         .withHeader("X-Internal-Secret", equalTo("test-secret"))
         .withHeader("X-Correlation-Id", equalTo("trace-position-list")));
+  }
+
+  @Test
+  void shouldMapUnavailableValuationFieldsWhenCorebankDegradesReadResponse() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo(SYMBOL))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "005930",
+                    "quantity": 120.0000,
+                    "availableQuantity": 90.0000,
+                    "balance": 500000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z",
+                    "avgPrice": 70000.0000,
+                    "valuationStatus": "UNAVAILABLE",
+                    "valuationUnavailableReason": "QUOTE_MISSING"
+                  }
+                }
+                """)));
+
+    AccountPositionResult result = corebankClient.getAccountPosition(command(), "trace-channel-unavailable");
+
+    assertThat(result.getAvgPrice()).isEqualByComparingTo("70000.0000");
+    assertThat(result.getMarketPrice()).isNull();
+    assertThat(result.getQuoteSnapshotId()).isNull();
+    assertThat(result.getQuoteAsOf()).isNull();
+    assertThat(result.getQuoteSourceMode()).isNull();
+    assertThat(result.getUnrealizedPnl()).isNull();
+    assertThat(result.getRealizedPnlDaily()).isNull();
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.UNAVAILABLE);
+    assertThat(result.getValuationUnavailableReason()).isEqualTo(ValuationUnavailableReason.QUOTE_MISSING);
+  }
+
+  @Test
+  void shouldMapProviderUnavailableValuationReasonWhenCorebankDegradesReadResponse() {
+    wireMockServer.stubFor(get(urlPathEqualTo("/internal/v1/accounts/1/positions"))
+        .withQueryParam("memberId", equalTo("301"))
+        .withQueryParam("symbol", equalTo(SYMBOL))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "accountId": 1,
+                    "memberId": 301,
+                    "symbol": "005930",
+                    "quantity": 120.0000,
+                    "availableQuantity": 90.0000,
+                    "balance": 500000.0000,
+                    "currency": "KRW",
+                    "asOf": "2026-03-10T00:00:00Z",
+                    "avgPrice": 70000.0000,
+                    "marketPrice": null,
+                    "quoteSnapshotId": null,
+                    "quoteAsOf": null,
+                    "quoteSourceMode": null,
+                    "unrealizedPnl": null,
+                    "realizedPnlDaily": null,
+                    "valuationStatus": "UNAVAILABLE",
+                    "valuationUnavailableReason": "PROVIDER_UNAVAILABLE"
+                  }
+                }
+                """)));
+
+    AccountPositionResult result = corebankClient.getAccountPosition(command(), "trace-channel-provider-unavailable");
+
+    assertThat(result.getAvgPrice()).isEqualByComparingTo("70000.0000");
+    assertThat(result.getMarketPrice()).isNull();
+    assertThat(result.getQuoteSnapshotId()).isNull();
+    assertThat(result.getQuoteAsOf()).isNull();
+    assertThat(result.getQuoteSourceMode()).isNull();
+    assertThat(result.getUnrealizedPnl()).isNull();
+    assertThat(result.getRealizedPnlDaily()).isNull();
+    assertThat(result.getValuationStatus()).isEqualTo(ValuationStatus.UNAVAILABLE);
+    assertThat(result.getValuationUnavailableReason()).isEqualTo(ValuationUnavailableReason.PROVIDER_UNAVAILABLE);
   }
 
   @Test
@@ -766,7 +878,8 @@ class CorebankClientTest {
                       "availableQuantity": 90.0000,
                       "balance": 500000.0000,
                       "currency": "KRW",
-                      "asOf": "2026-03-10T00:00:00Z"
+                      "asOf": "2026-03-10T00:00:00Z",
+                      "valuationStatus": "FRESH"
                     }
                   }
                   """)));
