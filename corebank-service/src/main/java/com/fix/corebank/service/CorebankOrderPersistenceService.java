@@ -512,8 +512,7 @@ public class CorebankOrderPersistenceService {
   private int nextExecutionSequence(Order order, Map<Long, Integer> nextExecutionSequences) {
     return nextExecutionSequences.compute(order.getId(), (orderId, nextExecutionSeq) -> {
       if (nextExecutionSeq == null) {
-        long persistedCount = executionRepository.countByOrderId(orderId);
-        return Math.toIntExact(persistedCount) + 1;
+        return executionRepository.findLatestExecutionSequenceForUpdate(orderId) + 1;
       }
       return nextExecutionSeq + 1;
     });

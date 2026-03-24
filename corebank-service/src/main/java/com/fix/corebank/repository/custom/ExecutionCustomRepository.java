@@ -5,4 +5,6 @@ import java.time.Instant;
 
 public interface ExecutionCustomRepository {
   BigDecimal sumSellQuantityByAccountAndSymbolBetween(Long accountId, String symbol, Instant from, Instant to);
+
+  int findLatestExecutionSequenceForUpdate(Long orderId);
 }
