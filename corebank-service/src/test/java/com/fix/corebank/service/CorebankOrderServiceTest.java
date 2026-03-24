@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -1442,6 +1443,14 @@ class CorebankOrderServiceTest {
         });
 
     assertThat(fepClient.submitCalls()).isZero();
+    assertThat(account.getCashBalance()).isEqualByComparingTo("100000000.0000");
+    verify(orderRepository, never()).saveAndFlush(any(Order.class));
+    verify(executionRepository, never()).saveAndFlush(any(Execution.class));
+    verify(journalEntryRepository, never()).save(any(JournalEntry.class));
+    verify(ledgerEntryRepository, never()).save(any(LedgerEntry.class));
+    verify(ledgerEntryRefRepository, never()).save(any(LedgerEntryRef.class));
+    verify(accountRepository, never()).findByIdForUpdate(anyLong());
+    verify(positionRepository, never()).findByAccountIdAndSymbolForUpdate(anyLong(), any(String.class));
   }
 
   @Test
