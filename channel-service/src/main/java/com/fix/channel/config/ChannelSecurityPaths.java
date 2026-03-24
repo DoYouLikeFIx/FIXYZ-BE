@@ -25,7 +25,8 @@ public final class ChannelSecurityPaths {
       "/swagger-ui/**",
       "/v3/api-docs/**",
       "/actuator/health",
-      "/actuator/info"
+      "/actuator/info",
+      "/actuator/prometheus"
   );
 
   private static final List<String> ADMIN_ONLY_PATH_PATTERNS = List.of(

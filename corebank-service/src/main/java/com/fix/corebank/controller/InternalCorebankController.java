@@ -37,6 +37,7 @@ import com.fix.corebank.dto.request.InternalPortfolioProvisioningRequest;
 import com.fix.corebank.dto.request.InternalPortfolioRequest;
 import com.fix.corebank.dto.response.InternalAccountOrderHistoryResponse;
 import com.fix.corebank.dto.response.InternalAccountPositionResponse;
+import com.fix.corebank.dto.response.InternalAccountSummaryResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusResponse;
 import com.fix.corebank.dto.response.InternalAccountStatusTransitionResponse;
 import com.fix.corebank.dto.response.InternalLedgerIntegritySummaryResponse;
@@ -54,6 +55,7 @@ import com.fix.corebank.service.CorebankOrderService;
 import com.fix.corebank.service.LedgerIntegrityObservabilityService;
 import com.fix.corebank.service.LedgerReconciliationService;
 import com.fix.corebank.service.LedgerRepairService;
+import io.swagger.v3.oas.annotations.Operation;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
@@ -102,11 +104,12 @@ public class InternalCorebankController {
   }
 
   @GetMapping("/accounts/{accountId}/summary")
-  public ApiResponse<InternalAccountPositionResponse> accountSummary(
+  @Operation(summary = "Get account summary")
+  public ApiResponse<InternalAccountSummaryResponse> accountSummary(
       @PathVariable Long accountId,
       @Valid @ModelAttribute InternalAccountSummaryRequest request
   ) {
-    return ApiResponse.success(InternalAccountPositionResponse.from(
+    return ApiResponse.success(InternalAccountSummaryResponse.from(
         corebankOrderService.getAccountSummary(request.toVo(accountId))
     ));
   }

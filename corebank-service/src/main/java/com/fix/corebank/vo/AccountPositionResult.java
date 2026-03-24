@@ -1,6 +1,8 @@
 package com.fix.corebank.vo;
 
 import com.fix.common.fep.FepQuoteSourceMode;
+import com.fix.common.valuation.ValuationStatus;
+import com.fix.common.valuation.ValuationUnavailableReason;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -14,10 +16,15 @@ public class AccountPositionResult {
   private final BigDecimal balance;
   private final String currency;
   private final Instant asOf;
+  private final BigDecimal avgPrice;
   private final BigDecimal marketPrice;
   private final String quoteSnapshotId;
   private final Instant quoteAsOf;
   private final FepQuoteSourceMode quoteSourceMode;
+  private final BigDecimal unrealizedPnl;
+  private final BigDecimal realizedPnlDaily;
+  private final ValuationStatus valuationStatus;
+  private final ValuationUnavailableReason valuationUnavailableReason;
 
   private AccountPositionResult(
       Long accountId,
@@ -28,10 +35,15 @@ public class AccountPositionResult {
       BigDecimal balance,
       String currency,
       Instant asOf,
+      BigDecimal avgPrice,
       BigDecimal marketPrice,
       String quoteSnapshotId,
       Instant quoteAsOf,
-      FepQuoteSourceMode quoteSourceMode
+      FepQuoteSourceMode quoteSourceMode,
+      BigDecimal unrealizedPnl,
+      BigDecimal realizedPnlDaily,
+      ValuationStatus valuationStatus,
+      ValuationUnavailableReason valuationUnavailableReason
   ) {
     this.accountId = accountId;
     this.memberId = memberId;
@@ -41,10 +53,15 @@ public class AccountPositionResult {
     this.balance = balance;
     this.currency = currency;
     this.asOf = asOf;
+    this.avgPrice = avgPrice;
     this.marketPrice = marketPrice;
     this.quoteSnapshotId = quoteSnapshotId;
     this.quoteAsOf = quoteAsOf;
     this.quoteSourceMode = quoteSourceMode;
+    this.unrealizedPnl = unrealizedPnl;
+    this.realizedPnlDaily = realizedPnlDaily;
+    this.valuationStatus = valuationStatus;
+    this.valuationUnavailableReason = valuationUnavailableReason;
   }
 
   public static AccountPositionResult of(
@@ -69,6 +86,11 @@ public class AccountPositionResult {
         null,
         null,
         null,
+        null,
+        null,
+        null,
+        null,
+        null,
         null
     );
   }
@@ -82,10 +104,15 @@ public class AccountPositionResult {
       BigDecimal balance,
       String currency,
       Instant asOf,
+      BigDecimal avgPrice,
       BigDecimal marketPrice,
       String quoteSnapshotId,
       Instant quoteAsOf,
-      FepQuoteSourceMode quoteSourceMode
+      FepQuoteSourceMode quoteSourceMode,
+      BigDecimal unrealizedPnl,
+      BigDecimal realizedPnlDaily,
+      ValuationStatus valuationStatus,
+      ValuationUnavailableReason valuationUnavailableReason
   ) {
     return new AccountPositionResult(
         accountId,
@@ -96,10 +123,15 @@ public class AccountPositionResult {
         balance,
         currency,
         asOf,
+        avgPrice,
         marketPrice,
         quoteSnapshotId,
         quoteAsOf,
-        quoteSourceMode
+        quoteSourceMode,
+        unrealizedPnl,
+        realizedPnlDaily,
+        valuationStatus,
+        valuationUnavailableReason
     );
   }
 
@@ -135,6 +167,10 @@ public class AccountPositionResult {
     return asOf;
   }
 
+  public BigDecimal getAvgPrice() {
+    return avgPrice;
+  }
+
   public BigDecimal getMarketPrice() {
     return marketPrice;
   }
@@ -150,5 +186,20 @@ public class AccountPositionResult {
   public FepQuoteSourceMode getQuoteSourceMode() {
     return quoteSourceMode;
   }
-}
 
+  public BigDecimal getUnrealizedPnl() {
+    return unrealizedPnl;
+  }
+
+  public BigDecimal getRealizedPnlDaily() {
+    return realizedPnlDaily;
+  }
+
+  public ValuationStatus getValuationStatus() {
+    return valuationStatus;
+  }
+
+  public ValuationUnavailableReason getValuationUnavailableReason() {
+    return valuationUnavailableReason;
+  }
+}

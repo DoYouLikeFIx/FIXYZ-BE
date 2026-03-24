@@ -32,6 +32,7 @@ public class OrderSessionPersistenceService {
   private final ManualRecoveryQueueEntryRepository manualRecoveryQueueEntryRepository;
   private final OrderSessionRepository orderSessionRepository;
   private final AuditLogService auditLogService;
+  private final OrderSessionMonitoringMetrics orderSessionMonitoringMetrics;
   private final Clock clock;
 
   @PersistenceContext
@@ -213,6 +214,7 @@ public class OrderSessionPersistenceService {
         AuditAction.ORDER_SESSION_EXECUTED,
         "clOrdId=" + managedSession.getClOrdId() + ", result=" + executionResult
     );
+    orderSessionMonitoringMetrics.recordExecutionCompleted(managedSession);
     return managedSession;
   }
 

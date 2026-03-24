@@ -20,10 +20,12 @@ import com.fix.common.error.ErrorCode;
 import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepQuoteSourceMode;
 import com.fix.common.logging.LogPiiMasking;
+import com.fix.common.valuation.ValuationStatus;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -660,9 +662,42 @@ public class OrderSessionService {
     if (position.getMarketPrice() != null) {
       return position.getMarketPrice();
     }
+    if (position.getValuationStatus() == ValuationStatus.STALE
+        || position.getValuationStatus() == ValuationStatus.UNAVAILABLE) {
+      throw staleQuoteForMarketPrepare(position);
+    }
     throw new BusinessException(
         ErrorCode.CONTRACT_VALIDATION_FAILED,
         "marketPrice is required for MARKET order prepare"
+    );
+  }
+
+  private BusinessException staleQuoteForMarketPrepare(AccountPositionResult position) {
+    LinkedHashMap<String, Object> details = new LinkedHashMap<>();
+    if (position.getSymbol() != null && !position.getSymbol().isBlank()) {
+      details.put("symbol", position.getSymbol());
+    }
+    if (position.getValuationStatus() == ValuationStatus.STALE && position.getQuoteAsOf() != null) {
+      long snapshotAgeMs = Math.max(0L, Duration.between(position.getQuoteAsOf(), Instant.now(clock)).toMillis());
+      details.put("snapshotAgeMs", snapshotAgeMs);
+    }
+    if (position.getQuoteSnapshotId() != null) {
+      details.put("quoteSnapshotId", position.getQuoteSnapshotId());
+    }
+    if (position.getQuoteAsOf() != null) {
+      details.put("quoteAsOf", position.getQuoteAsOf().toString());
+    }
+    if (position.getQuoteSourceMode() != null) {
+      details.put("quoteSourceMode", position.getQuoteSourceMode().name());
+    }
+    if (position.getValuationUnavailableReason() != null) {
+      details.put("reason", position.getValuationUnavailableReason().name());
+    }
+    return new BusinessException(
+        ErrorCode.STALE_QUOTE,
+        ErrorCode.STALE_QUOTE.defaultMessage(),
+        new ErrorMetadata("error.quote.stale", "STALE_QUOTE"),
+        details
     );
   }
 
