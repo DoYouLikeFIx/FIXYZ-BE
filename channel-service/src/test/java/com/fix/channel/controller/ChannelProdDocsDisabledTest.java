@@ -24,9 +24,6 @@ import org.springframework.test.web.servlet.MockMvc;
     "INTERNAL_SECRET=test-internal-secret",
     "COREBANK_INTERNAL_SECRET=test-internal-secret",
     "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
-    "AUTH_TOTP_VAULT_BASE_URL=http://127.0.0.1:8200",
-    "AUTH_TOTP_VAULT_TOKEN=test-vault-token",
-    "COREBANK_INTERNAL_SECRET=test-corebank-internal-secret",
     "spring.session.store-type=none",
     "spring.autoconfigure.exclude="
         + "org.springframework.boot.autoconfigure.session.SessionAutoConfiguration,"
