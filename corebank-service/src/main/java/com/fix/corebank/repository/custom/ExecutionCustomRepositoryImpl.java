@@ -1,7 +1,9 @@
 package com.fix.corebank.repository.custom;
 
+import com.fix.corebank.entity.Execution;
 import com.fix.corebank.entity.QExecution;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.springframework.stereotype.Repository;
@@ -30,5 +32,15 @@ public class ExecutionCustomRepositoryImpl implements ExecutionCustomRepository 
         )
         .fetchOne();
     return result == null ? BigDecimal.ZERO : result;
+  }
+
+  @Override
+  public int findLatestExecutionSequenceForUpdate(Long orderId) {
+    Execution latestExecution = queryFactory.selectFrom(EXECUTION)
+        .where(EXECUTION.orderId.eq(orderId))
+        .orderBy(EXECUTION.executionSeq.desc(), EXECUTION.id.desc())
+        .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+        .fetchFirst();
+    return latestExecution == null ? 0 : latestExecution.getExecutionSeq();
   }
 }
