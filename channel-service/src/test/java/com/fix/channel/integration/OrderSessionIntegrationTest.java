@@ -389,7 +389,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
-  void shouldCompleteLowRiskTrustedOrderExecutionHappyPath() throws Exception {
+  void e10_001ShouldCompleteLowRiskTrustedOrderExecutionHappyPath() throws Exception {
     saveLinkedMember("M-ORD-002AAX", "trusted.execute.user@fixyz.com", "Trusted Execute User", 126L, "12345678901259");
 
     AuthSession authSession = login("trusted.execute.user@fixyz.com", "Abcd1234!");
@@ -515,7 +515,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
-  void shouldBlockExecuteWhenElevatedRiskSessionIsNotStepUpAuthorized() throws Exception {
+  void e10_003ShouldBlockExecuteWhenElevatedRiskSessionIsNotStepUpAuthorized() throws Exception {
     saveLinkedMember("M-ORD-002AAY", "stepup.block.user@fixyz.com", "Step Up Block User", 127L, "12345678901260");
 
     AuthSession authSession = login("stepup.block.user@fixyz.com", "Abcd1234!");

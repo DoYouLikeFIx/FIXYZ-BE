@@ -85,7 +85,7 @@ class CorebankOrderIdempotencyIntegrationTest extends CorebankContainersIntegrat
 
   @Test
   @Timeout(20)
-  void shouldCommitOnlyOnePostingPathForConcurrentDuplicateOrderRequests() throws Exception {
+  void e10_004ShouldCommitOnlyOnePostingPathForConcurrentDuplicateOrderRequests() throws Exception {
     String clOrdId = UUID.randomUUID().toString();
     seedRestingSellLiquidity(
         jdbcTemplate,

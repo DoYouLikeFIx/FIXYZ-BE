@@ -85,7 +85,7 @@ class LedgerIntegrityIntegrationTest extends CorebankContainersIntegrationTestBa
   }
 
   @Test
-  void shouldPassWhenCompletedOrdersHaveBalancedLedgerEvidence() {
+  void e10_007ShouldPassWhenCompletedOrdersHaveBalancedLedgerEvidence() {
     createFilledOrder(SELL_SYMBOL, "SELL", "10.0000", "72000.0000");
     createFilledOrder(BUY_SYMBOL, "BUY", "5.0000", "120000.0000");
 

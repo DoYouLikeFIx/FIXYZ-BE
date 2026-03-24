@@ -133,7 +133,7 @@ class CorebankSimulatorDrivenResilienceIntegrationTest {
   }
 
   @Test
-  void shouldDriveSubmitBreakerTransitionsFromCanonicalChaosRulesApi() throws Exception {
+  void e10_005ShouldDriveSubmitBreakerTransitionsFromCanonicalChaosRulesApi() throws Exception {
     EXTERNAL_SERVICES.applyTimeoutRule();
 
     assertThat(EXTERNAL_SERVICES.listActiveRuleCount()).isEqualTo(1);

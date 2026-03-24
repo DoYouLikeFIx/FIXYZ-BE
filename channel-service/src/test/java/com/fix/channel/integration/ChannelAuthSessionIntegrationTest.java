@@ -173,7 +173,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   }
 
   @Test
-  void shouldLogoutAndExpireSessionCookieImmediately() throws Exception {
+  void e10_006ShouldLogoutAndExpireSessionCookieImmediately() throws Exception {
     Member saved = memberRepository.save(
         Member.registerUser("M-IT-LOGOUT-001", "logout.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Logout User")
     );

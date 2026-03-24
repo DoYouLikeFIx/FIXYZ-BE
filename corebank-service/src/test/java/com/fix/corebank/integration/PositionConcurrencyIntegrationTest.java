@@ -102,7 +102,7 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
 
   @Test
   @Timeout(20)
-  void shouldAllowExactlyFiveFilledSellOrdersWithoutOversellUnderTenThreadLoad() throws Exception {
+  void e10_002ShouldAllowExactlyFiveFilledSellOrdersWithoutOversellUnderTenThreadLoad() throws Exception {
     seedRestingBuyLiquidity(
         jdbcTemplate,
         orderRepository,

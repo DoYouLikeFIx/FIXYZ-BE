@@ -34,7 +34,7 @@ class InternalSecretFilterTest {
   }
 
   @Test
-  void shouldBlockInternalRouteWithoutSecret() throws Exception {
+  void e10_008ShouldBlockInternalRouteWithoutSecret() throws Exception {
     mockMvc.perform(get("/internal/v1/ping"))
         .andExpect(status().isForbidden())
         .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
