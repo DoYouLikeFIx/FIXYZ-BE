@@ -27,6 +27,7 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -49,7 +50,6 @@ class CorebankMatchingPersistenceIntegrationTest extends CorebankContainersInteg
 
   private static final long TAKER_ACCOUNT_ID = 1L;
   private static final WireMockServer WIRE_MOCK_SERVER = new WireMockServer(wireMockConfig().dynamicPort());
-  private static final Instant FIXED_QUOTE_AS_OF = Instant.parse("2026-03-01T10:05:29Z");
 
   static {
     WIRE_MOCK_SERVER.start();
@@ -100,7 +100,7 @@ class CorebankMatchingPersistenceIntegrationTest extends CorebankContainersInteg
     CanonicalMatchingScenario scenario = CorebankMatchingScenarioFixtures.marketSweep();
     String clOrdId = UUID.randomUUID().toString();
     String quoteSnapshotId = "qsnap-" + clOrdId;
-    Instant quoteAsOf = FIXED_QUOTE_AS_OF;
+    Instant quoteAsOf = Instant.now().truncatedTo(ChronoUnit.SECONDS).minusSeconds(5);
     seedRestingSellBook(scenario);
     stubGatewayFill(clOrdId, scenario.expected(), "FEP-KRX-" + clOrdId, "FILLED");
 
