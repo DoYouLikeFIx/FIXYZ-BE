@@ -35,6 +35,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -101,6 +102,7 @@ class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTe
   }
 
   @Test
+  @Tag("epic10-acceptance")
   @Timeout(20)
   void e10_002ShouldAllowExactlyFiveFilledSellOrdersWithoutOversellUnderTenThreadLoad() throws Exception {
     seedRestingBuyLiquidity(

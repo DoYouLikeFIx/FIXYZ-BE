@@ -1,0 +1,214 @@
+import groovy.json.JsonOutput
+import java.time.Instant
+import javax.xml.parsers.DocumentBuilderFactory
+
+def epic10AcceptanceBuildId = providers.gradleProperty('epic10AcceptanceBuildId')
+    .orElse(providers.environmentVariable('EPIC10_ACCEPTANCE_BUILD_ID'))
+    .orElse(providers.environmentVariable('GITHUB_RUN_ID'))
+    .getOrElse('local')
+def epic10AcceptanceArtifactRoot = new File(
+    rootProject.projectDir.parentFile,
+    "_bmad-output/test-artifacts/epic-10/${epic10AcceptanceBuildId}"
+)
+def epic10AcceptanceSuites = [
+    channelAcceptance: [
+        taskPath: ':channel-service:epic10AcceptanceTests',
+        sourceDir: new File(rootProject.projectDir, 'channel-service/build/test-results/epic10AcceptanceTests')
+    ],
+    corebankAcceptance: [
+        taskPath: ':corebank-service:epic10AcceptanceTests',
+        sourceDir: new File(rootProject.projectDir, 'corebank-service/build/test-results/epic10AcceptanceTests')
+    ],
+    corebankResilienceAcceptance: [
+        taskPath: ':corebank-service:epic10ResilienceAcceptanceTests',
+        sourceDir: new File(rootProject.projectDir, 'corebank-service/build/test-results/epic10ResilienceAcceptanceTests')
+    ]
+]
+def epic10AcceptanceScenarios = [
+    [
+        id: 'E10-001',
+        description: 'Order request to execution happy path',
+        suite: 'channelAcceptance',
+        className: 'com.fix.channel.integration.OrderSessionIntegrationTest',
+        testName: 'e10_001ShouldCompleteLowRiskTrustedOrderExecutionHappyPath'
+    ],
+    [
+        id: 'E10-002',
+        description: 'Concurrent sell on same position',
+        suite: 'corebankAcceptance',
+        className: 'com.fix.corebank.integration.PositionConcurrencyIntegrationTest',
+        testName: 'e10_002ShouldAllowExactlyFiveFilledSellOrdersWithoutOversellUnderTenThreadLoad'
+    ],
+    [
+        id: 'E10-003',
+        description: 'Required step-up failure blocks execution',
+        suite: 'channelAcceptance',
+        className: 'com.fix.channel.integration.OrderSessionIntegrationTest',
+        testName: 'e10_003ShouldBlockExecuteWhenElevatedRiskSessionIsNotStepUpAuthorized'
+    ],
+    [
+        id: 'E10-004',
+        description: 'Duplicate client order key replay',
+        suite: 'corebankAcceptance',
+        className: 'com.fix.corebank.integration.CorebankOrderIdempotencyIntegrationTest',
+        testName: 'e10_004ShouldCommitOnlyOnePostingPathForConcurrentDuplicateOrderRequests'
+    ],
+    [
+        id: 'E10-005',
+        description: 'Repeated external timeout opens protection circuit',
+        suite: 'corebankResilienceAcceptance',
+        className: 'com.fix.corebank.integration.CorebankSimulatorDrivenResilienceIntegrationTest',
+        testName: 'e10_005ShouldDriveSubmitBreakerTransitionsFromCanonicalChaosRulesApi'
+    ],
+    [
+        id: 'E10-006',
+        description: 'Session invalidated after logout',
+        suite: 'channelAcceptance',
+        className: 'com.fix.channel.integration.ChannelAuthSessionIntegrationTest',
+        testName: 'e10_006ShouldLogoutAndExpireSessionCookieImmediately'
+    ],
+    [
+        id: 'E10-007',
+        description: 'Ledger integrity after repeated executions',
+        suite: 'corebankAcceptance',
+        className: 'com.fix.corebank.integration.LedgerIntegrityIntegrationTest',
+        testName: 'e10_007ShouldPassWhenCompletedOrdersHaveBalancedLedgerEvidence'
+    ],
+    [
+        id: 'E10-008',
+        description: 'Internal endpoint call without internal secret is denied with 403',
+        suite: 'corebankAcceptance',
+        className: 'com.fix.corebank.security.InternalSecretFilterTest',
+        testName: 'e10_008ShouldBlockInternalRouteWithoutSecret'
+    ]
+]
+
+Closure<List<Map<String, Object>>> parseEpic10Testcases = { File xmlDir ->
+  List<Map<String, Object>> testcases = []
+  if (!xmlDir.exists()) {
+    return testcases
+  }
+
+  DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance()
+  factory.setNamespaceAware(false)
+  factory.setExpandEntityReferences(false)
+  factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+
+  xmlDir.eachFileRecurse { File xmlFile ->
+    if (!xmlFile.name.endsWith('.xml')) {
+      return
+    }
+    def document = factory.newDocumentBuilder().parse(xmlFile)
+    def testcaseNodes = document.getElementsByTagName('testcase')
+    for (int index = 0; index < testcaseNodes.length; index++) {
+      def testcase = testcaseNodes.item(index)
+      String result = 'PASSED'
+      if (testcase.getElementsByTagName('failure').length > 0) {
+        result = 'FAILED'
+      } else if (testcase.getElementsByTagName('error').length > 0) {
+        result = 'ERROR'
+      } else if (testcase.getElementsByTagName('skipped').length > 0) {
+        result = 'SKIPPED'
+      }
+      testcases << [
+          classname: testcase.getAttribute('classname') ?: '',
+          name: (testcase.getAttribute('name') ?: '').replaceFirst(/\(\)$/, ''),
+          result: result,
+          xmlFile: xmlFile.name
+      ]
+    }
+  }
+
+  return testcases
+}
+
+tasks.register('epic10AcceptanceEvidence') {
+  group = 'verification'
+  description = 'Collects Story 10.1 canonical 7+1 acceptance evidence artifacts.'
+  dependsOn(epic10AcceptanceSuites.collect { it.value.taskPath })
+
+  doLast {
+    File junitRoot = new File(epic10AcceptanceArtifactRoot, 'junit')
+    mkdir(junitRoot)
+
+    Map<String, List<Map<String, Object>>> suiteTestcases = [:]
+    epic10AcceptanceSuites.each { String suiteName, Map suite ->
+      File targetDir = new File(junitRoot, suiteName)
+      delete(targetDir)
+      mkdir(targetDir)
+      copy {
+        from(suite.sourceDir)
+        include('**/*.xml')
+        into(targetDir)
+      }
+      suiteTestcases[suiteName] = parseEpic10Testcases(suite.sourceDir)
+    }
+
+    List<Map<String, Object>> scenarioResults = epic10AcceptanceScenarios.collect { Map scenario ->
+      List<Map<String, Object>> candidates = suiteTestcases[scenario.suite].findAll { Map testcase ->
+        testcase.classname == scenario.className && testcase.name == scenario.testName
+      }
+      Map<String, Object> testcase = candidates ? candidates.first() : null
+      String result = testcase == null ? 'MISSING' : String.valueOf(testcase.result)
+      [
+          scenarioId: scenario.id,
+          description: scenario.description,
+          suite: scenario.suite,
+          testClass: scenario.className,
+          testName: scenario.testName,
+          result: result,
+          evidencePath: testcase == null ? null : "junit/${scenario.suite}/${testcase.xmlFile}"
+      ]
+    }
+
+    int passedCount = scenarioResults.count { it.result == 'PASSED' }
+    int failedCount = scenarioResults.count { it.result == 'FAILED' }
+    int errorCount = scenarioResults.count { it.result == 'ERROR' }
+    int skippedCount = scenarioResults.count { it.result == 'SKIPPED' }
+    int missingCount = scenarioResults.count { it.result == 'MISSING' }
+    String overallResult = (failedCount + errorCount + skippedCount + missingCount) == 0 ? 'PASSED' : 'FAILED'
+
+    File matrixSummaryMd = new File(epic10AcceptanceArtifactRoot, 'matrix-summary.md')
+    matrixSummaryMd.parentFile.mkdirs()
+    matrixSummaryMd.text = """# Story 10.1 Acceptance Summary
+
+- Build ID: `${epic10AcceptanceBuildId}`
+- Generated At: `${Instant.now()}`
+- Overall Result: `${overallResult}`
+- Totals: passed=${passedCount}, failed=${failedCount}, errors=${errorCount}, skipped=${skippedCount}, missing=${missingCount}
+
+| Scenario ID | Result | Suite | Owner Test | Evidence |
+| --- | --- | --- | --- | --- |
+${scenarioResults.collect { result ->
+  "| `${result.scenarioId}` | `${result.result}` | `${result.suite}` | `${result.testClass}#${result.testName}` | `${result.evidencePath ?: 'n/a'}` |"
+}.join('\n')}
+"""
+
+    File matrixSummaryJson = new File(epic10AcceptanceArtifactRoot, 'matrix-summary.json')
+    matrixSummaryJson.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+        buildId      : epic10AcceptanceBuildId,
+        generatedAt  : Instant.now().toString(),
+        overallResult: overallResult,
+        counts       : [
+            passed : passedCount,
+            failed : failedCount,
+            errors : errorCount,
+            skipped: skippedCount,
+            missing: missingCount
+        ],
+        scenarios    : scenarioResults
+    ])) + '\n'
+
+    if (overallResult != 'PASSED') {
+      throw new GradleException(
+          "Story 10.1 acceptance gate failed; see ${matrixSummaryMd.absolutePath}"
+      )
+    }
+  }
+}
+
+tasks.register('epic10AcceptanceGate') {
+  group = 'verification'
+  description = 'Runs Story 10.1 canonical 7+1 acceptance scenarios with evidence export.'
+  dependsOn tasks.named('epic10AcceptanceEvidence')
+}

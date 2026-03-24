@@ -38,6 +38,7 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -389,6 +390,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
+  @Tag("epic10-acceptance")
   void e10_001ShouldCompleteLowRiskTrustedOrderExecutionHappyPath() throws Exception {
     saveLinkedMember("M-ORD-002AAX", "trusted.execute.user@fixyz.com", "Trusted Execute User", 126L, "12345678901259");
 
@@ -515,6 +517,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
+  @Tag("epic10-acceptance")
   void e10_003ShouldBlockExecuteWhenElevatedRiskSessionIsNotStepUpAuthorized() throws Exception {
     saveLinkedMember("M-ORD-002AAY", "stepup.block.user@fixyz.com", "Step Up Block User", 127L, "12345678901260");
 

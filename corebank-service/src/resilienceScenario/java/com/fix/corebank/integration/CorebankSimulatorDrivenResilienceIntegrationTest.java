@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -133,6 +134,7 @@ class CorebankSimulatorDrivenResilienceIntegrationTest {
   }
 
   @Test
+  @Tag("epic10-acceptance")
   void e10_005ShouldDriveSubmitBreakerTransitionsFromCanonicalChaosRulesApi() throws Exception {
     EXTERNAL_SERVICES.applyTimeoutRule();
 

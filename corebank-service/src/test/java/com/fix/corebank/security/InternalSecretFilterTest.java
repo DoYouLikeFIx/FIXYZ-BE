@@ -12,6 +12,7 @@ import com.fix.corebank.filter.CorrelationIdFilter;
 import com.fix.corebank.support.CorebankStandaloneMvcSupport;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -34,6 +35,7 @@ class InternalSecretFilterTest {
   }
 
   @Test
+  @Tag("epic10-acceptance")
   void e10_008ShouldBlockInternalRouteWithoutSecret() throws Exception {
     mockMvc.perform(get("/internal/v1/ping"))
         .andExpect(status().isForbidden())

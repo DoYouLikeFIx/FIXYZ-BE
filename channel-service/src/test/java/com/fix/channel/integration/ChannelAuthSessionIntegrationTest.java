@@ -5,6 +5,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -173,6 +174,7 @@ class ChannelAuthSessionIntegrationTest extends ChannelContainersIntegrationTest
   }
 
   @Test
+  @Tag("epic10-acceptance")
   void e10_006ShouldLogoutAndExpireSessionCookieImmediately() throws Exception {
     Member saved = memberRepository.save(
         Member.registerUser("M-IT-LOGOUT-001", "logout.user@fixyz.com", passwordEncoder.encode("Abcd1234!"), "Logout User")
