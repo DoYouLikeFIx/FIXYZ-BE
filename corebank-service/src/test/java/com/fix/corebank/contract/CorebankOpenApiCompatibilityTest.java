@@ -30,6 +30,10 @@ class CorebankOpenApiCompatibilityTest {
         .path("ApiResponseInternalAccountPositionResponse");
     JsonNode accountPositionSchema = contract.path("components").path("schemas")
         .path("InternalAccountPositionResponse");
+    JsonNode accountSummaryResponse = contract.path("components").path("schemas")
+        .path("ApiResponseInternalAccountSummaryResponse");
+    JsonNode accountSummarySchema = contract.path("components").path("schemas")
+        .path("InternalAccountSummaryResponse");
     JsonNode accountStatusResponse = contract.path("components").path("schemas")
         .path("ApiResponseInternalAccountStatusResponse");
     JsonNode accountStatusSchema = contract.path("components").path("schemas")
@@ -105,6 +109,8 @@ class CorebankOpenApiCompatibilityTest {
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountPositionResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(accountSummaryResponse.path("properties").path("error").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountStatusResponse.path("properties").path("error").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiErrorResponse");
     assertThat(accountStatusTransitionResponse.path("properties").path("error").path("$ref").asText())
@@ -123,19 +129,69 @@ class CorebankOpenApiCompatibilityTest {
             "balance",
             "availableBalance",
             "asOf",
+            "avgPrice",
             "marketPrice",
             "quoteSnapshotId",
             "quoteAsOf",
-            "quoteSourceMode"
+            "quoteSourceMode",
+            "unrealizedPnl",
+            "realizedPnlDaily",
+            "valuationStatus",
+            "valuationUnavailableReason"
         );
+    assertThat(accountPositionSchema.path("properties").path("avgPrice").path("type").asText())
+        .isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("avgPrice").path("nullable").asBoolean()).isTrue();
     assertThat(accountPositionSchema.path("properties").path("marketPrice").path("type").asText())
         .isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("marketPrice").path("nullable").asBoolean()).isTrue();
     assertThat(accountPositionSchema.path("properties").path("quoteSnapshotId").path("type").asText())
         .isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("quoteSnapshotId").path("nullable").asBoolean()).isTrue();
     assertThat(accountPositionSchema.path("properties").path("quoteAsOf").path("format").asText())
         .isEqualTo("date-time");
+    assertThat(accountPositionSchema.path("properties").path("quoteAsOf").path("nullable").asBoolean()).isTrue();
     assertThat(accountPositionSchema.path("properties").path("quoteSourceMode").path("type").asText())
         .isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("quoteSourceMode").path("nullable").asBoolean()).isTrue();
+    assertThat(accountPositionSchema.path("properties").path("unrealizedPnl").path("type").asText())
+        .isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("unrealizedPnl").path("nullable").asBoolean()).isTrue();
+    assertThat(accountPositionSchema.path("properties").path("realizedPnlDaily").path("type").asText())
+        .isEqualTo("number");
+    assertThat(accountPositionSchema.path("properties").path("realizedPnlDaily").path("nullable").asBoolean()).isTrue();
+    assertThat(accountPositionSchema.path("properties").path("valuationStatus").path("type").asText())
+        .isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("valuationStatus").path("nullable").asBoolean()).isFalse();
+    assertThat(enumValues(accountPositionSchema.path("properties").path("valuationStatus")))
+        .containsExactly("FRESH", "STALE", "UNAVAILABLE");
+    assertThat(requiredFields(accountPositionSchema)).contains("valuationStatus");
+    assertThat(accountPositionSchema.path("properties").path("valuationUnavailableReason").path("type").asText())
+        .isEqualTo("string");
+    assertThat(accountPositionSchema.path("properties").path("valuationUnavailableReason").path("nullable").asBoolean())
+        .isTrue();
+    assertThat(enumValues(accountPositionSchema.path("properties").path("valuationUnavailableReason")))
+        .containsExactly("STALE_QUOTE", "QUOTE_MISSING", "PROVIDER_UNAVAILABLE");
+    assertThat(fieldNames(accountSummarySchema.path("properties")))
+        .contains(
+            "quantity",
+            "availableQuantity",
+            "availableQty",
+            "balance",
+            "availableBalance",
+            "asOf"
+        )
+        .doesNotContain(
+            "avgPrice",
+            "marketPrice",
+            "quoteSnapshotId",
+            "quoteAsOf",
+            "quoteSourceMode",
+            "unrealizedPnl",
+            "realizedPnlDaily",
+            "valuationStatus",
+            "valuationUnavailableReason"
+        );
     assertThat(fieldNames(accountStatusSchema.path("properties")))
         .contains("accountNumber", "status", "orderEligible", "denialCode", "asOf");
     assertThat(fieldNames(accountStatusTransitionSchema.path("properties")))
@@ -185,7 +241,7 @@ class CorebankOpenApiCompatibilityTest {
     assertThat(positionsOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseInternalAccountPositionResponse");
     assertThat(summaryOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
-        .isEqualTo("#/components/schemas/ApiResponseInternalAccountPositionResponse");
+        .isEqualTo("#/components/schemas/ApiResponseInternalAccountSummaryResponse");
     assertThat(ledgerIntegritySummaryOperation.path("responses").path("200").path("content").path("*/*").path("schema")
         .path("$ref").asText()).isEqualTo("#/components/schemas/ApiResponseInternalLedgerIntegritySummaryResponse");
     assertThat(positionsListOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
@@ -395,5 +451,14 @@ class CorebankOpenApiCompatibilityTest {
       return content.path(content.fieldNames().next()).path("schema").path("$ref").asText();
     }
     return "";
+  }
+
+  private java.util.List<String> enumValues(JsonNode schema) {
+    java.util.List<String> values = new java.util.ArrayList<>();
+    JsonNode enumNode = schema.path("enum");
+    if (enumNode.isArray()) {
+      enumNode.forEach(value -> values.add(value.asText()));
+    }
+    return values;
   }
 }
