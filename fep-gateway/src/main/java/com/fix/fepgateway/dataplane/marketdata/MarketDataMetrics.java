@@ -1,25 +1,42 @@
 package com.fix.fepgateway.dataplane.marketdata;
 
 import com.fix.common.fep.FepQuoteSourceMode;
+import com.fix.fepgateway.repository.QuoteSnapshotRepository;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class MarketDataMetrics {
 
   private final MeterRegistry meterRegistry;
+  private final Clock clock;
   private final AtomicInteger kisActiveSubscriptions = new AtomicInteger(0);
   private final AtomicInteger kisRemoteSubscriptions = new AtomicInteger(0);
   private final AtomicInteger kisSessionOpen = new AtomicInteger(0);
   private final AtomicInteger replayActiveSubscriptions = new AtomicInteger(0);
   private final AtomicInteger replayActiveStreams = new AtomicInteger(0);
+  private final AtomicLong lastSnapshotPersistedEpochSeconds = new AtomicLong(0);
+
+  @Autowired
+  public MarketDataMetrics(MeterRegistry meterRegistry, QuoteSnapshotRepository quoteSnapshotRepository) {
+    this(meterRegistry, quoteSnapshotRepository, Clock.systemUTC());
+  }
 
   public MarketDataMetrics(MeterRegistry meterRegistry) {
+    this(meterRegistry, null, Clock.systemUTC());
+  }
+
+  MarketDataMetrics(MeterRegistry meterRegistry, QuoteSnapshotRepository quoteSnapshotRepository, Clock clock) {
     this.meterRegistry = meterRegistry;
+    this.clock = clock;
+    seedLastSnapshotPersisted(quoteSnapshotRepository);
     registerGauges();
   }
 
@@ -46,6 +63,7 @@ public class MarketDataMetrics {
         "source_mode",
         event.sourceMode().name()
     ).increment();
+    lastSnapshotPersistedEpochSeconds.accumulateAndGet(clock.instant().getEpochSecond(), Math::max);
   }
 
   public void recordReconnectAttempt(String provider) {
@@ -103,6 +121,11 @@ public class MarketDataMetrics {
         .register(meterRegistry);
     Gauge.builder("fep.marketdata.replay.active.streams", replayActiveStreams, AtomicInteger::get)
         .register(meterRegistry);
+    Gauge.builder(
+        "fep.marketdata.snapshots.last.persisted.epoch.seconds",
+        lastSnapshotPersistedEpochSeconds,
+        AtomicLong::get
+    ).register(meterRegistry);
   }
 
   private String normalizeProvider(String provider) {
@@ -114,5 +137,14 @@ public class MarketDataMetrics {
       return "unknown";
     }
     return failureType.toLowerCase(Locale.ROOT);
+  }
+
+  private void seedLastSnapshotPersisted(QuoteSnapshotRepository quoteSnapshotRepository) {
+    if (quoteSnapshotRepository == null) {
+      return;
+    }
+    quoteSnapshotRepository.findTopByOrderByCreatedAtDesc()
+        .map(snapshot -> snapshot.getCreatedAt().getEpochSecond())
+        .ifPresent(lastSnapshotPersistedEpochSeconds::set);
   }
 }
