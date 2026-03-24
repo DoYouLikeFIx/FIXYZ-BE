@@ -70,6 +70,8 @@ class ChannelOpenApiCompatibilityTest {
     JsonNode positionsListOperation = paths.path("/api/v1/accounts/{accountId}/positions/list").path("get");
     JsonNode summaryOperation = paths.path("/api/v1/accounts/{accountId}/summary").path("get");
     JsonNode adminAuditLogsOperation = paths.path("/api/v1/admin/audit-logs").path("get");
+    JsonNode adminReconciliationOperation = paths.path("/api/v1/admin/orders/{clOrdId}/idempotency-reconciliation")
+        .path("post");
     JsonNode adminMemberSessionDeleteOperation = paths.path("/api/v1/admin/members/{memberUuid}/sessions").path("delete");
     JsonNode memberProfileOperation = paths.path("/api/v1/members/me").path("get");
     JsonNode orderSessionCreateOperation = paths.path("/api/v1/orders/sessions").path("post");
@@ -94,6 +96,7 @@ class ChannelOpenApiCompatibilityTest {
             "/api/v1/accounts/{accountId}/orders",
             "/api/v1/admin/accounts/{accountId}/status",
             "/api/v1/admin/audit-logs",
+            "/api/v1/admin/orders/{clOrdId}/idempotency-reconciliation",
             "/api/v1/admin/members/{memberUuid}/sessions"
         )
         .doesNotContain("/api/v1/orders");
@@ -269,6 +272,19 @@ class ChannelOpenApiCompatibilityTest {
         .path("type").asText()).isEqualTo("string");
     assertThat(adminAuditLogsOperation.path("responses").path("429").path("headers").path("Retry-After").path("schema").path("type").asText())
         .isEqualTo("string");
+    assertThat(adminReconciliationOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
+        .isEqualTo("#/components/schemas/ApiResponseAdminOrderIdempotencyReconciliationResponse");
+    assertThat(schemaRef(adminReconciliationOperation, "401"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(adminReconciliationOperation, "403"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(adminReconciliationOperation, "404"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(schemaRef(adminReconciliationOperation, "429"))
+        .isEqualTo("#/components/schemas/ApiErrorResponse");
+    assertThat(adminReconciliationOperation.path("responses").path("429").path("headers").path("Retry-After")
+        .path("schema").path("type").asText()).isEqualTo("string");
+    assertThat(adminReconciliationOperation.path("responses").path("503").isMissingNode()).isTrue();
     assertThat(adminMemberSessionDeleteOperation.path("responses").path("200").path("content").path("*/*").path("schema").path("$ref").asText())
         .isEqualTo("#/components/schemas/ApiResponseAdminSessionInvalidationResponse");
     assertThat(schemaRef(adminMemberSessionDeleteOperation, "401"))

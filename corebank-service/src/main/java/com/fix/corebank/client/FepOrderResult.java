@@ -2,10 +2,12 @@ package com.fix.corebank.client;
 
 import com.fix.common.error.BusinessException;
 import com.fix.common.error.ErrorCode;
+import com.fix.common.error.ErrorMetadata;
 import com.fix.common.fep.FepExecType;
 import com.fix.common.fep.FepOrdStatus;
 import com.fix.common.validation.ContractPatterns;
 import java.time.Instant;
+import java.util.Objects;
 
 public record FepOrderResult(
     String clOrdId,
@@ -23,10 +25,12 @@ public record FepOrderResult(
     String parseError
 ) {
 
+  private static final String DOWNSTREAM_CL_ORD_ID_MISMATCH = "DOWNSTREAM_CL_ORD_ID_MISMATCH";
+
   public static FepOrderResult fromSubmitResponse(FepGatewayOrderResponse response, String expectedClOrdId) {
     require(!isBlank(response.clOrdId()), "clOrdId is required in submit response");
     require(ContractPatterns.isUuidV4(response.clOrdId()), "submit response clOrdId must be a UUID v4");
-    require(expectedClOrdId.equals(response.clOrdId()), "submit response clOrdId must match request");
+    requireMatchingClOrdId(expectedClOrdId, response.clOrdId(), "submit response clOrdId must match request");
     require(!isBlank(response.fepOrderId()), "fepOrderId is required in submit response");
     require(response.execType() != null, "execType is required in submit response");
     require(response.ordStatus() != null, "ordStatus is required in submit response");
@@ -51,7 +55,7 @@ public record FepOrderResult(
 
   public static FepOrderResult fromStatusResponse(FepGatewayOrderResponse response, String expectedClOrdId) {
     require(!isBlank(response.clOrdId()), "clOrdId is required in status response");
-    require(expectedClOrdId.equals(response.clOrdId()), "status response clOrdId must match request");
+    requireMatchingClOrdId(expectedClOrdId, response.clOrdId(), "status response clOrdId must match request");
     require(response.ordStatus() != null, "ordStatus is required in status response");
     require(response.queryTime() != null, "queryTime is required in status response");
 
@@ -88,6 +92,16 @@ public record FepOrderResult(
   private static void require(boolean expression, String message) {
     if (!expression) {
       throw new BusinessException(ErrorCode.CONTRACT_VALIDATION_FAILED, message);
+    }
+  }
+
+  private static void requireMatchingClOrdId(String expectedClOrdId, String actualClOrdId, String message) {
+    if (!Objects.equals(expectedClOrdId, actualClOrdId)) {
+      throw new BusinessException(
+          ErrorCode.CONTRACT_VALIDATION_FAILED,
+          message,
+          new ErrorMetadata(null, DOWNSTREAM_CL_ORD_ID_MISMATCH)
+      );
     }
   }
 

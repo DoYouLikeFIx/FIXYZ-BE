@@ -45,6 +45,7 @@ import com.fix.corebank.dto.response.InternalLedgerReconciliationRepairResponse;
 import com.fix.corebank.dto.response.InternalLedgerReconciliationRerunResponse;
 import com.fix.corebank.dto.response.InternalOrderReplayResponse;
 import com.fix.corebank.dto.response.InternalOrderResponse;
+import com.fix.corebank.dto.response.InternalOrderSnapshotResponse;
 import com.fix.corebank.dto.response.InternalPortfolioProvisioningResponse;
 import com.fix.corebank.dto.response.InternalPortfolioResponse;
 import com.fix.corebank.service.AccountProvisioningService;
@@ -176,6 +177,14 @@ public class InternalCorebankController {
   @PostMapping("/orders")
   public ApiResponse<InternalOrderResponse> createOrder(@Valid @ModelAttribute InternalOrderCreateRequest request) {
     return ApiResponse.success(InternalOrderResponse.from(corebankOrderService.createOrder(request.toVo())));
+  }
+
+  @GetMapping("/orders/{clOrdId}")
+  public ApiResponse<InternalOrderSnapshotResponse> orderSnapshot(
+      @Pattern(regexp = ContractPatterns.UUID_V4)
+      @PathVariable String clOrdId
+  ) {
+    return ApiResponse.success(InternalOrderSnapshotResponse.from(corebankOrderService.getOrderSnapshot(clOrdId)));
   }
 
   @GetMapping("/orders/{clOrdId}/requery")

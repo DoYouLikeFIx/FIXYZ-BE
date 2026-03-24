@@ -780,6 +780,55 @@ class OrderSessionServiceTest {
         });
   }
 
+  @Test
+  void shouldPersistReconciledExternalLinkageWithoutChangingCanonicalIdentity() {
+    OrderSession persistedSession = orderSessionRepository.saveAndFlush(OrderSession.initiated(
+        ownerMember.getId(),
+        ownerMember.getAccountId(),
+        "123e4567-e89b-42d3-a456-426614174498",
+        ownerLimitCommand("123e4567-e89b-42d3-a456-426614174498", BigDecimal.ONE, BigDecimal.valueOf(70000)).replayFingerprint(),
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.ONE,
+        BigDecimal.valueOf(70000),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plus(Duration.ofHours(1))
+    ));
+    persistedSession.startExecuting();
+    persistedSession.complete(
+        "FILLED",
+        BigDecimal.ONE,
+        BigDecimal.ZERO,
+        BigDecimal.valueOf(70000),
+        null,
+        "FAILED",
+        Instant.parse("2026-03-18T00:00:00Z")
+    );
+    orderSessionRepository.saveAndFlush(persistedSession);
+
+    OrderSession detachedSession = loadSessionInSeparateTransaction(persistedSession.getOrderSessionId());
+
+    orderSessionService.reconcileExternalLinkage(
+        detachedSession,
+        "FEP-DETACHED-RECON-1",
+        "CONFIRMED"
+    );
+
+    assertThat(orderSessionRepository.findByOrderSessionId(persistedSession.getOrderSessionId()))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getOrderSessionId()).isEqualTo(persistedSession.getOrderSessionId());
+          assertThat(session.getClOrdId()).isEqualTo("123e4567-e89b-42d3-a456-426614174498");
+          assertThat(session.getMemberId()).isEqualTo(ownerMember.getId());
+          assertThat(session.getAccountId()).isEqualTo(ownerMember.getAccountId());
+          assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.COMPLETED);
+          assertThat(session.getExecutionResult()).isEqualTo("FILLED");
+          assertThat(session.getExternalOrderId()).isEqualTo("FEP-DETACHED-RECON-1");
+          assertThat(session.getExternalSyncStatus()).isEqualTo("CONFIRMED");
+        });
+  }
+
   private Member saveLinkedMember(String memberNo, String email, String name, Long accountId, String accountNumber) {
     Member member = Member.registerUser(memberNo, email, "{noop}", name);
     member.updateLinkedAccount(accountId, accountNumber);

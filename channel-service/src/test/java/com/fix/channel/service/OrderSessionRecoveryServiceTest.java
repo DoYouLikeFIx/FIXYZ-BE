@@ -2,11 +2,13 @@ package com.fix.channel.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +41,8 @@ class OrderSessionRecoveryServiceTest {
   @Mock
   private ChannelScaffoldService channelScaffoldService;
   @Mock
+  private AuditLogService auditLogService;
+  @Mock
   private ManualRecoveryQueueService manualRecoveryQueueService;
   @Mock
   private OrderSessionRecoveryLockService recoveryLockService;
@@ -55,6 +59,7 @@ class OrderSessionRecoveryServiceTest {
         orderSessionService,
         corebankClient,
         channelScaffoldService,
+        auditLogService,
         manualRecoveryQueueService,
         recoveryLockService,
         attemptStore,
@@ -103,6 +108,13 @@ class OrderSessionRecoveryServiceTest {
     verify(orderSessionService).beginRequerying(eq(executing), eq("EXECUTING_TIMEOUT"));
     verify(corebankClient).requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class));
     verify(manualRecoveryQueueService).publishPendingEntries();
+    verify(auditLogService).record(argThat(log ->
+        "ORDER_SESSION_RECOVERY_ATTEMPT".equals(log.getAction())
+            && requerying.getOrderSessionId().equals(log.getTargetId())
+            && log.getDetail().contains("attemptCount=1")
+            && log.getDetail().contains("outcome=RETRY_PENDING")
+            && log.getDetail().contains("recoveryStatus=UNKNOWN")
+    ));
     verify(channelScaffoldService, never()).bootstrapNotification(any(), any(), any());
   }
 
@@ -154,6 +166,13 @@ class OrderSessionRecoveryServiceTest {
         eq(NOW)
     );
     verify(attemptStore).clear(requerying.getOrderSessionId());
+    verify(auditLogService).record(argThat(log ->
+        "ORDER_SESSION_RECOVERY_ATTEMPT".equals(log.getAction())
+            && requerying.getOrderSessionId().equals(log.getTargetId())
+            && log.getDetail().contains("attemptCount=2")
+            && log.getDetail().contains("outcome=COMPLETED")
+            && log.getDetail().contains("recoveryStatus=FILLED")
+    ));
     verify(channelScaffoldService).bootstrapNotification(
         eq(requerying.getMemberId()),
         eq("ORDER"),
@@ -163,6 +182,52 @@ class OrderSessionRecoveryServiceTest {
         .tag("outcome", "success")
         .counter()
         .count()).isEqualTo(1.0d);
+  }
+
+  @Test
+  void shouldPublishTerminalNotificationEvenWhenRecoveryAuditWriteFails() {
+    OrderSession requerying = requeryingSession("123e4567-e89b-42d3-a456-426614174499");
+    stubSingleRequeryingSession(requerying);
+    when(attemptStore.reserveAttempt(requerying.getOrderSessionId())).thenReturn(reservation(1));
+    when(corebankClient.requeryOrder(eq(requerying.getClOrdId()), eq(1), any(String.class)))
+        .thenReturn(OrderRequeryResult.of(
+            99L,
+            requerying.getClOrdId(),
+            "FILLED",
+            "CONFIRMED",
+            "FILLED",
+            BigDecimal.ONE,
+            BigDecimal.ZERO,
+            BigDecimal.valueOf(72000),
+            "FEP-499",
+            NOW,
+            null,
+            null,
+            false,
+            false,
+            1,
+            5
+        ));
+    when(orderSessionService.completeExecution(
+        eq(requerying),
+        eq("FILLED"),
+        eq(BigDecimal.ONE),
+        eq(BigDecimal.ZERO),
+        eq(BigDecimal.valueOf(72000)),
+        eq("FEP-499"),
+        eq("CONFIRMED"),
+        eq(NOW)
+    )).thenReturn(requerying);
+    doThrow(new IllegalStateException("audit unavailable")).when(auditLogService).record(any());
+
+    recoveryService.runRecoveryCycle();
+
+    verify(channelScaffoldService).bootstrapNotification(
+        eq(requerying.getMemberId()),
+        eq("ORDER"),
+        eq("orderSessionId=" + requerying.getOrderSessionId() + " status=COMPLETED")
+    );
+    verify(attemptStore).clear(requerying.getOrderSessionId());
   }
 
   @Test
@@ -381,6 +446,13 @@ class OrderSessionRecoveryServiceTest {
         eq(Instant.parse("2026-03-18T00:06:00Z"))
     );
     verify(attemptStore).clear(requerying.getOrderSessionId());
+    verify(auditLogService).record(argThat(log ->
+        "ORDER_SESSION_RECOVERY_ATTEMPT".equals(log.getAction())
+            && requerying.getOrderSessionId().equals(log.getTargetId())
+            && log.getDetail().contains("attemptCount=2")
+            && log.getDetail().contains("outcome=CANCELED")
+            && log.getDetail().contains("recoveryStatus=CANCELED")
+    ));
     verify(channelScaffoldService).bootstrapNotification(
         eq(requerying.getMemberId()),
         eq("ORDER"),
@@ -530,6 +602,7 @@ class OrderSessionRecoveryServiceTest {
         orderSessionService,
         corebankClient,
         channelScaffoldService,
+        auditLogService,
         manualRecoveryQueueService,
         recoveryLockService,
         attemptStore,
@@ -634,6 +707,13 @@ class OrderSessionRecoveryServiceTest {
         eq(5)
     );
     verify(attemptStore).clear(requerying.getOrderSessionId());
+    verify(auditLogService).record(argThat(log ->
+        "ORDER_SESSION_RECOVERY_ATTEMPT".equals(log.getAction())
+            && requerying.getOrderSessionId().equals(log.getTargetId())
+            && log.getDetail().contains("attemptCount=5")
+            && log.getDetail().contains("outcome=ESCALATED")
+            && log.getDetail().contains("IllegalStateException: corebank unavailable")
+    ));
     verify(channelScaffoldService).bootstrapNotification(
         eq(requerying.getMemberId()),
         eq("ORDER"),

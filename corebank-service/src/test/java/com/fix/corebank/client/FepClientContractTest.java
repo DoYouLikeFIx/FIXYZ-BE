@@ -255,8 +255,11 @@ class FepClientContractTest {
                 """.formatted(CL_ORD_ID_2, CL_ORD_ID_2))));
 
     assertThatThrownBy(() -> fepClient.submitOrder(buildSubmitPayload(CL_ORD_ID_10, "ref-client-002"), "trace-client-002b"))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("submit response clOrdId must match request");
+        .isInstanceOfSatisfying(BusinessException.class, ex -> {
+          assertThat(ex.getMessage()).contains("submit response clOrdId must match request");
+          assertThat(ex.getMetadata()).isNotNull();
+          assertThat(ex.getMetadata().operatorCode()).isEqualTo("DOWNSTREAM_CL_ORD_ID_MISMATCH");
+        });
   }
 
   @Test

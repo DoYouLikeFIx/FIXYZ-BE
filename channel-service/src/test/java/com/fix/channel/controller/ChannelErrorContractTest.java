@@ -350,6 +350,7 @@ class ChannelErrorContractTest {
         .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-success"))
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.clOrdId").value("123e4567-e89b-42d3-a456-426614174260"))
         .andExpect(jsonPath("$.data.status").value("COMPLETED"))
         .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
         .andExpect(jsonPath("$.data.executedQty").value(2))
@@ -426,6 +427,7 @@ class ChannelErrorContractTest {
         .andExpect(status().isOk())
         .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-escalated"))
         .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.clOrdId").value("123e4567-e89b-42d3-a456-426614174263"))
         .andExpect(jsonPath("$.data.status").value("REQUERYING"))
         .andExpect(jsonPath("$.data.executionResult").value(org.hamcrest.Matchers.nullValue()))
         .andExpect(jsonPath("$.data.executedQty").value(org.hamcrest.Matchers.nullValue()))
@@ -445,6 +447,82 @@ class ChannelErrorContractTest {
     assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isEqualByComparingTo("2");
     assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isEqualTo("FEP-KRX-90002");
     assertThat(orderSessionTestFixture.externalSyncStatusOf(orderSessionId)).isEqualTo("FAILED");
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldNormalizeEscalatedExecuteResponseWhileKeepingCanonicalClOrdId() throws Exception {
+    WIRE_MOCK_SERVER.resetAll();
+    orderSessionTestFixture.reset();
+    String orderSessionId = orderSessionTestFixture.createInitiatedSessionId(
+        301L,
+        1L,
+        "123e4567-e89b-42d3-a456-426614174264",
+        "005930",
+        "BUY",
+        "LIMIT",
+        BigDecimal.valueOf(2),
+        BigDecimal.valueOf(70100),
+        false,
+        "TRUSTED_AUTH_SESSION",
+        Instant.now().plusSeconds(3600)
+    );
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlEqualTo("/internal/v1/orders"))
+        .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "orderId": 90003,
+                    "clOrdId": "123e4567-e89b-42d3-a456-426614174264",
+                    "status": "PENDING",
+                    "idempotent": false,
+                    "orderQuantity": 2.0000,
+                    "executionResult": "FILLED",
+                    "executedQty": 2.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": 70100.0000,
+                    "externalOrderId": "FEP-KRX-90003",
+                    "externalSyncStatus": "PENDING_CONFIRMATION",
+                    "executedAt": "2026-03-12T00:07:00Z"
+                  }
+                }
+                """)));
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .with(csrf())
+            .sessionAttr("AUTH_MEMBER_ID", 301L)
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-escalated-contract"))
+        .andExpect(status().isOk())
+        .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "trace-channel-escalated-contract"))
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.clOrdId").value("123e4567-e89b-42d3-a456-426614174264"))
+        .andExpect(jsonPath("$.data.status").value("ESCALATED"))
+        .andExpect(jsonPath("$.data.executionResult").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.executedQty").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.leavesQty").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.executedPrice").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.externalOrderId").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.idempotent").value(false))
+        .andExpect(jsonPath("$.data.failureReason").value("ESCALATED_MANUAL_REVIEW"))
+        .andExpect(jsonPath("$.data.executedAt").value(org.hamcrest.Matchers.nullValue()))
+        .andExpect(jsonPath("$.data.expiresAt").doesNotExist())
+        .andExpect(jsonPath("$.data.remainingSeconds").doesNotExist());
+
+    assertThat(orderSessionTestFixture.statusOf(orderSessionId)).isEqualTo("ESCALATED");
+    assertThat(orderSessionTestFixture.failureReasonOf(orderSessionId)).isEqualTo("ESCALATED_MANUAL_REVIEW");
+    assertThat(orderSessionTestFixture.executionResultOf(orderSessionId)).isEqualTo("FILLED");
+    assertThat(orderSessionTestFixture.executedQtyOf(orderSessionId)).isEqualByComparingTo("2");
+    assertThat(orderSessionTestFixture.externalOrderIdOf(orderSessionId)).isEqualTo("FEP-KRX-90003");
+    assertThat(orderSessionTestFixture.externalSyncStatusOf(orderSessionId)).isEqualTo("PENDING_CONFIRMATION");
+
+    WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders"))
+        .withHeader(CommonHeaders.X_INTERNAL_SECRET, equalTo("test-secret"))
+        .withHeader(CommonHeaders.X_CORRELATION_ID, equalTo("trace-channel-escalated-contract")));
   }
 
   @Test
@@ -870,6 +948,19 @@ class ChannelErrorContractTest {
         .andExpect(jsonPath("$.code").value("AUTH-006"))
         .andExpect(jsonPath("$.message").value("Access denied."))
         .andExpect(jsonPath("$.path").value("/api/v1/admin/members/M-NON-ADMIN-TARGET/sessions"));
+  }
+
+  @Test
+  @WithMockUser(username = "qa-user")
+  void shouldRequireAdminRoleForOrderIdempotencyReconciliationBoundary() throws Exception {
+    mockMvc.perform(post("/api/v1/admin/orders/{clOrdId}/idempotency-reconciliation", "CL-NON-ADMIN-TARGET")
+            .with(csrf())
+            .header(CommonHeaders.X_CORRELATION_ID, "trace-channel-admin-reconcile-access-denied"))
+        .andExpect(status().isForbidden())
+        .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
+        .andExpect(jsonPath("$.code").value("AUTH-006"))
+        .andExpect(jsonPath("$.message").value("Access denied."))
+        .andExpect(jsonPath("$.path").value("/api/v1/admin/orders/CL-NON-ADMIN-TARGET/idempotency-reconciliation"));
   }
 
   @Test
