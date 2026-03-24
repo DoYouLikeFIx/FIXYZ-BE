@@ -1,5 +1,9 @@
 package com.fix.channel.integration;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -7,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fix.channel.entity.Member;
@@ -31,6 +36,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +49,8 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultMatcher;
@@ -51,6 +59,22 @@ import org.springframework.test.util.ReflectionTestUtils;
 @SpringBootTest
 @AutoConfigureMockMvc
 class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
+
+  private static final WireMockServer WIRE_MOCK_SERVER = new WireMockServer(wireMockConfig().dynamicPort());
+
+  static {
+    WIRE_MOCK_SERVER.start();
+  }
+
+  @DynamicPropertySource
+  static void registerProperties(DynamicPropertyRegistry registry) {
+    registry.add("corebank.base-url", WIRE_MOCK_SERVER::baseUrl);
+  }
+
+  @AfterAll
+  static void stopWireMock() {
+    WIRE_MOCK_SERVER.stop();
+  }
 
   @Autowired
   private MockMvc mockMvc;
@@ -87,6 +111,7 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
 
   @BeforeEach
   void setUp() {
+    WIRE_MOCK_SERVER.resetAll();
     orderSessionRepository.deleteAll();
     auditLogRepository.deleteAll();
     securityEventRepository.deleteAll();
@@ -364,6 +389,57 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
   }
 
   @Test
+  void shouldCompleteLowRiskTrustedOrderExecutionHappyPath() throws Exception {
+    saveLinkedMember("M-ORD-002AAX", "trusted.execute.user@fixyz.com", "Trusted Execute User", 126L, "12345678901259");
+
+    AuthSession authSession = login("trusted.execute.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174291",
+        126L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        1,
+        10000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    assertThat(created.path("data").path("status").asText()).isEqualTo("AUTHED");
+    stubCorebankExecuteSuccess("123e4567-e89b-42d3-a456-426614174291", 91001L, 1, 10000L, "FEP-KRX-91001");
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.clOrdId").value("123e4567-e89b-42d3-a456-426614174291"))
+        .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.executionResult").value("FILLED"))
+        .andExpect(jsonPath("$.data.executedQty").value(1))
+        .andExpect(jsonPath("$.data.leavesQty").value(0))
+        .andExpect(jsonPath("$.data.executedPrice").value(10000))
+        .andExpect(jsonPath("$.data.externalOrderId").value("FEP-KRX-91001"))
+        .andExpect(jsonPath("$.data.externalSyncStatus").value("CONFIRMED"))
+        .andExpect(jsonPath("$.data.idempotent").value(false))
+        .andExpect(jsonPath("$.data.failureReason").doesNotExist())
+        .andExpect(jsonPath("$.data.executedAt").value("2026-03-12T00:06:00Z"));
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> {
+          assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.COMPLETED);
+          assertThat(session.getExecutionResult()).isEqualTo("FILLED");
+          assertThat(session.getExecutedQty()).isEqualByComparingTo("1.0000");
+          assertThat(session.getLeavesQty()).isEqualByComparingTo("0.0000");
+          assertThat(session.getExecutedPrice()).isEqualByComparingTo("10000.0000");
+          assertThat(session.getExternalOrderId()).isEqualTo("FEP-KRX-91001");
+          assertThat(session.getExternalSyncStatus()).isEqualTo("CONFIRMED");
+        });
+    WIRE_MOCK_SERVER.verify(postRequestedFor(urlEqualTo("/internal/v1/orders")));
+  }
+
+  @Test
   void shouldExtendOwnedOrderSessionToFullWindow() throws Exception {
     saveLinkedMember("M-ORD-002AAA", "extend.user@fixyz.com", "Extend User", 124L, "12345678901257");
 
@@ -436,6 +512,40 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
           assertThat(log.getAction()).isEqualTo("ORDER_SESSION_EXPIRED");
           assertThat(log.getTargetId()).isEqualTo(orderSessionId);
         });
+  }
+
+  @Test
+  void shouldBlockExecuteWhenElevatedRiskSessionIsNotStepUpAuthorized() throws Exception {
+    saveLinkedMember("M-ORD-002AAY", "stepup.block.user@fixyz.com", "Step Up Block User", 127L, "12345678901260");
+
+    AuthSession authSession = login("stepup.block.user@fixyz.com", "Abcd1234!");
+    JsonNode created = createOrderSession(
+        authSession,
+        "123e4567-e89b-42d3-a456-426614174397",
+        127L,
+        "005930",
+        "BUY",
+        "LIMIT",
+        10,
+        72000L
+    );
+    String orderSessionId = created.path("data").path("orderSessionId").asText();
+
+    assertThat(created.path("data").path("status").asText()).isEqualTo("PENDING_NEW");
+    assertThat(created.path("data").path("challengeRequired").asBoolean()).isTrue();
+    assertThat(created.path("data").path("authorizationReason").asText()).isEqualTo("ELEVATED_ORDER_RISK");
+
+    mockMvc.perform(post("/api/v1/orders/sessions/{orderSessionId}/execute", orderSessionId)
+            .cookie(sessionCookie(authSession))
+            .header("X-CSRF-TOKEN", authSession.csrfToken())
+            .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.code").value("ORD-009"))
+        .andExpect(jsonPath("$.message").value("order session is not authorized for execution"));
+
+    assertThat(orderSessionRepository.findByOrderSessionId(orderSessionId))
+        .hasValueSatisfying(session -> assertThat(session.getStatus()).isEqualTo(OrderSessionStatus.PENDING_NEW));
+    WIRE_MOCK_SERVER.verify(0, postRequestedFor(urlEqualTo("/internal/v1/orders")));
   }
 
   @Test
@@ -1410,6 +1520,32 @@ class OrderSessionIntegrationTest extends ChannelContainersIntegrationTestBase {
       Long price
   ) throws Exception {
     return objectMapper.writeValueAsString(new OrderSessionPayload(accountId, symbol, side, orderType, qty, price));
+  }
+
+  private void stubCorebankExecuteSuccess(String clOrdId, long orderId, int executedQty, long executedPrice, String externalOrderId) {
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlEqualTo("/internal/v1/orders"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "orderId": %d,
+                    "clOrdId": "%s",
+                    "status": "FILLED",
+                    "idempotent": false,
+                    "orderQuantity": %d.0000,
+                    "executionResult": "FILLED",
+                    "executedQty": %d.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": %d.0000,
+                    "externalOrderId": "%s",
+                    "externalSyncStatus": "CONFIRMED",
+                    "executedAt": "2026-03-12T00:06:00Z"
+                  }
+                }
+                """.formatted(orderId, clOrdId, executedQty, executedQty, executedPrice, externalOrderId))));
   }
 
   private AuthSession login(String email, String password) throws Exception {
