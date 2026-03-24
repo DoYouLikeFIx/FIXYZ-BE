@@ -2228,6 +2228,95 @@
                 }
             }
         },
+        "/api/v1/admin/monitoring/freshness": {
+            "get": {
+                "tags": [
+                    "admin-controller"
+                ],
+                "summary": "Monitoring Freshness",
+                "operationId": "monitoringFreshness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiResponseAdminMonitoringFreshnessResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authentication required or session is no longer valid",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Authenticated user lacks the required role",
+                        "headers": {
+                            "X-Correlation-Id": {
+                                "description": "Correlation identifier echoed by the server for support and trace lookup",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "traceparent": {
+                                "description": "W3C trace context returned by the server for end-to-end troubleshooting",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ApiErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/audit-logs": {
             "get": {
                 "tags": [
@@ -4244,6 +4333,53 @@
                     }
                 }
             },
+            "AdminMonitoringFreshnessResponse": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Item"
+                        }
+                    }
+                }
+            },
+            "ApiResponseAdminMonitoringFreshnessResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/AdminMonitoringFreshnessResponse"
+                    },
+                    "error": {
+                        "$ref": "#/components/schemas/ApiErrorResponse"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "Item": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "statusMessage": {
+                        "type": "string"
+                    },
+                    "lastUpdatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
             "AdminAuditLogItem": {
                 "type": "object",
                 "properties": {
@@ -4558,39 +4694,6 @@
                         "$ref": "#/components/schemas/ApiErrorResponse"
                     },
                     "timestamp": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                }
-            },
-            "Item": {
-                "type": "object",
-                "properties": {
-                    "symbol": {
-                        "type": "string"
-                    },
-                    "symbolName": {
-                        "type": "string"
-                    },
-                    "side": {
-                        "type": "string"
-                    },
-                    "qty": {
-                        "type": "number"
-                    },
-                    "unitPrice": {
-                        "type": "number"
-                    },
-                    "totalAmount": {
-                        "type": "number"
-                    },
-                    "status": {
-                        "type": "string"
-                    },
-                    "clOrdId": {
-                        "type": "string"
-                    },
-                    "createdAt": {
                         "type": "string",
                         "format": "date-time"
                     }
