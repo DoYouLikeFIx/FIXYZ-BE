@@ -56,6 +56,7 @@ public class CorebankClient {
   private static final String COREBANK_ACCOUNT_POSITIONS_PATH = "/internal/v1/accounts/{accountId}/positions/list";
   private static final String COREBANK_ACCOUNT_ORDERS_PATH = "/internal/v1/accounts/{accountId}/orders";
   private static final String COREBANK_ACCOUNT_STATUS_PATH = "/internal/v1/accounts/{accountId}/status";
+  private static final String DOWNSTREAM_CL_ORD_ID_MISMATCH = "DOWNSTREAM_CL_ORD_ID_MISMATCH";
 
   private final RestClient restClient;
   private final String internalSecret;
@@ -154,6 +155,7 @@ public class CorebankClient {
           });
 
       CorebankOrderSnapshotResponse responseBody = extractBody(response);
+      validateRequestedClOrdId("status response", clOrdId, responseBody.clOrdId());
       return CorebankOrderSnapshotResult.of(
           responseBody.orderId(),
           responseBody.accountId(),
@@ -420,6 +422,17 @@ public class CorebankClient {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "empty corebank response");
     }
     return response.data();
+  }
+
+  private void validateRequestedClOrdId(String responseLabel, String requestedClOrdId, String responseClOrdId) {
+    if (requestedClOrdId != null && requestedClOrdId.equals(responseClOrdId)) {
+      return;
+    }
+    throw new BusinessException(
+        ErrorCode.CONTRACT_VALIDATION_FAILED,
+        responseLabel + " clOrdId must match request",
+        new ErrorMetadata(null, DOWNSTREAM_CL_ORD_ID_MISMATCH)
+    );
   }
 
   private AccountPositionResult mapAccountPosition(

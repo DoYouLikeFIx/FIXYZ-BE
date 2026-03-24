@@ -6,6 +6,7 @@ import com.fix.channel.entity.AuditLog;
 import com.fix.channel.entity.OrderSession;
 import com.fix.channel.support.ChannelCorrelationIdSupport;
 import com.fix.channel.vo.OrderRequeryResult;
+import com.fix.common.error.BusinessException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
@@ -334,7 +335,7 @@ public class OrderSessionRecoveryService {
           attemptCount,
           "ESCALATED",
           null,
-          ex.getClass().getSimpleName() + ": " + ex.getMessage(),
+          recoveryAuditNote(ex),
           correlationId
       );
       publishTerminalNotification(escalatedSession, "ESCALATED");
@@ -352,7 +353,7 @@ public class OrderSessionRecoveryService {
         attemptCount,
         "ERROR_RETRY_PENDING",
         null,
-        ex.getClass().getSimpleName() + ": " + ex.getMessage(),
+        recoveryAuditNote(ex),
         correlationId
     );
     log.warn(
@@ -414,6 +415,17 @@ public class OrderSessionRecoveryService {
           ex
       );
     }
+  }
+
+  private String recoveryAuditNote(RuntimeException ex) {
+    if (ex == null) {
+      return null;
+    }
+    if (ex instanceof BusinessException businessException) {
+      return businessException.getClass().getSimpleName() + "[" + businessException.getErrorCode().name() + "]";
+    }
+    String simpleName = ex.getClass().getSimpleName();
+    return simpleName == null || simpleName.isBlank() ? RuntimeException.class.getSimpleName() : simpleName;
   }
 
   private <T> T firstNonNull(T preferredValue, T fallbackValue) {
