@@ -1906,6 +1906,15 @@ class CorebankOrderServiceTest {
         new BigDecimal("72050.0000")
     ));
 
+    InOrder lockStepInOrder = org.mockito.Mockito.inOrder(orderRepository, accountRepository, positionRepository);
+    lockStepInOrder.verify(orderRepository).lockExecutionRestingLimitOrdersForSweep(eq("005930"), eq("SELL"), any());
+    lockStepInOrder.verify(accountRepository).findByIdForUpdate(1000L);
+    lockStepInOrder.verify(accountRepository).findByIdForUpdate(ACCOUNT_ID);
+    lockStepInOrder.verify(accountRepository).findByIdForUpdate(3002L);
+    lockStepInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(1000L, "005930");
+    lockStepInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(ACCOUNT_ID, "005930");
+    lockStepInOrder.verify(positionRepository).findByAccountIdAndSymbolForUpdate(3002L, "005930");
+
     InOrder accountLockInOrder = org.mockito.Mockito.inOrder(accountRepository);
     accountLockInOrder.verify(accountRepository).findByIdForUpdate(1000L);
     accountLockInOrder.verify(accountRepository).findByIdForUpdate(ACCOUNT_ID);

@@ -333,6 +333,10 @@ public class CorebankOrderPersistenceService {
       CorebankMatchingEngine.MatchResult matchResult,
       List<Order> makerOrders
   ) {
+    // Keep the acquisition order stable across executions:
+    // matched book rows are locked before entering this method,
+    // then participant accounts,
+    // then participant positions ordered by symbol/account key.
     long waitStartedAtNanos = System.nanoTime();
     Map<Long, Account> lockedAccounts = new LinkedHashMap<>();
     Map<ParticipantPositionKey, Position> lockedPositions = new LinkedHashMap<>();
@@ -358,8 +362,8 @@ public class CorebankOrderPersistenceService {
           )
           .distinct()
           .sorted(Comparator
-              .comparing(ParticipantPositionKey::accountId)
-              .thenComparing(ParticipantPositionKey::symbol))
+              .comparing(ParticipantPositionKey::symbol)
+              .thenComparing(ParticipantPositionKey::accountId))
           .toList();
       for (ParticipantPositionKey positionKey : positionKeys) {
         lockedPositions.put(
