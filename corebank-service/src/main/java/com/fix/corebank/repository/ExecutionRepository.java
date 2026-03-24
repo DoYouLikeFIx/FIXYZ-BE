@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ExecutionRepository extends JpaRepository<Execution, Long>, ExecutionCustomRepository {
   List<Execution> findAllByAccountIdAndSymbolOrderByExecutedAtAsc(Long accountId, String symbol);
+
+  List<Execution> findAllByOrderIdOrderByExecutionSeqAsc(Long orderId);
 }
