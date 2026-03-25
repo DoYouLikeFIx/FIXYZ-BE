@@ -283,6 +283,11 @@ tasks.register('epic10ResilienceDrills', Test) {
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
   reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10ResilienceDrills')
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10ResilienceDrills')
+  outputs.upToDateWhen { false }
+  doFirst {
+    delete(reports.junitXml.outputLocation.get().asFile)
+    delete(reports.html.outputLocation.get().asFile)
+  }
 }
 
 tasks.named('check') {

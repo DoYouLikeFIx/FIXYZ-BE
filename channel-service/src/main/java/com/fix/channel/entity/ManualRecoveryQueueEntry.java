@@ -147,6 +147,7 @@ public class ManualRecoveryQueueEntry extends BaseTimeEntity {
     this.enqueuedAt = enqueuedAt;
     this.publishedAt = null;
     clearPublishClaim();
+    clearResolution();
   }
 
   public void markPublished(Instant publishedAt) {
@@ -169,5 +170,11 @@ public class ManualRecoveryQueueEntry extends BaseTimeEntity {
     this.resolution = resolution;
     this.resolvedAt = resolvedAt;
     clearPublishClaim();
+  }
+
+  private void clearResolution() {
+    this.resolvedBy = null;
+    this.resolution = null;
+    this.resolvedAt = null;
   }
 }

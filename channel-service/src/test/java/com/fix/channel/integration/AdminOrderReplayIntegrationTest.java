@@ -243,6 +243,8 @@ class AdminOrderReplayIntegrationTest extends ChannelContainersIntegrationTestBa
     assertThat(resolvedQueueEntry.getResolvedBy()).isEqualTo(operatorId);
     assertThat(resolvedQueueEntry.getResolution()).isEqualTo("COMPLETED");
     assertThat(resolvedQueueEntry.getResolvedAt()).isNotNull();
+    assertThat(manualRecoveryQueueEntryRepository.findByOrderSessionIdAndResolvedAtIsNull(requerying.getOrderSessionId()))
+        .isEmpty();
 
     assertThat(auditLogRepository.findAll())
         .anySatisfy(log -> {

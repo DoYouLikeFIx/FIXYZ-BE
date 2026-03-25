@@ -183,7 +183,15 @@ public class ManualRecoveryQueueService {
       Instant resolvedAt
   ) {
     manualRecoveryQueueEntryRepository.findByOrderSessionIdAndResolvedAtIsNull(orderSessionId)
-        .ifPresent(entry -> entry.markResolved(resolvedBy, resolution, resolvedAt));
+        .ifPresent(entry -> {
+          entry.markResolved(resolvedBy, resolution, resolvedAt);
+          log.info(
+              "Manual recovery queue entry resolved: sessionId={}, resolution={}, resolvedBy={}",
+              orderSessionId,
+              resolution,
+              resolvedBy
+          );
+        });
   }
 
   private static DefaultRedisScript<Long> createPublishIfAbsentScript() {

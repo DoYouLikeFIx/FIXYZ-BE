@@ -171,6 +171,11 @@ tasks.register('epic10ResilienceTests', Test) {
   ignoreFailures = true
   reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10ResilienceTests')
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10ResilienceTests')
+  outputs.upToDateWhen { false }
+  doFirst {
+    delete(reports.junitXml.outputLocation.get().asFile)
+    delete(reports.html.outputLocation.get().asFile)
+  }
 }
 
 tasks.register('executeLatencySmokeTest', Test) {
