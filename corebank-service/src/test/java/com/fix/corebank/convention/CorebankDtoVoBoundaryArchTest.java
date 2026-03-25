@@ -3,13 +3,21 @@ package com.fix.corebank.convention;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
+import com.fix.corebank.CorebankServiceApplication;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import jakarta.persistence.Entity;
+import java.net.URISyntaxException;
+import java.nio.file.Paths;
+import org.junit.jupiter.api.Test;
 
 @AnalyzeClasses(packages = "com.fix.corebank")
 class CorebankDtoVoBoundaryArchTest {
@@ -50,6 +58,24 @@ class CorebankDtoVoBoundaryArchTest {
           .that().haveSimpleName("GlobalExceptionHandler")
           .should().resideInAPackage("..exception..");
 
+  @Test
+  void ownClassesShouldUseCorebankServicePackageRoot() {
+    classes()
+        .should().resideInAPackage("com.fix.corebank..")
+        .check(importModuleClasses(CorebankServiceApplication.class));
+  }
+
+  @Test
+  void ownClassesShouldNotOwnEntityTypes() {
+    noClasses()
+        .should().resideInAPackage("..entity..")
+        .check(importModuleClasses(CorebankServiceApplication.class));
+
+    noClasses()
+        .should().beAnnotatedWith(Entity.class)
+        .check(importModuleClasses(CorebankServiceApplication.class));
+  }
+
   private static ArchCondition<JavaClass> notBeRecord() {
     return new ArchCondition<>("not be a record") {
       @Override
@@ -59,5 +85,15 @@ class CorebankDtoVoBoundaryArchTest {
         }
       }
     };
+  }
+
+  private static JavaClasses importModuleClasses(Class<?> anchorClass) {
+    try {
+      return new ClassFileImporter()
+          .withImportOption(new ImportOption.DoNotIncludeTests())
+          .importPath(Paths.get(anchorClass.getProtectionDomain().getCodeSource().getLocation().toURI()));
+    } catch (URISyntaxException exception) {
+      throw new IllegalStateException("Failed to import classes for " + anchorClass.getName(), exception);
+    }
   }
 }

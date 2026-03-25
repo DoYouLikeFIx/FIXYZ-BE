@@ -3,13 +3,20 @@ package com.fix.fepsimulator.convention;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
+import com.fix.fepsimulator.FepSimulatorApplication;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import java.net.URISyntaxException;
+import java.nio.file.Paths;
+import org.junit.jupiter.api.Test;
 
 @AnalyzeClasses(packages = "com.fix.fepsimulator")
 class FepSimulatorDtoVoBoundaryArchTest {
@@ -50,6 +57,13 @@ class FepSimulatorDtoVoBoundaryArchTest {
           .that().haveSimpleName("GlobalExceptionHandler")
           .should().resideInAPackage("..exception..");
 
+  @Test
+  void ownClassesShouldUseFepSimulatorRootPackage() {
+    classes()
+        .should().resideInAPackage("com.fix.fepsimulator..")
+        .check(importModuleClasses(FepSimulatorApplication.class));
+  }
+
   private static ArchCondition<JavaClass> notBeRecord() {
     return new ArchCondition<>("not be a record") {
       @Override
@@ -59,5 +73,15 @@ class FepSimulatorDtoVoBoundaryArchTest {
         }
       }
     };
+  }
+
+  private static JavaClasses importModuleClasses(Class<?> anchorClass) {
+    try {
+      return new ClassFileImporter()
+          .withImportOption(new ImportOption.DoNotIncludeTests())
+          .importPath(Paths.get(anchorClass.getProtectionDomain().getCodeSource().getLocation().toURI()));
+    } catch (URISyntaxException exception) {
+      throw new IllegalStateException("Failed to import classes for " + anchorClass.getName(), exception);
+    }
   }
 }
