@@ -38,7 +38,7 @@ class InternalSecretFilterTest {
   @Tag("epic10-acceptance")
   void e10_008ShouldBlockInternalRouteWithoutSecret() throws Exception {
     mockMvc.perform(get("/internal/v1/ping"))
-        .andExpect(status().isForbidden())
+        .andExpect(status().isUnauthorized())
         .andExpect(header().exists(CommonHeaders.X_CORRELATION_ID))
         .andExpect(jsonPath("$.code").value("AUTH-003"))
         .andExpect(jsonPath("$.message").value("Missing or invalid X-Internal-Secret"))
@@ -46,9 +46,9 @@ class InternalSecretFilterTest {
   }
 
   @Test
-  void shouldPreserveProvidedCorrelationIdForForbiddenInternalRoute() throws Exception {
+  void shouldPreserveProvidedCorrelationIdForUnauthorizedInternalRoute() throws Exception {
     mockMvc.perform(get("/internal/v1/ping").header(CommonHeaders.X_CORRELATION_ID, "corr-corebank-unauthorized"))
-        .andExpect(status().isForbidden())
+        .andExpect(status().isUnauthorized())
         .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "corr-corebank-unauthorized"))
         .andExpect(jsonPath("$.correlationId").value("corr-corebank-unauthorized"));
   }

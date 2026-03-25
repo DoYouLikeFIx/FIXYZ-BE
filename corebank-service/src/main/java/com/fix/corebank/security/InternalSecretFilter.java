@@ -41,7 +41,7 @@ public class InternalSecretFilter extends OncePerRequestFilter {
     if (requiresInternalSecret(request.getRequestURI())) {
       String provided = request.getHeader(CommonHeaders.X_INTERNAL_SECRET);
       if (provided == null || !provided.equals(expectedSecret)) {
-        writeForbiddenResponse(request, response);
+        writeUnauthorizedResponse(request, response);
         return;
       }
     }
@@ -53,7 +53,7 @@ public class InternalSecretFilter extends OncePerRequestFilter {
     return CorebankInternalSecretPaths.requiresInternalSecret(requestUri);
   }
 
-  private void writeForbiddenResponse(HttpServletRequest request, HttpServletResponse response) throws IOException {
+  private void writeUnauthorizedResponse(HttpServletRequest request, HttpServletResponse response) throws IOException {
     String correlationId = CorrelationIdSupport.ensureCorrelationId(request);
     String traceparent = TraceparentSupport.ensureTraceparent(request);
 
@@ -64,7 +64,7 @@ public class InternalSecretFilter extends OncePerRequestFilter {
         correlationId
     );
 
-    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setHeader(CommonHeaders.X_CORRELATION_ID, correlationId);

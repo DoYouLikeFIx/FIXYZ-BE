@@ -11,4 +11,4 @@ Story 10.1 canonical 7+1 acceptance coverage is owned by the following automated
 | `E10-005` | Repeated external timeout opens protection circuit | `com.fix.corebank.integration.CorebankSimulatorDrivenResilienceIntegrationTest#e10_005ShouldDriveSubmitBreakerTransitionsFromCanonicalChaosRulesApi` |
 | `E10-006` | Session invalidated after logout | `com.fix.channel.integration.ChannelAuthSessionIntegrationTest#e10_006ShouldLogoutAndExpireSessionCookieImmediately` |
 | `E10-007` | Ledger integrity after repeated executions | `com.fix.corebank.integration.LedgerIntegrityIntegrationTest#e10_007ShouldPassWhenCompletedOrdersHaveBalancedLedgerEvidence` |
-| `E10-008` | Internal endpoint call without internal secret is denied with 403 | `com.fix.corebank.security.InternalSecretFilterTest#e10_008ShouldBlockInternalRouteWithoutSecret` |
+| `E10-008` | Internal endpoint call without internal secret is denied with 401 | `com.fix.corebank.security.InternalSecretFilterTest#e10_008ShouldBlockInternalRouteWithoutSecret` |

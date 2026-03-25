@@ -79,7 +79,7 @@ def epic10AcceptanceScenarios = [
     ],
     [
         id: 'E10-008',
-        description: 'Internal endpoint call without internal secret is denied with 403',
+        description: 'Internal endpoint call without internal secret is denied with 401',
         suite: 'corebankAcceptance',
         className: 'com.fix.corebank.security.InternalSecretFilterTest',
         testName: 'e10_008ShouldBlockInternalRouteWithoutSecret'
