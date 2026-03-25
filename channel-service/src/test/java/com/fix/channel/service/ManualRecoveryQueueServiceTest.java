@@ -200,6 +200,8 @@ class ManualRecoveryQueueServiceTest {
 
     when(repository.findByOrderSessionIdAndResolvedAtIsNull("session-3"))
         .thenReturn(java.util.Optional.of(entry));
+    when(repository.markResolvedIfUnresolved(15L, ENQUEUED_AT, "operator-1", "COMPLETED", NOW))
+        .thenReturn(1);
 
     ManualRecoveryQueueService service = new ManualRecoveryQueueService(
         redisProvider,
@@ -212,11 +214,33 @@ class ManualRecoveryQueueServiceTest {
 
     service.resolveIfPresent("session-3", "operator-1", "COMPLETED", NOW);
 
-    assertThat(entry.getResolvedBy()).isEqualTo("operator-1");
-    assertThat(entry.getResolution()).isEqualTo("COMPLETED");
-    assertThat(entry.getResolvedAt()).isEqualTo(NOW);
-    assertThat(entry.getPublishClaimToken()).isNull();
-    assertThat(entry.getPublishClaimedAt()).isNull();
+    verify(repository).markResolvedIfUnresolved(15L, ENQUEUED_AT, "operator-1", "COMPLETED", NOW);
+  }
+
+  @Test
+  void shouldSkipResolveWhenQueueEntryStateChangesConcurrently() {
+    @SuppressWarnings("unchecked")
+    ObjectProvider<StringRedisTemplate> redisProvider = mock(ObjectProvider.class);
+    ManualRecoveryQueueEntryRepository repository = mock(ManualRecoveryQueueEntryRepository.class);
+    ManualRecoveryQueueEntry entry = pendingEntry(16L, "session-4", "clord-4", 1, "ESCALATED_MANUAL_REVIEW");
+
+    when(repository.findByOrderSessionIdAndResolvedAtIsNull("session-4"))
+        .thenReturn(java.util.Optional.of(entry));
+    when(repository.markResolvedIfUnresolved(16L, ENQUEUED_AT, "operator-2", "COMPLETED", NOW))
+        .thenReturn(0);
+
+    ManualRecoveryQueueService service = new ManualRecoveryQueueService(
+        redisProvider,
+        repository,
+        new ObjectMapper(),
+        Clock.fixed(NOW, ZoneOffset.UTC),
+        10,
+        Duration.ofMinutes(5)
+    );
+
+    service.resolveIfPresent("session-4", "operator-2", "COMPLETED", NOW);
+
+    verify(repository).markResolvedIfUnresolved(16L, ENQUEUED_AT, "operator-2", "COMPLETED", NOW);
   }
 
   private ManualRecoveryQueueEntry pendingEntry(

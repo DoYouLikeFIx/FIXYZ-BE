@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
@@ -257,6 +258,75 @@ class AdminOrderReplayIntegrationTest extends ChannelContainersIntegrationTestBa
         urlPathEqualTo("/internal/v1/orders/" + CL_ORD_ID + "/requery"))
         .withQueryParam("attemptCount", equalTo("1")));
     WIRE_MOCK_SERVER.verify(1, postRequestedFor(urlPathEqualTo("/internal/v1/orders/" + CL_ORD_ID + "/replay")));
+  }
+
+  @Test
+  void shouldResolveUnpublishedManualRecoveryEntryWithoutReturningToPendingBacklog() throws Exception {
+    Member admin = createMember("M-ADMIN-REPLAY-12", "admin-replay-12@fixyz.com", "ROLE_ADMIN");
+    Member member = createMember("M-USER-REPLAY-12", "user-replay-12@fixyz.com", "ROLE_USER");
+    OrderSession escalated = saveEscalatedSession(member.getId(), 1L, "MARKET", null);
+    String operatorId = ManualReplayIdentitySupport.operatorIdFor(admin.getMemberNo());
+
+    manualRecoveryQueueEntryRepository.save(ManualRecoveryQueueEntry.pending(
+        escalated.getOrderSessionId(),
+        escalated.getClOrdId(),
+        1,
+        OrderSession.ESCALATED_MANUAL_REVIEW,
+        Instant.parse("2026-03-24T10:14:00Z")
+    ));
+
+    WIRE_MOCK_SERVER.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(
+            urlPathEqualTo("/internal/v1/orders/" + CL_ORD_ID + "/replay"))
+        .willReturn(aResponse()
+            .withStatus(200)
+            .withHeader("Content-Type", "application/json")
+            .withBody("""
+                {
+                  "success": true,
+                  "data": {
+                    "clOrdId": "%s",
+                    "finalStatus": "COMPLETED",
+                    "executionResult": "FILLED",
+                    "executionSource": "VIRTUAL_FILL",
+                    "executedQty": 10.0000,
+                    "leavesQty": 0.0000,
+                    "executedPrice": 72000.0000,
+                    "externalOrderId": "FEP-RES-003-PENDING",
+                    "externalSyncStatus": "CONFIRMED",
+                    "executedAt": "2026-03-24T10:15:00Z",
+                    "canceledAt": null,
+                    "processedBy": "%s",
+                    "processedAt": "2026-03-24T10:16:00Z"
+                  }
+                }
+                """.formatted(CL_ORD_ID, operatorId))));
+
+    String adminSessionId = createAuthenticatedSession(admin, "ROLE_ADMIN");
+    String csrfToken = fetchCsrfToken(adminSessionId);
+
+    mockMvc.perform(post("/api/v1/admin/orders/{clOrdId}/replay", CL_ORD_ID)
+            .cookie(sessionCookie(adminSessionId))
+            .header("X-CSRF-TOKEN", csrfToken)
+            .header(CommonHeaders.X_CORRELATION_ID, "0b80a3da-3c89-4ebd-b53d-a550b0661e99")
+            .header(HttpHeaders.USER_AGENT, "JUnit-Admin-Replay/1.0")
+            .contentType("application/json")
+            .content(requestJson("APPROVE", 72000L)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.finalStatus").value("COMPLETED"))
+        .andExpect(jsonPath("$.data.processedBy").value(operatorId));
+
+    ManualRecoveryQueueEntry resolvedQueueEntry =
+        manualRecoveryQueueEntryRepository.findByOrderSessionId(escalated.getOrderSessionId()).orElseThrow();
+    assertThat(resolvedQueueEntry.getPublishedAt()).isNull();
+    assertThat(resolvedQueueEntry.getResolvedBy()).isEqualTo(operatorId);
+    assertThat(resolvedQueueEntry.getResolution()).isEqualTo("COMPLETED");
+    assertThat(resolvedQueueEntry.getResolvedAt()).isNotNull();
+    assertThat(manualRecoveryQueueEntryRepository.findByOrderSessionIdAndResolvedAtIsNull(escalated.getOrderSessionId()))
+        .isEmpty();
+    assertThat(manualRecoveryQueueEntryRepository.findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(
+        PageRequest.of(0, 10)
+    )).extracting(ManualRecoveryQueueEntry::getOrderSessionId)
+        .doesNotContain(escalated.getOrderSessionId());
   }
 
   @Test

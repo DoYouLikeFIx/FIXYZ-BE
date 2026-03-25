@@ -184,7 +184,21 @@ public class ManualRecoveryQueueService {
   ) {
     manualRecoveryQueueEntryRepository.findByOrderSessionIdAndResolvedAtIsNull(orderSessionId)
         .ifPresent(entry -> {
-          entry.markResolved(resolvedBy, resolution, resolvedAt);
+          int updated = manualRecoveryQueueEntryRepository.markResolvedIfUnresolved(
+              entry.getId(),
+              entry.getEnqueuedAt(),
+              resolvedBy,
+              resolution,
+              resolvedAt
+          );
+          if (updated == 0) {
+            log.warn(
+                "Manual recovery queue entry resolve skipped because state changed concurrently: sessionId={}, enqueuedAt={}",
+                orderSessionId,
+                entry.getEnqueuedAt()
+            );
+            return;
+          }
           log.info(
               "Manual recovery queue entry resolved: sessionId={}, resolution={}, resolvedBy={}",
               orderSessionId,
