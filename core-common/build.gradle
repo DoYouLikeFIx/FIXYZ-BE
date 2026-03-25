@@ -23,6 +23,7 @@ dependencies {
 
   testImplementation 'org.junit.jupiter:junit-jupiter:5.13.4'
   testImplementation 'org.assertj:assertj-core:3.27.2'
+  testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
 }
 
 sourceSets {
