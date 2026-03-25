@@ -10,6 +10,46 @@ ext {
   wiremockVersion = '3.13.2'
 }
 
+def mainProjectDependencyBaseline = [
+    ':core-common'     : [],
+    ':channel-domain'  : [':core-common'],
+    ':channel-service' : [':core-common', ':channel-domain'],
+    ':corebank-domain' : [':core-common'],
+    ':corebank-service': [':core-common', ':corebank-domain'],
+    ':fep-gateway'     : [':core-common'],
+    ':fep-simulator'   : [':core-common']
+]
+
+def modulePackageRoots = [
+    'core-common'     : ['com.fix.common'],
+    'channel-domain'  : ['com.fix.channel'],
+    'channel-service' : ['com.fix.channel'],
+    'corebank-domain' : ['com.fix.corebank'],
+    'corebank-service': ['com.fix.corebank'],
+    'fep-gateway'     : ['com.fix.fepgateway'],
+    'fep-simulator'   : ['com.fix.fepsimulator']
+]
+
+def moduleExtraMainPackages = [
+    'channel-service': ['db.migration']
+]
+
+def serviceModulesWithFlyway = ['channel-service', 'corebank-service', 'fep-gateway', 'fep-simulator'] as Set
+def serviceModulesWithJavaFlywayMigrations = ['channel-service'] as Set
+def serviceModulesOwningEntities = ['fep-gateway', 'fep-simulator'] as Set
+def legacyResiduePatterns = ['JwtProvider', 'JwtAuthenticationFilter', 'channel-common', 'com/fix/fep/', 'com.fix.fep.']
+def entityAnnotationPattern = ~/(?m)^\s*@(?:jakarta\.persistence\.)?Entity\b/
+
+def matchesPackageBoundary = { String packageName, String allowedPrefix ->
+  packageName == allowedPrefix || packageName.startsWith(allowedPrefix + '.')
+}
+
+def formatViolations = { String heading, List<String> violations ->
+  if (!violations.isEmpty()) {
+    throw new GradleException("${heading}\n - " + violations.join('\n - '))
+  }
+}
+
 allprojects {
   group = 'com.fix'
   version = '0.1.0-SNAPSHOT'
@@ -49,6 +89,204 @@ tasks.register('correlationIdPropagationChecks') {
       ':fep-gateway:correlationPropagationTests',
       ':fep-simulator:correlationPropagationTests'
   )
+}
+
+tasks.register('verifyMainProjectDependencyDirection') {
+  group = 'verification'
+  description = 'Verifies mainline Gradle project dependencies follow the BE convention baseline.'
+
+  doLast {
+    List<String> violations = []
+
+    mainProjectDependencyBaseline.each { String projectPath, List<String> allowedDependencies ->
+      Project targetProject = project(projectPath)
+      Set<String> actualDependencies = ['api', 'implementation']
+          .collectMany { String configurationName ->
+            def configuration = targetProject.configurations.findByName(configurationName)
+            if (configuration == null) {
+              return []
+            }
+            configuration.dependencies
+                .withType(org.gradle.api.artifacts.ProjectDependency)
+                .collect { dependency -> dependency.path }
+          }
+          .toSet()
+      Set<String> allowedDependencySet = allowedDependencies.toSet()
+      Set<String> unexpectedDependencies = actualDependencies - allowedDependencySet
+      if (!unexpectedDependencies.isEmpty()) {
+        violations << "${projectPath} has unexpected main project dependencies ${unexpectedDependencies.sort()}"
+      }
+      Set<String> missingDependencies = allowedDependencySet - actualDependencies
+      if (!missingDependencies.isEmpty()) {
+        violations << "${projectPath} is missing expected main project dependencies ${missingDependencies.sort()}"
+      }
+    }
+
+    formatViolations('Main project dependency direction check failed.', violations)
+  }
+}
+
+tasks.register('verifyFlywayOwnershipAndNaming') {
+  group = 'verification'
+  description = 'Verifies Flyway migration and seed files live in the correct service modules and follow naming conventions.'
+
+  doLast {
+    List<String> violations = []
+    def versionedMigrationPattern = ~/^V\d+__(?:[a-z0-9]+_)*[a-z0-9]+\.(sql|java)$/
+    def repeatableMigrationPattern = ~/^R__(?:[a-z0-9]+_)*[a-z0-9]+\.(sql|java)$/
+
+    subprojects.each { Project subproject ->
+      File resourcesRoot = new File(subproject.projectDir, 'src/main/resources/db')
+      File javaMigrationRoot = new File(subproject.projectDir, 'src/main/java/db/migration')
+      File resourceMigrationRoot = new File(resourcesRoot, 'migration')
+      File seedRoot = new File(resourcesRoot, 'seed')
+
+      List<File> resourceMigrationFiles = []
+      if (resourceMigrationRoot.exists()) {
+        resourceMigrationFiles.addAll(resourceMigrationRoot.listFiles()?.findAll { it.isFile() } ?: [])
+      }
+      List<File> javaMigrationFiles = []
+      if (javaMigrationRoot.exists()) {
+        javaMigrationFiles.addAll(javaMigrationRoot.listFiles()?.findAll { it.isFile() } ?: [])
+      }
+      List<File> migrationFiles = new ArrayList<>(resourceMigrationFiles)
+      migrationFiles.addAll(javaMigrationFiles)
+      List<File> seedFiles = seedRoot.exists()
+          ? (seedRoot.listFiles()?.findAll { it.isFile() } ?: [])
+          : []
+
+      if ((!migrationFiles.isEmpty() || !seedFiles.isEmpty()) && !serviceModulesWithFlyway.contains(subproject.name)) {
+        violations << "${subproject.path} owns Flyway assets outside the allowed service modules"
+      }
+      if (!javaMigrationFiles.isEmpty() && !serviceModulesWithJavaFlywayMigrations.contains(subproject.name)) {
+        violations << "${subproject.path} owns Java Flyway migrations outside the allowed service modules ${serviceModulesWithJavaFlywayMigrations.sort()}"
+      }
+
+      migrationFiles.each { File file ->
+        if (!(file.name ==~ versionedMigrationPattern)) {
+          violations << "${rootProject.relativePath(file)} must match V{N}__snake_case.(sql|java)"
+        }
+      }
+      seedFiles.each { File file ->
+        if (!(file.name ==~ repeatableMigrationPattern)) {
+          violations << "${rootProject.relativePath(file)} must match R__snake_case.(sql|java)"
+        }
+      }
+    }
+
+    formatViolations('Flyway ownership or naming check failed.', violations)
+  }
+}
+
+tasks.register('verifyPackageRootsAndLegacyResidue') {
+  group = 'verification'
+  description = 'Verifies package roots by module and prevents reintroduction of retired architecture residue.'
+
+  doLast {
+    List<String> violations = []
+
+    subprojects.each { Project subproject ->
+      List<String> basePackages = modulePackageRoots[subproject.name] ?: []
+      List<String> extraMainPackages = moduleExtraMainPackages[subproject.name] ?: []
+
+      ['src/main/java', 'src/test/java'].each { String sourceDir ->
+        File root = new File(subproject.projectDir, sourceDir)
+        if (!root.exists()) {
+          return
+        }
+        root.eachFileRecurse(groovy.io.FileType.FILES) { File file ->
+          if (!file.name.endsWith('.java')) {
+            return
+          }
+
+          String packageLine = file.readLines('UTF-8')
+              .find { String line -> line.startsWith('package ') }
+          if (packageLine == null) {
+            violations << "${rootProject.relativePath(file)} is missing a package declaration"
+            return
+          }
+
+          String packageName = packageLine
+              .replace('package ', '')
+              .replace(';', '')
+              .trim()
+          List<String> allowedPackages = new ArrayList<>(basePackages)
+          if (sourceDir == 'src/main/java') {
+            allowedPackages.addAll(extraMainPackages)
+          }
+          if (!allowedPackages.any { String allowedPrefix -> matchesPackageBoundary(packageName, allowedPrefix) }) {
+            violations << "${rootProject.relativePath(file)} uses unexpected package `${packageName}`"
+          }
+        }
+      }
+    }
+
+    List<File> residueTargets = [
+        rootProject.file('../_bmad-output/planning-artifacts/architecture.md')
+    ]
+    residueTargets.addAll(fileTree(rootProject.projectDir) {
+      include '*/src/main/java/**/*.java'
+      include '*/src/test/java/**/*.java'
+      exclude 'build/**'
+    }.files)
+
+    residueTargets.findAll { it.exists() }.each { File file ->
+      String content = file.getText('UTF-8')
+      legacyResiduePatterns.each { String pattern ->
+        if (content.contains(pattern)) {
+          violations << "${rootProject.relativePath(file)} contains retired pattern `${pattern}`"
+        }
+      }
+    }
+
+    formatViolations('Package root or retired residue check failed.', violations)
+  }
+}
+
+tasks.register('verifyServiceEntityOwnership') {
+  group = 'verification'
+  description = 'Verifies shared entry-service modules do not own JPA entities directly.'
+
+  doLast {
+    List<String> violations = []
+
+    subprojects.each { Project subproject ->
+      if (subproject.name in serviceModulesOwningEntities || !(subproject.name.endsWith('-service'))) {
+        return
+      }
+
+      File sourceRoot = new File(subproject.projectDir, 'src/main/java')
+      if (!sourceRoot.exists()) {
+        return
+      }
+
+      sourceRoot.eachFileRecurse(groovy.io.FileType.FILES) { File file ->
+        if (!file.name.endsWith('.java')) {
+          return
+        }
+        if ((file.getText('UTF-8') =~ entityAnnotationPattern).find()) {
+          violations << "${subproject.path} must not own @Entity classes directly: ${rootProject.relativePath(file)}"
+        }
+      }
+    }
+
+    formatViolations('Service entity ownership check failed.', violations)
+  }
+}
+
+tasks.register('verifyBeConventionAlignment') {
+  group = 'verification'
+  description = 'Runs root-level BE convention alignment checks.'
+  dependsOn(
+      tasks.named('verifyMainProjectDependencyDirection'),
+      tasks.named('verifyFlywayOwnershipAndNaming'),
+      tasks.named('verifyPackageRootsAndLegacyResidue'),
+      tasks.named('verifyServiceEntityOwnership')
+  )
+}
+
+tasks.named('check') {
+  dependsOn tasks.named('verifyBeConventionAlignment')
 }
 
 apply from: rootProject.file('gradle/epic10-acceptance.gradle')
