@@ -35,8 +35,14 @@ def moduleExtraMainPackages = [
 ]
 
 def serviceModulesWithFlyway = ['channel-service', 'corebank-service', 'fep-gateway', 'fep-simulator'] as Set
+def serviceModulesWithJavaFlywayMigrations = ['channel-service'] as Set
 def serviceModulesOwningEntities = ['fep-gateway', 'fep-simulator'] as Set
 def legacyResiduePatterns = ['JwtProvider', 'JwtAuthenticationFilter', 'channel-common', 'com/fix/fep/', 'com.fix.fep.']
+def entityAnnotationPattern = ~/(?m)^\s*@(?:jakarta\.persistence\.)?Entity\b/
+
+def matchesPackageBoundary = { String packageName, String allowedPrefix ->
+  packageName == allowedPrefix || packageName.startsWith(allowedPrefix + '.')
+}
 
 def formatViolations = { String heading, List<String> violations ->
   if (!violations.isEmpty()) {
@@ -135,19 +141,25 @@ tasks.register('verifyFlywayOwnershipAndNaming') {
       File resourceMigrationRoot = new File(resourcesRoot, 'migration')
       File seedRoot = new File(resourcesRoot, 'seed')
 
-      List<File> migrationFiles = []
+      List<File> resourceMigrationFiles = []
       if (resourceMigrationRoot.exists()) {
-        migrationFiles.addAll(resourceMigrationRoot.listFiles()?.findAll { it.isFile() } ?: [])
+        resourceMigrationFiles.addAll(resourceMigrationRoot.listFiles()?.findAll { it.isFile() } ?: [])
       }
+      List<File> javaMigrationFiles = []
       if (javaMigrationRoot.exists()) {
-        migrationFiles.addAll(javaMigrationRoot.listFiles()?.findAll { it.isFile() } ?: [])
+        javaMigrationFiles.addAll(javaMigrationRoot.listFiles()?.findAll { it.isFile() } ?: [])
       }
+      List<File> migrationFiles = new ArrayList<>(resourceMigrationFiles)
+      migrationFiles.addAll(javaMigrationFiles)
       List<File> seedFiles = seedRoot.exists()
           ? (seedRoot.listFiles()?.findAll { it.isFile() } ?: [])
           : []
 
       if ((!migrationFiles.isEmpty() || !seedFiles.isEmpty()) && !serviceModulesWithFlyway.contains(subproject.name)) {
         violations << "${subproject.path} owns Flyway assets outside the allowed service modules"
+      }
+      if (!javaMigrationFiles.isEmpty() && !serviceModulesWithJavaFlywayMigrations.contains(subproject.name)) {
+        violations << "${subproject.path} owns Java Flyway migrations outside the allowed service modules ${serviceModulesWithJavaFlywayMigrations.sort()}"
       }
 
       migrationFiles.each { File file ->
@@ -202,7 +214,7 @@ tasks.register('verifyPackageRootsAndLegacyResidue') {
           if (sourceDir == 'src/main/java') {
             allowedPackages.addAll(extraMainPackages)
           }
-          if (!allowedPackages.any { String allowedPrefix -> packageName.startsWith(allowedPrefix) }) {
+          if (!allowedPackages.any { String allowedPrefix -> matchesPackageBoundary(packageName, allowedPrefix) }) {
             violations << "${rootProject.relativePath(file)} uses unexpected package `${packageName}`"
           }
         }
@@ -252,7 +264,7 @@ tasks.register('verifyServiceEntityOwnership') {
         if (!file.name.endsWith('.java')) {
           return
         }
-        if (file.getText('UTF-8').contains('@Entity')) {
+        if ((file.getText('UTF-8') =~ entityAnnotationPattern).find()) {
           violations << "${subproject.path} must not own @Entity classes directly: ${rootProject.relativePath(file)}"
         }
       }
