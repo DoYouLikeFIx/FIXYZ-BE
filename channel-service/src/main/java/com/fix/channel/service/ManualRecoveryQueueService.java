@@ -182,30 +182,37 @@ public class ManualRecoveryQueueService {
       String resolution,
       Instant resolvedAt
   ) {
-    manualRecoveryQueueEntryRepository.findByOrderSessionIdAndResolvedAtIsNull(orderSessionId)
-        .ifPresent(entry -> {
-          int updated = manualRecoveryQueueEntryRepository.markResolvedIfUnresolved(
-              entry.getId(),
-              entry.getEnqueuedAt(),
-              resolvedBy,
-              resolution,
-              resolvedAt
-          );
-          if (updated == 0) {
-            log.warn(
-                "Manual recovery queue entry resolve skipped because state changed concurrently: sessionId={}, enqueuedAt={}",
-                orderSessionId,
-                entry.getEnqueuedAt()
-            );
-            return;
-          }
-          log.info(
-              "Manual recovery queue entry resolved: sessionId={}, resolution={}, resolvedBy={}",
-              orderSessionId,
-              resolution,
-              resolvedBy
-          );
-        });
+    for (int attempt = 0; attempt < 2; attempt++) {
+      ManualRecoveryQueueEntry entry = manualRecoveryQueueEntryRepository.findByOrderSessionIdAndResolvedAtIsNull(orderSessionId)
+          .orElse(null);
+      if (entry == null) {
+        return;
+      }
+
+      int updated = manualRecoveryQueueEntryRepository.markResolvedIfUnresolved(
+          entry.getId(),
+          entry.getEnqueuedAt(),
+          resolvedBy,
+          resolution,
+          resolvedAt
+      );
+      if (updated > 0) {
+        log.info(
+            "Manual recovery queue entry resolved: sessionId={}, resolution={}, resolvedBy={}",
+            orderSessionId,
+            resolution,
+            resolvedBy
+        );
+        return;
+      }
+
+      log.warn(
+          "Manual recovery queue entry resolve skipped because state changed concurrently: sessionId={}, enqueuedAt={}, attempt={}",
+          orderSessionId,
+          entry.getEnqueuedAt(),
+          attempt + 1
+      );
+    }
   }
 
   private static DefaultRedisScript<Long> createPublishIfAbsentScript() {

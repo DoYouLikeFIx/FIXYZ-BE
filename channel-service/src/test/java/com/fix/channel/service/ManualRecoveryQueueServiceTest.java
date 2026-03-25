@@ -225,7 +225,7 @@ class ManualRecoveryQueueServiceTest {
     ManualRecoveryQueueEntry entry = pendingEntry(16L, "session-4", "clord-4", 1, "ESCALATED_MANUAL_REVIEW");
 
     when(repository.findByOrderSessionIdAndResolvedAtIsNull("session-4"))
-        .thenReturn(java.util.Optional.of(entry));
+        .thenReturn(java.util.Optional.of(entry), java.util.Optional.empty());
     when(repository.markResolvedIfUnresolved(16L, ENQUEUED_AT, "operator-2", "COMPLETED", NOW))
         .thenReturn(0);
 
@@ -241,6 +241,43 @@ class ManualRecoveryQueueServiceTest {
     service.resolveIfPresent("session-4", "operator-2", "COMPLETED", NOW);
 
     verify(repository).markResolvedIfUnresolved(16L, ENQUEUED_AT, "operator-2", "COMPLETED", NOW);
+  }
+
+  @Test
+  void shouldRetryResolveOnceWhenConcurrentRefreshBumpsEnqueuedAt() {
+    @SuppressWarnings("unchecked")
+    ObjectProvider<StringRedisTemplate> redisProvider = mock(ObjectProvider.class);
+    ManualRecoveryQueueEntryRepository repository = mock(ManualRecoveryQueueEntryRepository.class);
+    ManualRecoveryQueueEntry original = pendingEntry(17L, "session-5", "clord-5", 1, "ESCALATED_MANUAL_REVIEW");
+    ManualRecoveryQueueEntry refreshed = ManualRecoveryQueueEntry.pending(
+        "session-5",
+        "clord-5",
+        2,
+        "ESCALATED_MANUAL_REVIEW",
+        NOW
+    );
+    ReflectionTestUtils.setField(refreshed, "id", 17L);
+
+    when(repository.findByOrderSessionIdAndResolvedAtIsNull("session-5"))
+        .thenReturn(java.util.Optional.of(original), java.util.Optional.of(refreshed));
+    when(repository.markResolvedIfUnresolved(17L, ENQUEUED_AT, "operator-3", "COMPLETED", NOW))
+        .thenReturn(0);
+    when(repository.markResolvedIfUnresolved(17L, NOW, "operator-3", "COMPLETED", NOW))
+        .thenReturn(1);
+
+    ManualRecoveryQueueService service = new ManualRecoveryQueueService(
+        redisProvider,
+        repository,
+        new ObjectMapper(),
+        Clock.fixed(NOW, ZoneOffset.UTC),
+        10,
+        Duration.ofMinutes(5)
+    );
+
+    service.resolveIfPresent("session-5", "operator-3", "COMPLETED", NOW);
+
+    verify(repository).markResolvedIfUnresolved(17L, ENQUEUED_AT, "operator-3", "COMPLETED", NOW);
+    verify(repository).markResolvedIfUnresolved(17L, NOW, "operator-3", "COMPLETED", NOW);
   }
 
   private ManualRecoveryQueueEntry pendingEntry(
