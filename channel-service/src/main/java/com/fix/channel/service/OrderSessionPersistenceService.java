@@ -17,12 +17,14 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderSessionPersistenceService {
 
   private static final String ORDER_SESSION_TARGET_TYPE = "ORDER_SESSION";
@@ -443,7 +445,31 @@ public class OrderSessionPersistenceService {
       );
       return;
     }
-    queueEntry.refresh(attemptCount, reason, now);
+    int updated = queueEntry.getResolvedAt() == null
+        ? manualRecoveryQueueEntryRepository.refreshIfPending(
+            queueEntry.getId(),
+            queueEntry.getEnqueuedAt(),
+            attemptCount,
+            reason,
+            now
+        )
+        : manualRecoveryQueueEntryRepository.refreshIfResolved(
+            queueEntry.getId(),
+            queueEntry.getEnqueuedAt(),
+            queueEntry.getResolvedAt(),
+            attemptCount,
+            reason,
+            now
+        );
+    if (updated == 0) {
+      log.warn(
+          "Manual recovery queue entry re-enqueue skipped because state changed concurrently: sessionId={}, clOrdId={}, enqueuedAt={}, resolvedAt={}",
+          orderSessionId,
+          clOrdId,
+          queueEntry.getEnqueuedAt(),
+          queueEntry.getResolvedAt()
+      );
+    }
   }
 
   private OrderSession managedSession(OrderSession session) {

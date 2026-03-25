@@ -38,7 +38,8 @@ class ManualRecoveryQueueServiceTest {
     StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
     ManualRecoveryQueueEntry entry = pendingEntry(11L, "session-1", "clord-1", 3, "ESCALATED_MANUAL_REVIEW\nneeds-review");
 
-    when(repository.findByPublishedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class))).thenReturn(List.of(entry));
+    when(repository.findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class)))
+        .thenReturn(List.of(entry));
     when(redisProvider.getIfAvailable()).thenReturn(redisTemplate);
     when(repository.claimPendingIfAvailable(eq(11L), eq(ENQUEUED_AT), any(), eq(NOW), eq(NOW.minus(Duration.ofMinutes(5)))))
         .thenReturn(1);
@@ -93,7 +94,7 @@ class ManualRecoveryQueueServiceTest {
 
     service.publishPendingEntries();
 
-    verify(repository, never()).findByPublishedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class));
+    verify(repository, never()).findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class));
     verify(repository, never()).claimPendingIfAvailable(any(), any(), any(), any(), any());
     verify(repository, never()).markPublishedIfClaimed(any(), any(), any(), any());
   }
@@ -106,7 +107,8 @@ class ManualRecoveryQueueServiceTest {
     StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
     ManualRecoveryQueueEntry entry = pendingEntry(12L, "session-1", "clord-1", 1, "reason-1");
 
-    when(repository.findByPublishedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class))).thenReturn(List.of(entry));
+    when(repository.findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class)))
+        .thenReturn(List.of(entry));
     when(redisProvider.getIfAvailable()).thenReturn(redisTemplate);
     when(repository.claimPendingIfAvailable(eq(12L), eq(ENQUEUED_AT), any(), eq(NOW), eq(NOW.minus(Duration.ofMinutes(5)))))
         .thenReturn(1);
@@ -136,7 +138,8 @@ class ManualRecoveryQueueServiceTest {
     StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
     ManualRecoveryQueueEntry entry = pendingEntry(13L, "session-1", "clord-1", 2, "reason-1");
 
-    when(repository.findByPublishedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class))).thenReturn(List.of(entry));
+    when(repository.findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class)))
+        .thenReturn(List.of(entry));
     when(redisProvider.getIfAvailable()).thenReturn(redisTemplate);
     when(repository.claimPendingIfAvailable(eq(13L), eq(ENQUEUED_AT), any(), eq(NOW), eq(NOW.minus(Duration.ofMinutes(5)))))
         .thenReturn(1);
@@ -166,7 +169,8 @@ class ManualRecoveryQueueServiceTest {
     StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
     ManualRecoveryQueueEntry entry = pendingEntry(14L, "session-2", "clord-2", 1, "reason-2");
 
-    when(repository.findByPublishedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class))).thenReturn(List.of(entry));
+    when(repository.findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(any(Pageable.class)))
+        .thenReturn(List.of(entry));
     when(redisProvider.getIfAvailable()).thenReturn(redisTemplate);
     when(repository.claimPendingIfAvailable(eq(14L), eq(ENQUEUED_AT), any(), eq(NOW), eq(NOW.minus(Duration.ofMinutes(5)))))
         .thenReturn(0);
@@ -184,6 +188,96 @@ class ManualRecoveryQueueServiceTest {
 
     verify(redisTemplate, never()).execute(any(), anyList(), any(), any(), any());
     verify(repository, never()).markPublishedIfClaimed(any(), any(), any(), any());
+  }
+
+  @Test
+  void shouldMarkPublishedEntryAsResolvedWhenReplayConverges() {
+    @SuppressWarnings("unchecked")
+    ObjectProvider<StringRedisTemplate> redisProvider = mock(ObjectProvider.class);
+    ManualRecoveryQueueEntryRepository repository = mock(ManualRecoveryQueueEntryRepository.class);
+    ManualRecoveryQueueEntry entry = pendingEntry(15L, "session-3", "clord-3", 2, "ESCALATED_MANUAL_REVIEW");
+    entry.markPublished(NOW.minusSeconds(10));
+
+    when(repository.findByOrderSessionIdAndResolvedAtIsNull("session-3"))
+        .thenReturn(java.util.Optional.of(entry));
+    when(repository.markResolvedIfUnresolved(15L, ENQUEUED_AT, "operator-1", "COMPLETED", NOW))
+        .thenReturn(1);
+
+    ManualRecoveryQueueService service = new ManualRecoveryQueueService(
+        redisProvider,
+        repository,
+        new ObjectMapper(),
+        Clock.fixed(NOW, ZoneOffset.UTC),
+        10,
+        Duration.ofMinutes(5)
+    );
+
+    service.resolveIfPresent("session-3", "operator-1", "COMPLETED", NOW);
+
+    verify(repository).markResolvedIfUnresolved(15L, ENQUEUED_AT, "operator-1", "COMPLETED", NOW);
+  }
+
+  @Test
+  void shouldSkipResolveWhenQueueEntryStateChangesConcurrently() {
+    @SuppressWarnings("unchecked")
+    ObjectProvider<StringRedisTemplate> redisProvider = mock(ObjectProvider.class);
+    ManualRecoveryQueueEntryRepository repository = mock(ManualRecoveryQueueEntryRepository.class);
+    ManualRecoveryQueueEntry entry = pendingEntry(16L, "session-4", "clord-4", 1, "ESCALATED_MANUAL_REVIEW");
+
+    when(repository.findByOrderSessionIdAndResolvedAtIsNull("session-4"))
+        .thenReturn(java.util.Optional.of(entry), java.util.Optional.empty());
+    when(repository.markResolvedIfUnresolved(16L, ENQUEUED_AT, "operator-2", "COMPLETED", NOW))
+        .thenReturn(0);
+
+    ManualRecoveryQueueService service = new ManualRecoveryQueueService(
+        redisProvider,
+        repository,
+        new ObjectMapper(),
+        Clock.fixed(NOW, ZoneOffset.UTC),
+        10,
+        Duration.ofMinutes(5)
+    );
+
+    service.resolveIfPresent("session-4", "operator-2", "COMPLETED", NOW);
+
+    verify(repository).markResolvedIfUnresolved(16L, ENQUEUED_AT, "operator-2", "COMPLETED", NOW);
+  }
+
+  @Test
+  void shouldRetryResolveOnceWhenConcurrentRefreshBumpsEnqueuedAt() {
+    @SuppressWarnings("unchecked")
+    ObjectProvider<StringRedisTemplate> redisProvider = mock(ObjectProvider.class);
+    ManualRecoveryQueueEntryRepository repository = mock(ManualRecoveryQueueEntryRepository.class);
+    ManualRecoveryQueueEntry original = pendingEntry(17L, "session-5", "clord-5", 1, "ESCALATED_MANUAL_REVIEW");
+    ManualRecoveryQueueEntry refreshed = ManualRecoveryQueueEntry.pending(
+        "session-5",
+        "clord-5",
+        2,
+        "ESCALATED_MANUAL_REVIEW",
+        NOW
+    );
+    ReflectionTestUtils.setField(refreshed, "id", 17L);
+
+    when(repository.findByOrderSessionIdAndResolvedAtIsNull("session-5"))
+        .thenReturn(java.util.Optional.of(original), java.util.Optional.of(refreshed));
+    when(repository.markResolvedIfUnresolved(17L, ENQUEUED_AT, "operator-3", "COMPLETED", NOW))
+        .thenReturn(0);
+    when(repository.markResolvedIfUnresolved(17L, NOW, "operator-3", "COMPLETED", NOW))
+        .thenReturn(1);
+
+    ManualRecoveryQueueService service = new ManualRecoveryQueueService(
+        redisProvider,
+        repository,
+        new ObjectMapper(),
+        Clock.fixed(NOW, ZoneOffset.UTC),
+        10,
+        Duration.ofMinutes(5)
+    );
+
+    service.resolveIfPresent("session-5", "operator-3", "COMPLETED", NOW);
+
+    verify(repository).markResolvedIfUnresolved(17L, ENQUEUED_AT, "operator-3", "COMPLETED", NOW);
+    verify(repository).markResolvedIfUnresolved(17L, NOW, "operator-3", "COMPLETED", NOW);
   }
 
   private ManualRecoveryQueueEntry pendingEntry(

@@ -1,0 +1,172 @@
+import groovy.json.JsonOutput
+import java.time.Instant
+import javax.xml.parsers.DocumentBuilderFactory
+
+def epic10ResilienceBuildId = providers.gradleProperty('epic10ResilienceBuildId')
+    .orElse(providers.environmentVariable('EPIC10_RESILIENCE_BUILD_ID'))
+    .orElse(providers.environmentVariable('GITHUB_RUN_ID'))
+    .getOrElse('local')
+def epic10ResilienceBaseDir = providers.environmentVariable('GITHUB_WORKSPACE')
+    .map { new File(it) }
+    .getOrNull() ?: rootProject.projectDir.parentFile
+def epic10ResilienceArtifactRoot = new File(
+    epic10ResilienceBaseDir,
+    "_bmad-output/test-artifacts/epic-10/${epic10ResilienceBuildId}/story-10-3"
+)
+def epic10ResilienceSuites = [
+    [
+        name      : 'corebank-resilience',
+        taskPath  : ':corebank-service:epic10ResilienceDrills',
+        sourceDir : new File(rootProject.projectDir, 'corebank-service/build/test-results/epic10ResilienceDrills'),
+        targetDir : 'junit/corebank-resilience'
+    ],
+    [
+        name      : 'channel-resilience',
+        taskPath  : ':channel-service:epic10ResilienceTests',
+        sourceDir : new File(rootProject.projectDir, 'channel-service/build/test-results/epic10ResilienceTests'),
+        targetDir : 'junit/channel-resilience'
+    ]
+]
+def epic10ResilienceScenarios = [
+    [
+        id         : 'E10-RES-001',
+        description: 'Repeated simulator timeout or failure injection opens the downstream submit circuit',
+        className  : 'com.fix.corebank.integration.CorebankSimulatorDrivenResilienceIntegrationTest',
+        testName   : 'e10Res001ShouldOpenSubmitBreakerAfterRepeatedSimulatorTimeouts'
+    ],
+    [
+        id         : 'E10-RES-002',
+        description: 'Clearing simulator chaos rules allows a recovery probe and closes the submit circuit',
+        className  : 'com.fix.corebank.integration.CorebankSimulatorDrivenResilienceIntegrationTest',
+        testName   : 'e10Res002ShouldCloseSubmitBreakerAfterRecoveryProbeSucceeds'
+    ],
+    [
+        id         : 'E10-RES-003',
+        description: 'Unresolved requerying order escalates and converges through governed admin replay',
+        className  : 'com.fix.channel.integration.AdminOrderReplayIntegrationTest',
+        testName   : 'e10Res003ShouldEscalateUnresolvedRequeryingOrderAndConvergeThroughAdminReplay'
+    ]
+]
+
+Closure<List<Map<String, Object>>> parseEpic10ResilienceTestcases = { File xmlDir ->
+  List<Map<String, Object>> testcases = []
+  if (!xmlDir.exists()) {
+    return testcases
+  }
+
+  DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance()
+  factory.setNamespaceAware(false)
+  factory.setExpandEntityReferences(false)
+  factory.setFeature('http://apache.org/xml/features/disallow-doctype-decl', true)
+
+  xmlDir.eachFileRecurse { File xmlFile ->
+    if (!xmlFile.name.endsWith('.xml')) {
+      return
+    }
+    def document = factory.newDocumentBuilder().parse(xmlFile)
+    def testcaseNodes = document.getElementsByTagName('testcase')
+    for (int index = 0; index < testcaseNodes.length; index++) {
+      def testcase = testcaseNodes.item(index)
+      String result = 'PASSED'
+      if (testcase.getElementsByTagName('failure').length > 0) {
+        result = 'FAILED'
+      } else if (testcase.getElementsByTagName('error').length > 0) {
+        result = 'ERROR'
+      } else if (testcase.getElementsByTagName('skipped').length > 0) {
+        result = 'SKIPPED'
+      }
+      testcases << [
+          classname: testcase.getAttribute('classname') ?: '',
+          name     : (testcase.getAttribute('name') ?: '').replaceFirst(/\(\)$/, ''),
+          result   : result,
+          xmlFile  : xmlFile.name
+      ]
+    }
+  }
+
+  return testcases
+}
+
+tasks.register('epic10ResilienceEvidence') {
+  group = 'verification'
+  description = 'Collects Story 10.3 canonical resilience drill evidence artifacts.'
+  dependsOn(epic10ResilienceSuites.collect { it.taskPath })
+
+  doLast {
+    File junitRoot = new File(epic10ResilienceArtifactRoot, 'junit')
+    delete(junitRoot)
+    mkdir(junitRoot)
+
+    List<Map<String, Object>> allTestcases = []
+    epic10ResilienceSuites.each { Map suite ->
+      File targetDir = new File(epic10ResilienceArtifactRoot, suite.targetDir)
+      mkdir(targetDir)
+      copy {
+        from(suite.sourceDir)
+        include('**/*.xml')
+        into(targetDir)
+      }
+      List<Map<String, Object>> suiteCases = parseEpic10ResilienceTestcases(suite.sourceDir).collect { Map testcase ->
+        testcase + [suiteName: suite.name, evidence: "${suite.targetDir}/${testcase.xmlFile}"]
+      }
+      allTestcases.addAll(suiteCases)
+    }
+
+    List<Map<String, Object>> scenarioResults = epic10ResilienceScenarios.collect { Map scenario ->
+      Map<String, Object> testcase = allTestcases.find { Map candidate ->
+        candidate.classname == scenario.className && (
+            candidate.name == scenario.testName
+                || String.valueOf(candidate.name).contains("[${scenario.id}]")
+        )
+      }
+      [
+          scenarioId : scenario.id,
+          description: scenario.description,
+          result     : testcase == null ? 'MISSING' : String.valueOf(testcase.result),
+          ownerTest  : "${scenario.className}#${scenario.testName}",
+          evidence   : testcase == null ? null : testcase.evidence
+      ]
+    }
+
+    int passedCount = scenarioResults.count { it.result == 'PASSED' }
+    int failedCount = scenarioResults.count { ['FAILED', 'ERROR', 'SKIPPED'].contains(it.result) }
+    int missingCount = scenarioResults.count { it.result == 'MISSING' }
+    String overallResult = failedCount == 0 && missingCount == 0 ? 'PASSED' : 'FAILED'
+
+    File matrixSummaryMd = new File(epic10ResilienceArtifactRoot, 'matrix-summary.md')
+    matrixSummaryMd.parentFile.mkdirs()
+    matrixSummaryMd.text = """# Story 10.3 Resilience Drill Summary
+
+- Build ID: `${epic10ResilienceBuildId}`
+- Generated At: `${Instant.now()}`
+- Overall Result: `${overallResult}`
+- Totals: passed=${passedCount}, failed=${failedCount}, missing=${missingCount}
+
+| Scenario ID | Result | Owner | Evidence |
+| --- | --- | --- | --- |
+${scenarioResults.collect { result ->
+  "| `${result.scenarioId}` | `${result.result}` | `${result.ownerTest}` | `${result.evidence ?: 'n/a'}` |"
+}.join('\n')}
+"""
+
+    File matrixSummaryJson = new File(epic10ResilienceArtifactRoot, 'matrix-summary.json')
+    matrixSummaryJson.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+        buildId      : epic10ResilienceBuildId,
+        generatedAt  : Instant.now().toString(),
+        overallResult: overallResult,
+        scenarios    : scenarioResults
+    ])) + '\n'
+
+    if (overallResult != 'PASSED') {
+      throw new GradleException(
+          "Story 10.3 resilience gate failed; see ${matrixSummaryMd.absolutePath}"
+      )
+    }
+  }
+}
+
+tasks.register('epic10ResilienceGate') {
+  group = 'verification'
+  description = 'Runs Story 10.3 canonical resilience drills with evidence export.'
+  dependsOn tasks.named('epic10ResilienceEvidence')
+}

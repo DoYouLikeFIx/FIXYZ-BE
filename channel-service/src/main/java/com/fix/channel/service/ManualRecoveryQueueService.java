@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
@@ -60,7 +61,7 @@ public class ManualRecoveryQueueService {
 
     List<ManualRecoveryQueueEntry> pendingEntries;
     try {
-      pendingEntries = manualRecoveryQueueEntryRepository.findByPublishedAtIsNullOrderByEnqueuedAtAscIdAsc(
+      pendingEntries = manualRecoveryQueueEntryRepository.findByPublishedAtIsNullAndResolvedAtIsNullOrderByEnqueuedAtAscIdAsc(
           PageRequest.of(0, publishBatchSize)
       );
     } catch (RuntimeException ex) {
@@ -172,6 +173,46 @@ public class ManualRecoveryQueueService {
         entry.getEnqueuedAt(),
         claimToken
     );
+  }
+
+  @Transactional
+  public void resolveIfPresent(
+      String orderSessionId,
+      String resolvedBy,
+      String resolution,
+      Instant resolvedAt
+  ) {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      ManualRecoveryQueueEntry entry = manualRecoveryQueueEntryRepository.findByOrderSessionIdAndResolvedAtIsNull(orderSessionId)
+          .orElse(null);
+      if (entry == null) {
+        return;
+      }
+
+      int updated = manualRecoveryQueueEntryRepository.markResolvedIfUnresolved(
+          entry.getId(),
+          entry.getEnqueuedAt(),
+          resolvedBy,
+          resolution,
+          resolvedAt
+      );
+      if (updated > 0) {
+        log.info(
+            "Manual recovery queue entry resolved: sessionId={}, resolution={}, resolvedBy={}",
+            orderSessionId,
+            resolution,
+            resolvedBy
+        );
+        return;
+      }
+
+      log.warn(
+          "Manual recovery queue entry resolve skipped because state changed concurrently: sessionId={}, enqueuedAt={}, attempt={}",
+          orderSessionId,
+          entry.getEnqueuedAt(),
+          attempt + 1
+      );
+    }
   }
 
   private static DefaultRedisScript<Long> createPublishIfAbsentScript() {

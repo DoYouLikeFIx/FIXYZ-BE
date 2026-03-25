@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
@@ -136,6 +137,28 @@ class CorebankSimulatorDrivenResilienceIntegrationTest {
   @Test
   @Tag("epic10-acceptance")
   void e10_005ShouldDriveSubmitBreakerTransitionsFromCanonicalChaosRulesApi() throws Exception {
+    driveSubmitBreakerOpenViaTimeoutRule();
+    assertCircuitOpenRejectsNextCall();
+    clearRulesAndAssertRecovery();
+  }
+
+  @Test
+  @Tag("epic10-resilience")
+  @DisplayName("[E10-RES-001] repeated simulator timeouts should open the submit breaker")
+  void e10Res001ShouldOpenSubmitBreakerAfterRepeatedSimulatorTimeouts() throws Exception {
+    driveSubmitBreakerOpenViaTimeoutRule();
+    assertCircuitOpenRejectsNextCall();
+  }
+
+  @Test
+  @Tag("epic10-resilience")
+  @DisplayName("[E10-RES-002] clearing simulator chaos rules should close the submit breaker after recovery")
+  void e10Res002ShouldCloseSubmitBreakerAfterRecoveryProbeSucceeds() throws Exception {
+    driveSubmitBreakerOpenViaTimeoutRule();
+    clearRulesAndAssertRecovery();
+  }
+
+  private void driveSubmitBreakerOpenViaTimeoutRule() throws Exception {
     EXTERNAL_SERVICES.applyTimeoutRule();
 
     assertThat(EXTERNAL_SERVICES.listActiveRuleCount()).isEqualTo(1);
@@ -147,7 +170,9 @@ class CorebankSimulatorDrivenResilienceIntegrationTest {
 
     assertCircuitState("OPEN");
     assertThat(EXTERNAL_SERVICES.submitRequestCount()).isEqualTo(3);
+  }
 
+  private void assertCircuitOpenRejectsNextCall() throws Exception {
     mockMvc.perform(post("/internal/v1/orders")
             .header(CommonHeaders.X_INTERNAL_SECRET, INTERNAL_SECRET)
             .header(CommonHeaders.X_CORRELATION_ID, "trace-sim-resilience-open")
@@ -163,7 +188,9 @@ class CorebankSimulatorDrivenResilienceIntegrationTest {
         .andExpect(jsonPath("$.userMessageKey").value("error.fep.unavailable"));
 
     assertThat(EXTERNAL_SERVICES.submitRequestCount()).isEqualTo(3);
+  }
 
+  private void clearRulesAndAssertRecovery() throws Exception {
     assertThat(EXTERNAL_SERVICES.clearRules()).isEqualTo(1);
     assertThat(EXTERNAL_SERVICES.listActiveRuleCount()).isZero();
     assertThat(EXTERNAL_SERVICES.resolveChaosAction()).isEqualTo("NONE");

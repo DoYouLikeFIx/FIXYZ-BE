@@ -159,6 +159,25 @@ tasks.register('epic10PerformanceTests') {
   )
 }
 
+tasks.register('epic10ResilienceTests', Test) {
+  description = 'Runs Story 10.3 canonical resilience drill scenarios owned by channel-service.'
+  group = 'verification'
+  useJUnitPlatform {
+    includeTags 'epic10-resilience'
+  }
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  ignoreFailures = true
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10ResilienceTests')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10ResilienceTests')
+  outputs.upToDateWhen { false }
+  doFirst {
+    delete(reports.junitXml.outputLocation.get().asFile)
+    delete(reports.html.outputLocation.get().asFile)
+  }
+}
+
 tasks.register('executeLatencySmokeTest', Test) {
   description = 'Runs Story 11.9 execute latency smoke coverage with evidence export.'
   group = 'verification'

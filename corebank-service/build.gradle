@@ -269,6 +269,27 @@ tasks.register('epic10ResilienceAcceptanceTests', Test) {
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10ResilienceAcceptanceTests')
 }
 
+tasks.register('epic10ResilienceDrills', Test) {
+  description = 'Runs Story 10.3 canonical resilience drill scenarios owned by corebank-service.'
+  group = 'verification'
+  testClassesDirs = sourceSets.resilienceScenario.output.classesDirs
+  classpath = sourceSets.resilienceScenario.runtimeClasspath
+  shouldRunAfter tasks.named('resilienceScenarioTest')
+  useJUnitPlatform {
+    includeTags 'epic10-resilience'
+  }
+  maxParallelForks = 1
+  ignoreFailures = true
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10ResilienceDrills')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10ResilienceDrills')
+  outputs.upToDateWhen { false }
+  doFirst {
+    delete(reports.junitXml.outputLocation.get().asFile)
+    delete(reports.html.outputLocation.get().asFile)
+  }
+}
+
 tasks.named('check') {
   dependsOn tasks.named('resilienceScenarioTest')
 }
