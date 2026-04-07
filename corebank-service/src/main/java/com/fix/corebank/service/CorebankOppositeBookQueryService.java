@@ -63,12 +63,13 @@ public class CorebankOppositeBookQueryService {
       BigDecimal orderQty,
       BigDecimal limitPrice
   ) {
-    if (!optimizedBookSelectionEnabled) {
-      return lockExecutionCandidates(symbol, aggressorSide);
-    }
     String normalizedAggressorSide = normalizeSide(aggressorSide);
     String normalizedOrderType = normalizeOrderType(orderType);
     BigDecimal remainingQty = normalizePositive(orderQty, "orderQty is required");
+    BigDecimal normalizedLimitPrice = normalizeLimitPriceIfRequired(normalizedOrderType, limitPrice);
+    if (!optimizedBookSelectionEnabled) {
+      return lockExecutionCandidates(symbol, normalizedAggressorSide);
+    }
     String oppositeSide = resolveOppositeSide(normalizedAggressorSide);
     Cursor cursor = null;
     List<Order> lockedCandidates = new ArrayList<>();
@@ -88,7 +89,7 @@ public class CorebankOppositeBookQueryService {
       }
 
       lockedCandidates.addAll(chunk);
-      if (shouldStopSelection(chunk, normalizedAggressorSide, normalizedOrderType, limitPrice, remainingQty)) {
+      if (shouldStopSelection(chunk, normalizedAggressorSide, normalizedOrderType, normalizedLimitPrice, remainingQty)) {
         break;
       }
       Order lastOrder = chunk.get(chunk.size() - 1);
@@ -199,6 +200,13 @@ public class CorebankOppositeBookQueryService {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "orderType must be LIMIT or MARKET");
     }
     return normalized;
+  }
+
+  private BigDecimal normalizeLimitPriceIfRequired(String orderType, BigDecimal limitPrice) {
+    if ("LIMIT".equals(orderType)) {
+      return normalizePositive(limitPrice, "limitPrice is required for LIMIT orders");
+    }
+    return null;
   }
 
   private BigDecimal normalizePositive(BigDecimal value, String message) {

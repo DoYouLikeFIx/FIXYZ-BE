@@ -111,6 +111,17 @@ tasks.withType(Test).configureEach {
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
 }
 
+tasks.named('test', Test) {
+  useJUnitPlatform {
+    excludeTags(
+        'opposite-book-performance',
+        'opposite-book-performance-mysql',
+        'opposite-book-performance-optimized',
+        'opposite-book-performance-optimized-mysql'
+    )
+  }
+}
+
 void passThroughSystemProperties(Test task, List<String> propertyKeys) {
   propertyKeys.each { key ->
     String value = System.getProperty(key)

@@ -80,9 +80,6 @@ public class CorebankOrderPersistenceService {
   @Value("${corebank.order.limit-window-zone:UTC}")
   private String limitWindowZone = "UTC";
 
-  @Value("${corebank.order.optimized-book-selection-enabled:false}")
-  private boolean optimizedBookSelectionEnabled;
-
   @Transactional(readOnly = true)
   public Optional<OrderSnapshot> findOrder(String clOrdId) {
     return orderRepository.findByClOrdId(clOrdId).map(OrderSnapshot::from);
@@ -152,17 +149,13 @@ public class CorebankOrderPersistenceService {
       String side,
       String orderType
   ) {
-    if (optimizedBookSelectionEnabled) {
-      return Optional.ofNullable(oppositeBookQueryService.lockExecutionCandidatesForSubmission(
-              command.getSymbol(),
-              side,
-              orderType,
-              command.getQuantity(),
-              command.getPrice()
-          ))
-          .orElse(List.of());
-    }
-    return Optional.ofNullable(oppositeBookQueryService.lockExecutionCandidates(command.getSymbol(), side))
+    return Optional.ofNullable(oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+            command.getSymbol(),
+            side,
+            orderType,
+            command.getQuantity(),
+            command.getPrice()
+        ))
         .orElse(List.of());
   }
 

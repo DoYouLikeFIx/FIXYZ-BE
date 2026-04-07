@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -395,6 +396,26 @@ class CorebankOppositeBookQueryServiceTest {
             "chunk-market-multi-14",
             "chunk-market-multi-15"
         );
+  }
+
+  @Test
+  void shouldValidateLimitInputsEvenWhenOptimizedSelectionIsDisabled() {
+    ReflectionTestUtils.setField(oppositeBookQueryService, "optimizedBookSelectionEnabled", false);
+    try {
+      assertThatThrownBy(() -> oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+          "SWEEP-LIMIT-VALIDATION",
+          "BUY",
+          "LIMIT",
+          new BigDecimal("1.0000"),
+          null
+      ))
+          .isInstanceOfSatisfying(BusinessException.class, ex -> {
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("limitPrice is required for LIMIT orders");
+          });
+    } finally {
+      ReflectionTestUtils.setField(oppositeBookQueryService, "optimizedBookSelectionEnabled", true);
+    }
   }
 
   private Order persistRestingOrder(
