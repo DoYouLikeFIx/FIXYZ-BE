@@ -26,7 +26,9 @@ import org.springframework.test.context.TestPropertySource;
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect"
+    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+    "corebank.order.optimized-book-selection-enabled=true",
+    "corebank.order.book-selection-batch-size=8"
 })
 class CorebankOppositeBookQueryServiceTest {
 
@@ -309,6 +311,90 @@ class CorebankOppositeBookQueryServiceTest {
         .containsExactly(best.getId(), next.getId(), tail.getId());
     assertThat(locked).extracting(Order::getStatus)
         .containsExactly("NEW", "PARTIALLY_FILLED", "NEW");
+  }
+
+  @Test
+  void shouldLockOnlyFirstChunkWhenEarlyLiquidityAlreadySatisfiesMarketOrder() {
+    Instant baseTime = Instant.parse("2026-03-01T09:00:00Z");
+    for (int index = 0; index < 100; index++) {
+      persistRestingOrder(
+          "chunk-market-sell-" + index,
+          "SWEEP-CHUNK-MARKET",
+          500L + index,
+          "SELL",
+          "NEW",
+          new BigDecimal("1.0000"),
+          new BigDecimal("70000.0000").add(BigDecimal.valueOf(index).setScale(4)),
+          baseTime.plusSeconds(index)
+      );
+    }
+
+    List<Order> locked = oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+        "SWEEP-CHUNK-MARKET",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null
+    );
+
+    assertThat(locked).hasSize(8);
+    assertThat(locked).extracting(Order::getClOrdId)
+        .containsExactly(
+            "chunk-market-sell-0",
+            "chunk-market-sell-1",
+            "chunk-market-sell-2",
+            "chunk-market-sell-3",
+            "chunk-market-sell-4",
+            "chunk-market-sell-5",
+            "chunk-market-sell-6",
+            "chunk-market-sell-7"
+        );
+  }
+
+  @Test
+  void shouldLockAdditionalChunksWhenRequestedQuantityExceedsSingleChunkCapacity() {
+    Instant baseTime = Instant.parse("2026-03-01T09:00:00Z");
+    for (int index = 0; index < 20; index++) {
+      persistRestingOrder(
+          "chunk-market-multi-" + index,
+          "SWEEP-CHUNK-MULTI",
+          700L + index,
+          "SELL",
+          "NEW",
+          new BigDecimal("1.0000"),
+          new BigDecimal("70000.0000").add(BigDecimal.valueOf(index).setScale(4)),
+          baseTime.plusSeconds(index)
+      );
+    }
+
+    List<Order> locked = oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+        "SWEEP-CHUNK-MULTI",
+        "BUY",
+        "MARKET",
+        new BigDecimal("10.0000"),
+        null
+    );
+
+    assertThat(locked).hasSize(16);
+    assertThat(locked).extracting(Order::getClOrdId)
+        .containsExactly(
+            "chunk-market-multi-0",
+            "chunk-market-multi-1",
+            "chunk-market-multi-2",
+            "chunk-market-multi-3",
+            "chunk-market-multi-4",
+            "chunk-market-multi-5",
+            "chunk-market-multi-6",
+            "chunk-market-multi-7",
+            "chunk-market-multi-8",
+            "chunk-market-multi-9",
+            "chunk-market-multi-10",
+            "chunk-market-multi-11",
+            "chunk-market-multi-12",
+            "chunk-market-multi-13",
+            "chunk-market-multi-14",
+            "chunk-market-multi-15"
+        );
   }
 
   private Order persistRestingOrder(

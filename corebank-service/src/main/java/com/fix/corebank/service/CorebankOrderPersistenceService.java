@@ -80,6 +80,9 @@ public class CorebankOrderPersistenceService {
   @Value("${corebank.order.limit-window-zone:UTC}")
   private String limitWindowZone = "UTC";
 
+  @Value("${corebank.order.optimized-book-selection-enabled:false}")
+  private boolean optimizedBookSelectionEnabled;
+
   @Transactional(readOnly = true)
   public Optional<OrderSnapshot> findOrder(String clOrdId) {
     return orderRepository.findByClOrdId(clOrdId).map(OrderSnapshot::from);
@@ -129,8 +132,7 @@ public class CorebankOrderPersistenceService {
 
     String side = normalizeSide(command.getSide());
     String orderType = normalizeOrderType(command.getOrderType());
-    List<Order> makerOrders = Optional.ofNullable(oppositeBookQueryService.lockExecutionCandidates(command.getSymbol(), side))
-        .orElse(List.of());
+    List<Order> makerOrders = lockExecutionCandidates(command, side, orderType);
     CorebankMatchingEngine.MatchResult matchResult = matchingEngine.match(
         toMatchRequest(command, side, orderType, makerOrders)
     );
@@ -143,6 +145,25 @@ public class CorebankOrderPersistenceService {
     }
 
     return prepareMatchedOrderSubmission(command, side, orderType, matchResult, makerOrders);
+  }
+
+  private List<Order> lockExecutionCandidates(
+      InternalOrderCreateCommand command,
+      String side,
+      String orderType
+  ) {
+    if (optimizedBookSelectionEnabled) {
+      return Optional.ofNullable(oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+              command.getSymbol(),
+              side,
+              orderType,
+              command.getQuantity(),
+              command.getPrice()
+          ))
+          .orElse(List.of());
+    }
+    return Optional.ofNullable(oppositeBookQueryService.lockExecutionCandidates(command.getSymbol(), side))
+        .orElse(List.of());
   }
 
   private PendingOrderSubmission prepareRestingLimitOrderSubmission(

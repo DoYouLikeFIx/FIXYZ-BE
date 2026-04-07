@@ -16,6 +16,12 @@ import org.testcontainers.utility.DockerImageName;
 public abstract class CorebankContainersIntegrationTestBase {
 
   private static final Duration CONTAINER_STARTUP_TIMEOUT = Duration.ofMinutes(3);
+  private static final String MYSQL_JDBC_PERF_OPTIONS =
+      "rewriteBatchedStatements=true"
+          + "&cachePrepStmts=true"
+          + "&prepStmtCacheSize=250"
+          + "&prepStmtCacheSqlLimit=2048"
+          + "&useServerPrepStmts=true";
 
   private static final boolean LOCAL_REUSE_ENABLED =
       Boolean.parseBoolean(System.getProperty("testcontainers.reuse", "false"))
@@ -42,12 +48,17 @@ public abstract class CorebankContainersIntegrationTestBase {
 
   @DynamicPropertySource
   static void registerDynamicProperties(DynamicPropertyRegistry registry) {
-    registry.add("spring.datasource.url", MYSQL_CONTAINER::getJdbcUrl);
+    registry.add("spring.datasource.url", () -> mysqlJdbcUrlWithPerfOptions(MYSQL_CONTAINER.getJdbcUrl()));
     registry.add("spring.datasource.username", MYSQL_CONTAINER::getUsername);
     registry.add("spring.datasource.password", MYSQL_CONTAINER::getPassword);
     registry.add("spring.datasource.driver-class-name", MYSQL_CONTAINER::getDriverClassName);
     registry.add("spring.data.redis.host", REDIS_CONTAINER::getHost);
     registry.add("spring.data.redis.port", () -> REDIS_CONTAINER.getMappedPort(6379));
+  }
+
+  private static String mysqlJdbcUrlWithPerfOptions(String jdbcUrl) {
+    String separator = jdbcUrl.contains("?") ? "&" : "?";
+    return jdbcUrl + separator + MYSQL_JDBC_PERF_OPTIONS;
   }
 
   protected WireMockServer wireMockServer() {

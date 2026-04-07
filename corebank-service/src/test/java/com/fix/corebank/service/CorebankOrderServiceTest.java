@@ -3,9 +3,12 @@ package com.fix.corebank.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -140,7 +143,7 @@ class CorebankOrderServiceTest {
     fepQuoteSnapshotClient = new StubFepQuoteSnapshotClient();
     positionLockMetrics = new PositionLockMetrics(new SimpleMeterRegistry());
     CorebankOppositeBookQueryService oppositeBookQueryService =
-        new CorebankOppositeBookQueryService(orderRepository);
+        new CorebankOppositeBookQueryService(orderRepository, 32);
     CorebankMatchingEngine matchingEngine = new CorebankMatchingEngine();
     corebankOrderPersistenceService = new CorebankOrderPersistenceService(
         accountRepository,
@@ -165,6 +168,41 @@ class CorebankOrderServiceTest {
     marketDataProperties.setQuoteSourceMode(FepQuoteSourceMode.LIVE);
     lenient().when(accountRepository.findByIdForUpdate(anyLong()))
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)));
+    lenient().when(orderRepository.lockExecutionRestingLimitOrdersForSweepChunk(
+            anyString(),
+            anyString(),
+            any(),
+            nullable(BigDecimal.class),
+            nullable(Instant.class),
+            nullable(Long.class),
+            anyInt()
+        ))
+        .thenAnswer(invocation -> {
+          List<Order> fullBook = orderRepository.lockExecutionRestingLimitOrdersForSweep(
+              invocation.getArgument(0),
+              invocation.getArgument(1),
+              invocation.getArgument(2)
+          );
+          if (fullBook == null) {
+            return null;
+          }
+          int limit = Math.max(1, invocation.getArgument(6));
+          Long cursorOrderId = invocation.getArgument(5);
+          if (cursorOrderId == null) {
+            return fullBook.stream().limit(limit).toList();
+          }
+          int nextIndex = -1;
+          for (int index = 0; index < fullBook.size(); index++) {
+            if (cursorOrderId.equals(fullBook.get(index).getId())) {
+              nextIndex = index + 1;
+              break;
+            }
+          }
+          if (nextIndex < 0 || nextIndex >= fullBook.size()) {
+            return List.of();
+          }
+          return fullBook.subList(nextIndex, Math.min(fullBook.size(), nextIndex + limit));
+        });
     lenient().when(accountRepository.existsById(anyLong()))
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)).isPresent());
     lenient().when(executionRepository.findAllByAccountIdAndSymbolInOrderBySymbolAscExecutedAtAscIdAsc(anyLong(), any()))

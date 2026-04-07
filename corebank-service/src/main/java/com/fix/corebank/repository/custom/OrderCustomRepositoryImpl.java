@@ -8,6 +8,7 @@ import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
@@ -48,6 +49,37 @@ public class OrderCustomRepositoryImpl implements OrderCustomRepository {
     return findRestingLimitOrdersForSweep(symbol, side, statuses, true);
   }
 
+  @Override
+  public List<Order> lockExecutionRestingLimitOrdersForSweepChunk(
+      String symbol,
+      String side,
+      List<String> statuses,
+      BigDecimal cursorPrice,
+      Instant cursorCreatedAt,
+      Long cursorId,
+      int limit
+  ) {
+    int sanitizedLimit = Math.max(1, limit);
+    JPAQuery<Order> query = queryFactory.selectFrom(ORDER)
+        .where(
+            ORDER.symbol.eq(symbol),
+            ORDER.side.eq(side),
+            ORDER.orderType.eq("LIMIT"),
+            ORDER.orderPrice.isNotNull(),
+            ORDER.status.in(statuses),
+            remainingQuantityPositive(),
+            afterCursor(side, cursorPrice, cursorCreatedAt, cursorId)
+        )
+        .orderBy(orderSpecifiersFor(side))
+        .limit(sanitizedLimit);
+
+    query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
+    if (bookLockTimeoutMillis >= 0) {
+      query.setHint(JAKARTA_LOCK_TIMEOUT_HINT, bookLockTimeoutMillis);
+    }
+    return query.fetch();
+  }
+
   private List<Order> findRestingLimitOrdersForSweep(
       String symbol,
       String side,
@@ -73,6 +105,35 @@ public class OrderCustomRepositoryImpl implements OrderCustomRepository {
     }
 
     return query.fetch();
+  }
+
+  private BooleanExpression afterCursor(
+      String side,
+      BigDecimal cursorPrice,
+      Instant cursorCreatedAt,
+      Long cursorId
+  ) {
+    if (cursorPrice == null || cursorCreatedAt == null || cursorId == null) {
+      return null;
+    }
+
+    BooleanExpression samePriceLaterTimestamp = ORDER.orderPrice.eq(cursorPrice)
+        .and(ORDER.createdAt.gt(cursorCreatedAt));
+    BooleanExpression samePriceSameTimestampLaterId = ORDER.orderPrice.eq(cursorPrice)
+        .and(ORDER.createdAt.eq(cursorCreatedAt))
+        .and(ORDER.id.gt(cursorId));
+
+    if ("SELL".equals(side)) {
+      return ORDER.orderPrice.gt(cursorPrice)
+          .or(samePriceLaterTimestamp)
+          .or(samePriceSameTimestampLaterId);
+    }
+    if ("BUY".equals(side)) {
+      return ORDER.orderPrice.lt(cursorPrice)
+          .or(samePriceLaterTimestamp)
+          .or(samePriceSameTimestampLaterId);
+    }
+    throw new IllegalArgumentException("side must be BUY or SELL");
   }
 
   private BooleanExpression remainingQuantityPositive() {
