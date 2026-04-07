@@ -181,6 +181,7 @@ tasks.register('oppositeBookBaselinePerf', Test) {
   classpath = sourceSets.test.runtimeClasspath
   shouldRunAfter tasks.named('test')
   maxParallelForks = 1
+  outputs.upToDateWhen { false }
   reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/oppositeBookBaselinePerf')
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/oppositeBookBaselinePerf')
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
@@ -198,6 +199,7 @@ tasks.register('oppositeBookBaselinePerfMysql', Test) { Test testTask ->
   classpath = sourceSets.test.runtimeClasspath
   shouldRunAfter tasks.named('test')
   maxParallelForks = 1
+  outputs.upToDateWhen { false }
   maxHeapSize = '4g'
   reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/oppositeBookBaselinePerfMysql')
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/oppositeBookBaselinePerfMysql')
@@ -222,6 +224,7 @@ tasks.register('oppositeBookOptimizedPerf', Test) {
   classpath = sourceSets.test.runtimeClasspath
   shouldRunAfter tasks.named('test')
   maxParallelForks = 1
+  outputs.upToDateWhen { false }
   reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/oppositeBookOptimizedPerf')
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/oppositeBookOptimizedPerf')
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
@@ -239,6 +242,7 @@ tasks.register('oppositeBookOptimizedPerfMysql', Test) { Test testTask ->
   classpath = sourceSets.test.runtimeClasspath
   shouldRunAfter tasks.named('test')
   maxParallelForks = 1
+  outputs.upToDateWhen { false }
   maxHeapSize = '2g'
   reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/oppositeBookOptimizedPerfMysql')
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/oppositeBookOptimizedPerfMysql')

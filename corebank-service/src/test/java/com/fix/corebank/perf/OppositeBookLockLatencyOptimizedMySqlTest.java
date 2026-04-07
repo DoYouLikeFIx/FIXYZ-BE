@@ -185,7 +185,10 @@ class OppositeBookLockLatencyOptimizedMySqlTest extends CorebankContainersIntegr
     }
 
     Path reportPath = Path.of(outputPath);
-    Files.createDirectories(reportPath.getParent());
+    Path parentPath = reportPath.getParent();
+    if (parentPath != null) {
+      Files.createDirectories(parentPath);
+    }
 
     Map<String, Object> report = new LinkedHashMap<>();
     report.put("scenarioId", SCENARIO_ID);
