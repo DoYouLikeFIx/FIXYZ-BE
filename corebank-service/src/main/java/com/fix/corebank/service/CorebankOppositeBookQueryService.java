@@ -117,11 +117,7 @@ public class CorebankOppositeBookQueryService {
   private BigDecimal resolveRemainingQuantity(Order order) {
     BigDecimal remainingQuantity = order.getLeavesQty();
     if (remainingQuantity == null) {
-      BigDecimal executedQuantity = order.getExecutedQty();
-      if (executedQuantity == null) {
-        executedQuantity = ZERO;
-      }
-      remainingQuantity = order.getOrderQty().subtract(executedQuantity);
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "order leavesQty must be present");
     }
     BigDecimal normalized = remainingQuantity.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     return normalized.signum() < 0 ? ZERO : normalized;

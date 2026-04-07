@@ -232,7 +232,7 @@ class CorebankOppositeBookQueryServiceTest {
   }
 
   @Test
-  void shouldExcludeExhaustedLegacyOrdersWhenLeavesQuantityIsMissing() {
+  void shouldExcludeExhaustedOrdersWhenLeavesQuantityIsZero() {
     Order active = persistRestingOrder(
         "market-sell-active",
         "SWEEP-LEGACY",
@@ -243,15 +243,17 @@ class CorebankOppositeBookQueryServiceTest {
         new BigDecimal("70000.0000"),
         Instant.parse("2026-03-01T09:00:00Z")
     );
-    persistExecutedWithoutLeavesQuantity(
+    Order exhausted = persistRestingOrder(
         "market-sell-exhausted",
         "SWEEP-LEGACY",
         302L,
         "SELL",
+        "PARTIALLY_FILLED",
         new BigDecimal("3.0000"),
         new BigDecimal("69950.0000"),
         Instant.parse("2026-03-01T08:59:00Z")
     );
+    persistRemainingQuantity(exhausted.getId(), BigDecimal.ZERO);
 
     List<CorebankOppositeBookQueryService.OppositeBookEntry> result =
         oppositeBookQueryService.findPreviewCandidates("SWEEP-LEGACY", "BUY");
@@ -452,29 +454,6 @@ class CorebankOppositeBookQueryServiceTest {
         "PARTIALLY_FILLED",
         executedQty,
         leavesQty,
-        price,
-        createdAt
-    );
-    Order saved = orderRepository.saveAndFlush(order);
-    updateOrderTimestamps(saved.getId(), createdAt);
-    return orderRepository.findById(saved.getId()).orElseThrow();
-  }
-
-  private Order persistExecutedWithoutLeavesQuantity(
-      String clOrdId,
-      String symbol,
-      Long accountId,
-      String side,
-      BigDecimal quantity,
-      BigDecimal price,
-      Instant createdAt
-  ) {
-    Order order = Order.accepted(accountId, clOrdId, symbol, side, "LIMIT", quantity, price, null, null, null, null);
-    order.updateStatus("PARTIALLY_FILLED");
-    order.updateExecutionSummary(
-        "PARTIALLY_FILLED",
-        quantity,
-        null,
         price,
         createdAt
     );
