@@ -323,6 +323,25 @@ class CoreFlywayMigrationTest {
   }
 
   @Test
+  void shouldCreateOrderbookLookupIndexes() {
+    Integer sellLookupIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'ORDERS' "
+            + "AND INDEX_NAME = 'IDX_ORDERS_BOOK_LOOKUP_SELL'",
+        Integer.class
+    );
+    Integer buyLookupIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'ORDERS' "
+            + "AND INDEX_NAME = 'IDX_ORDERS_BOOK_LOOKUP_BUY'",
+        Integer.class
+    );
+
+    assertThat(sellLookupIndexCount).isEqualTo(1);
+    assertThat(buyLookupIndexCount).isEqualTo(1);
+  }
+
+  @Test
   void shouldCreateLedgerIntegrityTrackingTables() {
     Integer runTableCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'LEDGER_INTEGRITY_RUNS'",
