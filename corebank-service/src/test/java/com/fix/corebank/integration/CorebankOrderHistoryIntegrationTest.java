@@ -167,8 +167,9 @@ class CorebankOrderHistoryIntegrationTest {
             INSERT INTO orders (
               account_id, cl_ord_id, symbol, side, order_qty, order_price,
               status, requested_at, created_at, updated_at, version,
-              external_sync_status, fep_reference_id, failure_reason
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL)
+              external_sync_status, fep_reference_id, failure_reason,
+              executed_qty, leaves_qty
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?, ?)
             """,
         accountId,
         clOrdId,
@@ -179,7 +180,9 @@ class CorebankOrderHistoryIntegrationTest {
         status,
         timestamp,
         timestamp,
-        timestamp
+        timestamp,
+        BigDecimal.ZERO.setScale(4),
+        qty.setScale(4)
     );
   }
 }

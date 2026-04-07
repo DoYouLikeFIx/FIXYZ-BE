@@ -139,12 +139,24 @@ class CoreFlywayMigrationTest {
             + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'EXECUTED_AT'",
         Integer.class
     );
+    String executedQtyNullable = jdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'EXECUTED_QTY'",
+        String.class
+    );
+    String leavesQtyNullable = jdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'LEAVES_QTY'",
+        String.class
+    );
 
     assertThat(executionResultLength).isEqualTo(32);
     assertThat(executedQtyScale).isEqualTo(4);
     assertThat(leavesQtyScale).isEqualTo(4);
     assertThat(executedPriceScale).isEqualTo(4);
     assertThat(executedAtExists).isEqualTo(1);
+    assertThat(executedQtyNullable).isEqualTo("NO");
+    assertThat(leavesQtyNullable).isEqualTo("NO");
   }
 
   @Test
@@ -320,6 +332,13 @@ class CoreFlywayMigrationTest {
         Double.class,
         9003L
     )).isEqualTo(7.0d);
+
+    assertThatThrownBy(() -> migrationJdbcTemplate.update(
+        "INSERT INTO orders "
+            + "(id, account_id, cl_ord_id, symbol, side, order_qty, order_price, order_type, status, requested_at, created_at, updated_at, version, executed_qty, leaves_qty) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)",
+        9004L, 104L, "legacy-should-fail", "005930", "BUY", 1.0000, 70300.0000, "LIMIT", "NEW", 0L, null, null
+    )).isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test

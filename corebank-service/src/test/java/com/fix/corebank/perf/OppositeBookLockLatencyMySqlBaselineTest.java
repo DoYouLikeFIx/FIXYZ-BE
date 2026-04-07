@@ -52,8 +52,9 @@ class OppositeBookLockLatencyMySqlBaselineTest extends CorebankContainersIntegra
         updated_at,
         version,
         order_type,
+        executed_qty,
         leaves_qty
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """;
 
   @Autowired
@@ -144,6 +145,7 @@ class OppositeBookLockLatencyMySqlBaselineTest extends CorebankContainersIntegra
             seededAt,
             0L,
             "LIMIT",
+            BigDecimal.ZERO.setScale(4),
             BigDecimal.ONE.setScale(4)
         });
       }

@@ -299,8 +299,14 @@ public class Order extends BaseTimeEntity {
       Instant executedAt
   ) {
     this.executionResult = executionResult;
-    this.executedQty = executedQty;
-    this.leavesQty = leavesQty;
+    BigDecimal normalizedExecutedQty = executedQty == null
+        ? BigDecimal.ZERO.setScale(SCALE, RoundingMode.HALF_UP)
+        : normalizeNonNegative(executedQty, "executed quantity is required");
+    BigDecimal normalizedLeavesQty = leavesQty == null
+        ? defaultLeavesQty(normalizedExecutedQty)
+        : normalizeNonNegative(leavesQty, "leaves quantity is required");
+    this.executedQty = normalizedExecutedQty;
+    this.leavesQty = normalizedLeavesQty;
     this.executedPrice = executedPrice;
     this.executedAt = executedAt;
   }
@@ -355,5 +361,17 @@ public class Order extends BaseTimeEntity {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "execution summary values cannot be negative");
     }
     return normalized;
+  }
+
+  private BigDecimal defaultLeavesQty(BigDecimal normalizedExecutedQty) {
+    BigDecimal normalizedOrderQty = orderQty == null
+        ? BigDecimal.ZERO.setScale(SCALE, RoundingMode.HALF_UP)
+        : orderQty.setScale(SCALE, RoundingMode.HALF_UP);
+    BigDecimal normalizedLeavesQty = normalizedOrderQty.subtract(normalizedExecutedQty)
+        .setScale(SCALE, RoundingMode.HALF_UP);
+    if (normalizedLeavesQty.signum() < 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "execution summary values cannot be negative");
+    }
+    return normalizedLeavesQty;
   }
 }
