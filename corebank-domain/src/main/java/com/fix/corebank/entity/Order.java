@@ -184,8 +184,8 @@ public class Order extends BaseTimeEntity {
         null,
         null,
         null,
-        null,
-        null,
+        BigDecimal.ZERO.setScale(SCALE, RoundingMode.HALF_UP),
+        orderQty == null ? null : orderQty.setScale(SCALE, RoundingMode.HALF_UP),
         null,
         null,
         Instant.now()

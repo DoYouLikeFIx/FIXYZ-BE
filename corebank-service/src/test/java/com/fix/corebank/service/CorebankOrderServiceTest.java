@@ -1302,8 +1302,8 @@ class CorebankOrderServiceTest {
     assertThat(savedOrderRef[0].getExecutionResult()).isNull();
     assertThat(position.getQty()).isEqualByComparingTo("0.0000");
     assertThat(makerOrder.getStatus()).isEqualTo("NEW");
-    assertThat(makerOrder.getExecutedQty()).isNull();
-    assertThat(makerOrder.getLeavesQty()).isNull();
+    assertThat(makerOrder.getExecutedQty()).isEqualByComparingTo("0.0000");
+    assertThat(makerOrder.getLeavesQty()).isEqualByComparingTo("2.0000");
     assertThat(fepClient.lastSubmitPayload()).isNotNull();
     assertThat(fepClient.lastSubmitPayload().orderType()).isEqualTo(com.fix.common.fep.FepOrderType.LIMIT);
     assertThat(fepClient.lastSubmitPayload().price()).isEqualTo(70200L);

@@ -23,6 +23,8 @@ class OrderTest {
     );
 
     assertThat(order.getStatus()).isEqualTo("NEW");
+    assertThat(order.getExecutedQty()).isEqualByComparingTo("0.0000");
+    assertThat(order.getLeavesQty()).isEqualByComparingTo("2.0000");
   }
 
   @Test
