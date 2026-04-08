@@ -39,7 +39,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = {
     "spring.jpa.hibernate.ddl-auto=none",
-    "corebank.order.position-lock-timeout-millis=-1"
+    "corebank.order.position-lock-timeout-millis=-1",
+    "corebank.order.book-lock-timeout-millis=-1",
+    "corebank.order.preparation-retry.max-attempts=5",
+    "corebank.order.preparation-retry.backoff-ms=10"
 })
 class CorebankOrderIdempotencyIntegrationTest extends CorebankContainersIntegrationTestBase {
 

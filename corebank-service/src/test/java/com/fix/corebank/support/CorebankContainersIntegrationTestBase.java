@@ -54,9 +54,6 @@ public abstract class CorebankContainersIntegrationTestBase {
     registry.add("spring.datasource.driver-class-name", MYSQL_CONTAINER::getDriverClassName);
     registry.add("spring.data.redis.host", REDIS_CONTAINER::getHost);
     registry.add("spring.data.redis.port", () -> REDIS_CONTAINER.getMappedPort(6379));
-    registry.add("corebank.order.book-lock-timeout-millis", () -> "-1");
-    registry.add("corebank.order.preparation-retry.max-attempts", () -> "5");
-    registry.add("corebank.order.preparation-retry.backoff-ms", () -> "10");
   }
 
   private static String mysqlJdbcUrlWithPerfOptions(String jdbcUrl) {

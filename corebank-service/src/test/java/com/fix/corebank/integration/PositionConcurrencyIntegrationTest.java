@@ -49,7 +49,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 @SpringBootTest(properties = {
     "spring.jpa.hibernate.ddl-auto=none",
     "internal.secret=test-secret",
-    "corebank.order.position-lock-timeout-millis=-1"
+    "corebank.order.position-lock-timeout-millis=-1",
+    "corebank.order.book-lock-timeout-millis=-1",
+    "corebank.order.preparation-retry.max-attempts=5",
+    "corebank.order.preparation-retry.backoff-ms=10"
 })
 class PositionConcurrencyIntegrationTest extends CorebankContainersIntegrationTestBase {
 
