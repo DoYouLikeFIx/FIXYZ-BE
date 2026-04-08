@@ -51,8 +51,8 @@ class CoreFlywayExecutionSequenceUpgradeTest {
   private void insertLegacyOrder(Connection connection, long orderId, String clOrdId) throws Exception {
     try (PreparedStatement statement = connection.prepareStatement(
         "INSERT INTO orders "
-            + "(id, account_id, cl_ord_id, symbol, side, order_qty, order_type, order_price, status, requested_at, created_at, updated_at, version) "
-            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TIMESTAMP '2026-03-01 09:59:00', TIMESTAMP '2026-03-01 09:59:00', TIMESTAMP '2026-03-01 09:59:00', ?)"
+            + "(id, account_id, cl_ord_id, symbol, side, order_qty, order_type, order_price, status, requested_at, created_at, updated_at, version, executed_qty, leaves_qty) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, TIMESTAMP '2026-03-01 09:59:00', TIMESTAMP '2026-03-01 09:59:00', TIMESTAMP '2026-03-01 09:59:00', ?, ?, ?)"
     )) {
       statement.setLong(1, orderId);
       statement.setLong(2, 1L);
@@ -64,6 +64,8 @@ class CoreFlywayExecutionSequenceUpgradeTest {
       statement.setBigDecimal(8, new java.math.BigDecimal("70000.0000"));
       statement.setString(9, "PARTIALLY_FILLED");
       statement.setLong(10, 0L);
+      statement.setBigDecimal(11, new java.math.BigDecimal("0.0000"));
+      statement.setBigDecimal(12, new java.math.BigDecimal("3.0000"));
       statement.executeUpdate();
     }
   }

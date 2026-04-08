@@ -401,6 +401,38 @@ class CorebankOppositeBookQueryServiceTest {
   }
 
   @Test
+  void shouldExcludeLimitNonCrossingTailFromLockedCandidates() {
+    Instant baseTime = Instant.parse("2026-03-01T09:00:00Z");
+    for (int index = 0; index < 8; index++) {
+      persistRestingOrder(
+          "chunk-limit-sell-" + index,
+          "SWEEP-CHUNK-LIMIT",
+          900L + index,
+          "SELL",
+          "NEW",
+          new BigDecimal("1.0000"),
+          new BigDecimal("70000.0000").add(BigDecimal.valueOf(index).setScale(4)),
+          baseTime.plusSeconds(index)
+      );
+    }
+
+    List<Order> locked = oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+        "SWEEP-CHUNK-LIMIT",
+        "BUY",
+        "LIMIT",
+        new BigDecimal("10.0000"),
+        new BigDecimal("70002.0000")
+    );
+
+    assertThat(locked).extracting(Order::getClOrdId)
+        .containsExactly(
+            "chunk-limit-sell-0",
+            "chunk-limit-sell-1",
+            "chunk-limit-sell-2"
+        );
+  }
+
+  @Test
   void shouldValidateLimitInputsEvenWhenOptimizedSelectionIsDisabled() {
     ReflectionTestUtils.setField(oppositeBookQueryService, "optimizedBookSelectionEnabled", false);
     try {

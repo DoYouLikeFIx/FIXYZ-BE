@@ -88,13 +88,24 @@ public class CorebankOppositeBookQueryService {
         break;
       }
 
-      lockedCandidates.addAll(chunk);
-      if (shouldStopSelection(chunk, normalizedAggressorSide, normalizedOrderType, normalizedLimitPrice, remainingQty)) {
+      ChunkSelection selection = selectChunkForSubmission(
+          chunk,
+          normalizedAggressorSide,
+          normalizedOrderType,
+          normalizedLimitPrice,
+          remainingQty
+      );
+      if (selection.selected().isEmpty()) {
         break;
       }
-      Order lastOrder = chunk.get(chunk.size() - 1);
+
+      lockedCandidates.addAll(selection.selected());
+      if (selection.shouldStop()) {
+        break;
+      }
+      Order lastOrder = selection.selected().get(selection.selected().size() - 1);
       cursor = new Cursor(lastOrder.getOrderPrice(), lastOrder.getCreatedAt(), lastOrder.getId());
-      remainingQty = remainingAfterChunk(chunk, remainingQty);
+      remainingQty = selection.remainingQty();
     }
 
     return lockedCandidates;
@@ -123,7 +134,7 @@ public class CorebankOppositeBookQueryService {
     return normalized.signum() < 0 ? ZERO : normalized;
   }
 
-  private boolean shouldStopSelection(
+  private ChunkSelection selectChunkForSubmission(
       List<Order> chunk,
       String aggressorSide,
       String orderType,
@@ -131,28 +142,18 @@ public class CorebankOppositeBookQueryService {
       BigDecimal remainingQty
   ) {
     BigDecimal batchRemainingQty = remainingQty;
+    List<Order> selected = new ArrayList<>();
     for (Order order : chunk) {
       OppositeBookEntry entry = toEntry(order);
       if ("LIMIT".equals(orderType) && !priceCrosses(aggressorSide, limitPrice, entry.limitPrice())) {
-        return true;
+        return new ChunkSelection(selected, batchRemainingQty, true);
       }
-      batchRemainingQty = subtractRemaining(batchRemainingQty, entry.remainingQty());
-      if (batchRemainingQty.signum() == 0) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private BigDecimal remainingAfterChunk(List<Order> chunk, BigDecimal remainingQty) {
-    BigDecimal nextRemaining = remainingQty;
-    for (Order order : chunk) {
-      nextRemaining = subtractRemaining(nextRemaining, resolveRemainingQuantity(order));
-      if (nextRemaining.signum() == 0) {
-        return ZERO;
+      selected.add(order);
+      if (batchRemainingQty.signum() > 0) {
+        batchRemainingQty = subtractRemaining(batchRemainingQty, entry.remainingQty());
       }
     }
-    return nextRemaining;
+    return new ChunkSelection(selected, batchRemainingQty, batchRemainingQty.signum() == 0);
   }
 
   private BigDecimal subtractRemaining(BigDecimal currentRemaining, BigDecimal candidateRemainingQty) {
@@ -233,6 +234,13 @@ public class CorebankOppositeBookQueryService {
       BigDecimal price,
       Instant createdAt,
       Long orderId
+  ) {
+  }
+
+  private record ChunkSelection(
+      List<Order> selected,
+      BigDecimal remainingQty,
+      boolean shouldStop
   ) {
   }
 }

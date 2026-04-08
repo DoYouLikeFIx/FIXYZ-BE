@@ -101,7 +101,7 @@ class OppositeBookLockLatencyBaselineTest {
 
       assertThat(depthResults).hasSize(parseBookDepths().size());
       assertThat(depthResults)
-          .allSatisfy(result -> assertThat(result.retrievedRows()).isGreaterThanOrEqualTo(result.representativeRequiredRows()));
+          .allSatisfy(result -> assertThat(result.retrievedRows()).isEqualTo(result.bookDepth()));
     } catch (Throwable throwable) {
       failure = throwable;
       throw throwable;

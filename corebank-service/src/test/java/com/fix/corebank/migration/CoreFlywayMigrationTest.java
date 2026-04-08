@@ -326,7 +326,7 @@ class CoreFlywayMigrationTest {
         "SELECT executed_qty FROM orders WHERE id = ?",
         Double.class,
         9003L
-    )).isEqualTo(0.0d);
+    )).isEqualTo(3.0d);
     assertThat(migrationJdbcTemplate.queryForObject(
         "SELECT leaves_qty FROM orders WHERE id = ?",
         Double.class,

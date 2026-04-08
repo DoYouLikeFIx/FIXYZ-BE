@@ -184,24 +184,38 @@ class CorebankOrderServiceTest {
               invocation.getArgument(2)
           );
           if (fullBook == null) {
-            return null;
-          }
-          int limit = Math.max(1, invocation.getArgument(6));
-          Long cursorOrderId = invocation.getArgument(5);
-          if (cursorOrderId == null) {
-            return fullBook.stream().limit(limit).toList();
-          }
-          int nextIndex = -1;
-          for (int index = 0; index < fullBook.size(); index++) {
-            if (cursorOrderId.equals(fullBook.get(index).getId())) {
-              nextIndex = index + 1;
-              break;
-            }
-          }
-          if (nextIndex < 0 || nextIndex >= fullBook.size()) {
             return List.of();
           }
-          return fullBook.subList(nextIndex, Math.min(fullBook.size(), nextIndex + limit));
+          int limit = Math.max(1, invocation.getArgument(6));
+          String side = invocation.getArgument(1);
+          BigDecimal cursorPrice = invocation.getArgument(3);
+          Instant cursorCreatedAt = invocation.getArgument(4);
+          Long cursorOrderId = invocation.getArgument(5);
+
+          int startIndex = 0;
+          if (cursorPrice != null && cursorCreatedAt != null && cursorOrderId != null) {
+            startIndex = fullBook.size();
+            for (int index = 0; index < fullBook.size(); index++) {
+              Order candidate = fullBook.get(index);
+              int priceCompare = candidate.getOrderPrice().compareTo(cursorPrice);
+              boolean samePrice = priceCompare == 0;
+              boolean afterTimestamp = samePrice && candidate.getCreatedAt().isAfter(cursorCreatedAt);
+              boolean sameTimestamp = samePrice && candidate.getCreatedAt().equals(cursorCreatedAt);
+              boolean afterId = sameTimestamp && candidate.getId().compareTo(cursorOrderId) > 0;
+              boolean afterCursor = "SELL".equals(side)
+                  ? priceCompare > 0 || afterTimestamp || afterId
+                  : priceCompare < 0 || afterTimestamp || afterId;
+              if (afterCursor) {
+                startIndex = index;
+                break;
+              }
+            }
+          }
+
+          if (startIndex >= fullBook.size()) {
+            return List.of();
+          }
+          return fullBook.subList(startIndex, Math.min(fullBook.size(), startIndex + limit));
         });
     lenient().when(accountRepository.existsById(anyLong()))
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)).isPresent());

@@ -79,4 +79,18 @@ class OrderTest {
         .isInstanceOf(BusinessException.class)
         .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST));
   }
+
+  @Test
+  void shouldRejectAcceptedOrderWhenOrderQuantityIsMissing() {
+    assertThatThrownBy(() -> Order.accepted(
+        1L,
+        "123e4567-e89b-42d3-a456-426614174299",
+        "005930",
+        "BUY",
+        null,
+        new BigDecimal("70100.0000")
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST));
+  }
 }
