@@ -3,7 +3,7 @@ plugins {
 }
 
 def querydslVersion = '5.1.0'
-def swaggerVersion = '2.2.28'
+def swaggerVersion = '2.2.47'
 def querydslGeneratedDir = "$buildDir/generated/sources/annotationProcessor/java/main"
 
 dependencies {
