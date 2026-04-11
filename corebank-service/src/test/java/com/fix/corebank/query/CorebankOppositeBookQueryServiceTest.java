@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -26,7 +27,9 @@ import org.springframework.test.context.TestPropertySource;
     "spring.datasource.driver-class-name=org.h2.Driver",
     "spring.datasource.username=sa",
     "spring.datasource.password=",
-    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect"
+    "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+    "corebank.order.optimized-book-selection-enabled=true",
+    "corebank.order.book-selection-batch-size=8"
 })
 class CorebankOppositeBookQueryServiceTest {
 
@@ -229,7 +232,7 @@ class CorebankOppositeBookQueryServiceTest {
   }
 
   @Test
-  void shouldExcludeExhaustedLegacyOrdersWhenLeavesQuantityIsMissing() {
+  void shouldExcludeExhaustedOrdersWhenLeavesQuantityIsZero() {
     Order active = persistRestingOrder(
         "market-sell-active",
         "SWEEP-LEGACY",
@@ -240,15 +243,17 @@ class CorebankOppositeBookQueryServiceTest {
         new BigDecimal("70000.0000"),
         Instant.parse("2026-03-01T09:00:00Z")
     );
-    persistExecutedWithoutLeavesQuantity(
+    Order exhausted = persistRestingOrder(
         "market-sell-exhausted",
         "SWEEP-LEGACY",
         302L,
         "SELL",
+        "PARTIALLY_FILLED",
         new BigDecimal("3.0000"),
         new BigDecimal("69950.0000"),
         Instant.parse("2026-03-01T08:59:00Z")
     );
+    persistRemainingQuantity(exhausted.getId(), BigDecimal.ZERO);
 
     List<CorebankOppositeBookQueryService.OppositeBookEntry> result =
         oppositeBookQueryService.findPreviewCandidates("SWEEP-LEGACY", "BUY");
@@ -311,6 +316,142 @@ class CorebankOppositeBookQueryServiceTest {
         .containsExactly("NEW", "PARTIALLY_FILLED", "NEW");
   }
 
+  @Test
+  void shouldLockOnlyFirstChunkWhenEarlyLiquidityAlreadySatisfiesMarketOrder() {
+    Instant baseTime = Instant.parse("2026-03-01T09:00:00Z");
+    for (int index = 0; index < 100; index++) {
+      persistRestingOrder(
+          "chunk-market-sell-" + index,
+          "SWEEP-CHUNK-MARKET",
+          500L + index,
+          "SELL",
+          "NEW",
+          new BigDecimal("1.0000"),
+          new BigDecimal("70000.0000").add(BigDecimal.valueOf(index).setScale(4)),
+          baseTime.plusSeconds(index)
+      );
+    }
+
+    List<Order> locked = oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+        "SWEEP-CHUNK-MARKET",
+        "BUY",
+        "MARKET",
+        new BigDecimal("3.0000"),
+        null
+    );
+
+    assertThat(locked).hasSize(8);
+    assertThat(locked).extracting(Order::getClOrdId)
+        .containsExactly(
+            "chunk-market-sell-0",
+            "chunk-market-sell-1",
+            "chunk-market-sell-2",
+            "chunk-market-sell-3",
+            "chunk-market-sell-4",
+            "chunk-market-sell-5",
+            "chunk-market-sell-6",
+            "chunk-market-sell-7"
+        );
+  }
+
+  @Test
+  void shouldLockAdditionalChunksWhenRequestedQuantityExceedsSingleChunkCapacity() {
+    Instant baseTime = Instant.parse("2026-03-01T09:00:00Z");
+    for (int index = 0; index < 20; index++) {
+      persistRestingOrder(
+          "chunk-market-multi-" + index,
+          "SWEEP-CHUNK-MULTI",
+          700L + index,
+          "SELL",
+          "NEW",
+          new BigDecimal("1.0000"),
+          new BigDecimal("70000.0000").add(BigDecimal.valueOf(index).setScale(4)),
+          baseTime.plusSeconds(index)
+      );
+    }
+
+    List<Order> locked = oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+        "SWEEP-CHUNK-MULTI",
+        "BUY",
+        "MARKET",
+        new BigDecimal("10.0000"),
+        null
+    );
+
+    assertThat(locked).hasSize(16);
+    assertThat(locked).extracting(Order::getClOrdId)
+        .containsExactly(
+            "chunk-market-multi-0",
+            "chunk-market-multi-1",
+            "chunk-market-multi-2",
+            "chunk-market-multi-3",
+            "chunk-market-multi-4",
+            "chunk-market-multi-5",
+            "chunk-market-multi-6",
+            "chunk-market-multi-7",
+            "chunk-market-multi-8",
+            "chunk-market-multi-9",
+            "chunk-market-multi-10",
+            "chunk-market-multi-11",
+            "chunk-market-multi-12",
+            "chunk-market-multi-13",
+            "chunk-market-multi-14",
+            "chunk-market-multi-15"
+        );
+  }
+
+  @Test
+  void shouldExcludeLimitNonCrossingTailFromLockedCandidates() {
+    Instant baseTime = Instant.parse("2026-03-01T09:00:00Z");
+    for (int index = 0; index < 8; index++) {
+      persistRestingOrder(
+          "chunk-limit-sell-" + index,
+          "SWEEP-CHUNK-LIMIT",
+          900L + index,
+          "SELL",
+          "NEW",
+          new BigDecimal("1.0000"),
+          new BigDecimal("70000.0000").add(BigDecimal.valueOf(index).setScale(4)),
+          baseTime.plusSeconds(index)
+      );
+    }
+
+    List<Order> locked = oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+        "SWEEP-CHUNK-LIMIT",
+        "BUY",
+        "LIMIT",
+        new BigDecimal("10.0000"),
+        new BigDecimal("70002.0000")
+    );
+
+    assertThat(locked).extracting(Order::getClOrdId)
+        .containsExactly(
+            "chunk-limit-sell-0",
+            "chunk-limit-sell-1",
+            "chunk-limit-sell-2"
+        );
+  }
+
+  @Test
+  void shouldValidateLimitInputsEvenWhenOptimizedSelectionIsDisabled() {
+    ReflectionTestUtils.setField(oppositeBookQueryService, "optimizedBookSelectionEnabled", false);
+    try {
+      assertThatThrownBy(() -> oppositeBookQueryService.lockExecutionCandidatesForSubmission(
+          "SWEEP-LIMIT-VALIDATION",
+          "BUY",
+          "LIMIT",
+          new BigDecimal("1.0000"),
+          null
+      ))
+          .isInstanceOfSatisfying(BusinessException.class, ex -> {
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST);
+            assertThat(ex.getMessage()).contains("limitPrice is required for LIMIT orders");
+          });
+    } finally {
+      ReflectionTestUtils.setField(oppositeBookQueryService, "optimizedBookSelectionEnabled", true);
+    }
+  }
+
   private Order persistRestingOrder(
       String clOrdId,
       String symbol,
@@ -345,29 +486,6 @@ class CorebankOppositeBookQueryServiceTest {
         "PARTIALLY_FILLED",
         executedQty,
         leavesQty,
-        price,
-        createdAt
-    );
-    Order saved = orderRepository.saveAndFlush(order);
-    updateOrderTimestamps(saved.getId(), createdAt);
-    return orderRepository.findById(saved.getId()).orElseThrow();
-  }
-
-  private Order persistExecutedWithoutLeavesQuantity(
-      String clOrdId,
-      String symbol,
-      Long accountId,
-      String side,
-      BigDecimal quantity,
-      BigDecimal price,
-      Instant createdAt
-  ) {
-    Order order = Order.accepted(accountId, clOrdId, symbol, side, "LIMIT", quantity, price, null, null, null, null);
-    order.updateStatus("PARTIALLY_FILLED");
-    order.updateExecutionSummary(
-        "PARTIALLY_FILLED",
-        quantity,
-        null,
         price,
         createdAt
     );

@@ -167,13 +167,14 @@ public class Order extends BaseTimeEntity {
       Instant quoteAsOf,
       FepQuoteSourceMode quoteSourceMode
   ) {
+    BigDecimal normalizedOrderQty = requireOrderQuantity(orderQty);
     return new Order(
         accountId,
         clOrdId,
         symbol,
         side,
         orderType,
-        orderQty,
+        normalizedOrderQty,
         orderPrice,
         preTradePrice,
         quoteSnapshotId,
@@ -184,8 +185,8 @@ public class Order extends BaseTimeEntity {
         null,
         null,
         null,
-        null,
-        null,
+        BigDecimal.ZERO.setScale(SCALE, RoundingMode.HALF_UP),
+        normalizedOrderQty,
         null,
         null,
         Instant.now()
@@ -299,8 +300,14 @@ public class Order extends BaseTimeEntity {
       Instant executedAt
   ) {
     this.executionResult = executionResult;
-    this.executedQty = executedQty;
-    this.leavesQty = leavesQty;
+    BigDecimal normalizedExecutedQty = executedQty == null
+        ? BigDecimal.ZERO.setScale(SCALE, RoundingMode.HALF_UP)
+        : normalizeNonNegative(executedQty, "executed quantity is required");
+    BigDecimal normalizedLeavesQty = leavesQty == null
+        ? defaultLeavesQty(normalizedExecutedQty)
+        : normalizeNonNegative(leavesQty, "leaves quantity is required");
+    this.executedQty = normalizedExecutedQty;
+    this.leavesQty = normalizedLeavesQty;
     this.executedPrice = executedPrice;
     this.executedAt = executedAt;
   }
@@ -355,5 +362,26 @@ public class Order extends BaseTimeEntity {
       throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "execution summary values cannot be negative");
     }
     return normalized;
+  }
+
+  private BigDecimal defaultLeavesQty(BigDecimal normalizedExecutedQty) {
+    BigDecimal normalizedOrderQty = requireOrderQuantity(orderQty);
+    BigDecimal normalizedLeavesQty = normalizedOrderQty.subtract(normalizedExecutedQty)
+        .setScale(SCALE, RoundingMode.HALF_UP);
+    if (normalizedLeavesQty.signum() < 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "execution summary values cannot be negative");
+    }
+    return normalizedLeavesQty;
+  }
+
+  private static BigDecimal requireOrderQuantity(BigDecimal orderQty) {
+    if (orderQty == null) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "orderQty is required");
+    }
+    BigDecimal normalizedOrderQty = orderQty.setScale(SCALE, RoundingMode.HALF_UP);
+    if (normalizedOrderQty.signum() <= 0) {
+      throw new BusinessException(ErrorCode.ORD_INVALID_REQUEST, "orderQty must be positive");
+    }
+    return normalizedOrderQty;
   }
 }

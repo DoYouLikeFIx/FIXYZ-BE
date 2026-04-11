@@ -3,12 +3,15 @@ package com.fix.corebank.migration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.TestPropertySource;
 
 @SpringBootTest
@@ -136,12 +139,24 @@ class CoreFlywayMigrationTest {
             + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'EXECUTED_AT'",
         Integer.class
     );
+    String executedQtyNullable = jdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'EXECUTED_QTY'",
+        String.class
+    );
+    String leavesQtyNullable = jdbcTemplate.queryForObject(
+        "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+            + "WHERE TABLE_NAME = 'ORDERS' AND COLUMN_NAME = 'LEAVES_QTY'",
+        String.class
+    );
 
     assertThat(executionResultLength).isEqualTo(32);
     assertThat(executedQtyScale).isEqualTo(4);
     assertThat(leavesQtyScale).isEqualTo(4);
     assertThat(executedPriceScale).isEqualTo(4);
     assertThat(executedAtExists).isEqualTo(1);
+    assertThat(executedQtyNullable).isEqualTo("NO");
+    assertThat(leavesQtyNullable).isEqualTo("NO");
   }
 
   @Test
@@ -242,6 +257,107 @@ class CoreFlywayMigrationTest {
             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)",
         914L, 10L, 21L, "legacy-cl-ord-v14", "005930", "BUY", 1.0000, 72100.0000, 1, 0L
     )).isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void shouldBackfillLegacyOrderExecutionSummaryValues() {
+    DriverManagerDataSource dataSource = new DriverManagerDataSource(
+        "jdbc:h2:mem:core_migration_v15;MODE=MySQL;DB_CLOSE_DELAY=-1",
+        "sa",
+        ""
+    );
+
+    Flyway.configure()
+        .dataSource(dataSource)
+        .locations("classpath:db/migration")
+        .target(MigrationVersion.fromVersion("14"))
+        .load()
+        .migrate();
+
+    JdbcTemplate migrationJdbcTemplate = new JdbcTemplate(dataSource);
+    migrationJdbcTemplate.update(
+        "INSERT INTO orders "
+            + "(id, account_id, cl_ord_id, symbol, side, order_qty, order_price, order_type, status, requested_at, created_at, updated_at, version, executed_qty, leaves_qty) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)",
+        9001L, 101L, "legacy-null-both", "005930", "BUY", 10.0000, 70000.0000, "LIMIT", "NEW", 0L, null, null
+    );
+    migrationJdbcTemplate.update(
+        "INSERT INTO orders "
+            + "(id, account_id, cl_ord_id, symbol, side, order_qty, order_price, order_type, status, requested_at, created_at, updated_at, version, executed_qty, leaves_qty) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)",
+        9002L, 102L, "legacy-null-leaves", "005930", "SELL", 10.0000, 70100.0000, "LIMIT", "PARTIALLY_FILLED", 0L, 2.5000, null
+    );
+    migrationJdbcTemplate.update(
+        "INSERT INTO orders "
+            + "(id, account_id, cl_ord_id, symbol, side, order_qty, order_price, order_type, status, requested_at, created_at, updated_at, version, executed_qty, leaves_qty) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)",
+        9003L, 103L, "legacy-preserve-leaves", "005930", "SELL", 10.0000, 70200.0000, "LIMIT", "PARTIALLY_FILLED", 0L, null, 7.0000
+    );
+
+    Flyway.configure()
+        .dataSource(dataSource)
+        .locations("classpath:db/migration")
+        .load()
+        .migrate();
+
+    assertThat(migrationJdbcTemplate.queryForObject(
+        "SELECT executed_qty FROM orders WHERE id = ?",
+        Double.class,
+        9001L
+    )).isEqualTo(0.0d);
+    assertThat(migrationJdbcTemplate.queryForObject(
+        "SELECT leaves_qty FROM orders WHERE id = ?",
+        Double.class,
+        9001L
+    )).isEqualTo(10.0d);
+
+    assertThat(migrationJdbcTemplate.queryForObject(
+        "SELECT executed_qty FROM orders WHERE id = ?",
+        Double.class,
+        9002L
+    )).isEqualTo(2.5d);
+    assertThat(migrationJdbcTemplate.queryForObject(
+        "SELECT leaves_qty FROM orders WHERE id = ?",
+        Double.class,
+        9002L
+    )).isEqualTo(7.5d);
+
+    assertThat(migrationJdbcTemplate.queryForObject(
+        "SELECT executed_qty FROM orders WHERE id = ?",
+        Double.class,
+        9003L
+    )).isEqualTo(3.0d);
+    assertThat(migrationJdbcTemplate.queryForObject(
+        "SELECT leaves_qty FROM orders WHERE id = ?",
+        Double.class,
+        9003L
+    )).isEqualTo(7.0d);
+
+    assertThatThrownBy(() -> migrationJdbcTemplate.update(
+        "INSERT INTO orders "
+            + "(id, account_id, cl_ord_id, symbol, side, order_qty, order_price, order_type, status, requested_at, created_at, updated_at, version, executed_qty, leaves_qty) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)",
+        9004L, 104L, "legacy-should-fail", "005930", "BUY", 1.0000, 70300.0000, "LIMIT", "NEW", 0L, null, null
+    )).isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void shouldCreateOrderbookLookupIndexes() {
+    Integer sellLookupIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'ORDERS' "
+            + "AND INDEX_NAME = 'IDX_ORDERS_BOOK_LOOKUP_SELL'",
+        Integer.class
+    );
+    Integer buyLookupIndexCount = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.INDEXES "
+            + "WHERE TABLE_NAME = 'ORDERS' "
+            + "AND INDEX_NAME = 'IDX_ORDERS_BOOK_LOOKUP_BUY'",
+        Integer.class
+    );
+
+    assertThat(sellLookupIndexCount).isEqualTo(1);
+    assertThat(buyLookupIndexCount).isEqualTo(1);
   }
 
   @Test

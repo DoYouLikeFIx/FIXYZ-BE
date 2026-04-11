@@ -1,5 +1,6 @@
 import java.time.Instant
 import javax.xml.parsers.DocumentBuilderFactory
+import org.gradle.api.tasks.testing.Test
 
 plugins {
   id 'org.springframework.boot'
@@ -110,6 +111,26 @@ tasks.withType(Test).configureEach {
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
 }
 
+tasks.named('test', Test) {
+  useJUnitPlatform {
+    excludeTags(
+        'opposite-book-performance',
+        'opposite-book-performance-mysql',
+        'opposite-book-performance-optimized',
+        'opposite-book-performance-optimized-mysql'
+    )
+  }
+}
+
+void passThroughSystemProperties(Test task, List<String> propertyKeys) {
+  propertyKeys.each { key ->
+    String value = System.getProperty(key)
+    if (value != null && !value.isBlank()) {
+      task.systemProperty(key, value)
+    }
+  }
+}
+
 tasks.register('correlationPropagationTests', Test) {
   description = 'Runs the corebank correlation-id propagation regression suite.'
   group = 'verification'
@@ -148,6 +169,92 @@ tasks.register('epic10ConcurrencyTests', Test) {
   reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/epic10ConcurrencyTests')
   reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/epic10ConcurrencyTests')
   systemProperty 'corebank.ledger-integrity.enabled', 'false'
+}
+
+tasks.register('oppositeBookBaselinePerf', Test) {
+  description = 'Captures baseline latency evidence for opposite-book execution-candidate locking.'
+  group = 'verification'
+  useJUnitPlatform {
+    includeTags 'opposite-book-performance'
+  }
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  maxParallelForks = 1
+  outputs.upToDateWhen { false }
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/oppositeBookBaselinePerf')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/oppositeBookBaselinePerf')
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+  systemProperty 'oppositeBook.perf.outputPath',
+      layout.buildDirectory.file('test-results/oppositeBookBaselinePerf/opposite-book-baseline.json').get().asFile.absolutePath
+}
+
+tasks.register('oppositeBookBaselinePerfMysql', Test) { Test testTask ->
+  description = 'Captures MySQL/Testcontainers baseline latency evidence for opposite-book execution-candidate locking.'
+  group = 'verification'
+  useJUnitPlatform {
+    includeTags 'opposite-book-performance-mysql'
+  }
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  maxParallelForks = 1
+  outputs.upToDateWhen { false }
+  maxHeapSize = '4g'
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/oppositeBookBaselinePerfMysql')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/oppositeBookBaselinePerfMysql')
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+  systemProperty 'oppositeBook.mysql.perf.outputPath',
+      layout.buildDirectory.file('test-results/oppositeBookBaselinePerfMysql/opposite-book-baseline-mysql.json').get().asFile.absolutePath
+  passThroughSystemProperties(testTask, [
+      'oppositeBook.mysql.perf.bookDepths',
+      'oppositeBook.mysql.perf.warmupIterations',
+      'oppositeBook.mysql.perf.measuredIterations',
+      'oppositeBook.mysql.perf.insertBatchSize'
+  ])
+}
+
+tasks.register('oppositeBookOptimizedPerf', Test) {
+  description = 'Captures optimized latency evidence for opposite-book execution-candidate locking.'
+  group = 'verification'
+  useJUnitPlatform {
+    includeTags 'opposite-book-performance-optimized'
+  }
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  maxParallelForks = 1
+  outputs.upToDateWhen { false }
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/oppositeBookOptimizedPerf')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/oppositeBookOptimizedPerf')
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+  systemProperty 'oppositeBook.optimized.perf.outputPath',
+      layout.buildDirectory.file('test-results/oppositeBookOptimizedPerf/opposite-book-optimized.json').get().asFile.absolutePath
+}
+
+tasks.register('oppositeBookOptimizedPerfMysql', Test) { Test testTask ->
+  description = 'Captures MySQL/Testcontainers optimized latency evidence for opposite-book execution-candidate locking.'
+  group = 'verification'
+  useJUnitPlatform {
+    includeTags 'opposite-book-performance-optimized-mysql'
+  }
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  shouldRunAfter tasks.named('test')
+  maxParallelForks = 1
+  outputs.upToDateWhen { false }
+  maxHeapSize = '2g'
+  reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/oppositeBookOptimizedPerfMysql')
+  reports.html.outputLocation = layout.buildDirectory.dir('reports/tests/oppositeBookOptimizedPerfMysql')
+  systemProperty 'corebank.ledger-integrity.enabled', 'false'
+  systemProperty 'oppositeBook.optimized.mysql.perf.outputPath',
+      layout.buildDirectory.file('test-results/oppositeBookOptimizedPerfMysql/opposite-book-optimized-mysql.json').get().asFile.absolutePath
+  passThroughSystemProperties(testTask, [
+      'oppositeBook.optimized.mysql.perf.bookDepths',
+      'oppositeBook.optimized.mysql.perf.warmupIterations',
+      'oppositeBook.optimized.mysql.perf.measuredIterations',
+      'oppositeBook.optimized.mysql.perf.insertBatchSize'
+  ])
 }
 
 matchingRegressionSuites.each { String taskName, Map suite ->

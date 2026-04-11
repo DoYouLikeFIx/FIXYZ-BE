@@ -88,6 +88,12 @@ public class CorebankOrderService {
   @Value("${recovery.status-query.backoff-ms:0}")
   private long statusQueryBackoffMs = 0L;
 
+  @Value("${corebank.order.preparation-retry.max-attempts:1}")
+  private int orderPreparationRetryMaxAttempts = 1;
+
+  @Value("${corebank.order.preparation-retry.backoff-ms:10}")
+  private long orderPreparationRetryBackoffMs = 10L;
+
   private Clock limitWindowClock = Clock.systemUTC();
 
   @Value("${corebank.order.limit-window-zone:UTC}")
@@ -100,6 +106,12 @@ public class CorebankOrderService {
     }
     if (statusQueryBackoffMs < 0L) {
       throw new IllegalStateException("recovery.status-query.backoff-ms must be >= 0");
+    }
+    if (orderPreparationRetryMaxAttempts < 1) {
+      throw new IllegalStateException("corebank.order.preparation-retry.max-attempts must be >= 1");
+    }
+    if (orderPreparationRetryBackoffMs < 0L) {
+      throw new IllegalStateException("corebank.order.preparation-retry.backoff-ms must be >= 0");
     }
   }
 
@@ -389,12 +401,8 @@ public class CorebankOrderService {
   private InternalOrderResult createFreshOrder(InternalOrderCreateCommand command) {
     try {
       validateFreshMarketQuote(command);
-      CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder;
-      try {
-        pendingOrder = orderPersistenceService.prepareOrderSubmission(command);
-      } catch (PositionLockContentionException ex) {
-        throw concurrencyConflict(command, ex);
-      }
+      CorebankOrderPersistenceService.PendingOrderSubmission pendingOrder =
+          prepareOrderSubmissionWithRetry(command);
       try {
         FepOrderResult gatewayOrder = fepClient.submitOrder(
             toFepPayload(pendingOrder),
@@ -423,6 +431,69 @@ public class CorebankOrderService {
       return orderPersistenceService.findOrder(command.getClOrdId())
           .map(existing -> resolveIdempotentReplay(existing, command))
           .orElseThrow(() -> e);
+    }
+  }
+
+  private CorebankOrderPersistenceService.PendingOrderSubmission prepareOrderSubmissionWithRetry(
+      InternalOrderCreateCommand command
+  ) {
+    RuntimeException lastFailure = null;
+    for (int attempt = 1; attempt <= orderPreparationRetryMaxAttempts; attempt++) {
+      try {
+        return orderPersistenceService.prepareOrderSubmission(command);
+      } catch (RuntimeException ex) {
+        if (!isRetriableOrderPreparationFailure(ex)) {
+          throw ex;
+        }
+        lastFailure = ex;
+        if (attempt == orderPreparationRetryMaxAttempts) {
+          throw concurrencyConflict(command, ex);
+        }
+        applyOrderPreparationRetryBackoff();
+      }
+    }
+    throw concurrencyConflict(
+        command,
+        lastFailure != null ? lastFailure : new IllegalStateException("order preparation retry exhausted")
+    );
+  }
+
+  private boolean isRetriableOrderPreparationFailure(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof PositionLockContentionException
+          || current instanceof jakarta.persistence.LockTimeoutException
+          || current instanceof jakarta.persistence.PessimisticLockException
+          || isTransientLockExceptionClassName(current)) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
+  }
+
+  private boolean isTransientLockExceptionClassName(Throwable throwable) {
+    String className = throwable.getClass().getName();
+    return "org.hibernate.exception.LockAcquisitionException".equals(className)
+        || "org.hibernate.PessimisticLockException".equals(className)
+        || "org.springframework.dao.DeadlockLoserDataAccessException".equals(className)
+        || "java.sql.SQLTransactionRollbackException".equals(className)
+        || "com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException".equals(className);
+  }
+
+  private void applyOrderPreparationRetryBackoff() {
+    if (orderPreparationRetryBackoffMs == 0L) {
+      return;
+    }
+    try {
+      Thread.sleep(orderPreparationRetryBackoffMs);
+    } catch (InterruptedException interruptedException) {
+      Thread.currentThread().interrupt();
+      throw new BusinessException(
+          ErrorCode.CORE_CONCURRENCY_CONFLICT,
+          "order preparation retry backoff interrupted",
+          interruptedException
+      );
     }
   }
 

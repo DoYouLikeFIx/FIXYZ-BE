@@ -3,9 +3,12 @@ package com.fix.corebank.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -140,7 +143,7 @@ class CorebankOrderServiceTest {
     fepQuoteSnapshotClient = new StubFepQuoteSnapshotClient();
     positionLockMetrics = new PositionLockMetrics(new SimpleMeterRegistry());
     CorebankOppositeBookQueryService oppositeBookQueryService =
-        new CorebankOppositeBookQueryService(orderRepository);
+        new CorebankOppositeBookQueryService(orderRepository, 32);
     CorebankMatchingEngine matchingEngine = new CorebankMatchingEngine();
     corebankOrderPersistenceService = new CorebankOrderPersistenceService(
         accountRepository,
@@ -165,6 +168,55 @@ class CorebankOrderServiceTest {
     marketDataProperties.setQuoteSourceMode(FepQuoteSourceMode.LIVE);
     lenient().when(accountRepository.findByIdForUpdate(anyLong()))
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)));
+    lenient().when(orderRepository.lockExecutionRestingLimitOrdersForSweepChunk(
+            anyString(),
+            anyString(),
+            any(),
+            nullable(BigDecimal.class),
+            nullable(Instant.class),
+            nullable(Long.class),
+            anyInt()
+        ))
+        .thenAnswer(invocation -> {
+          List<Order> fullBook = orderRepository.lockExecutionRestingLimitOrdersForSweep(
+              invocation.getArgument(0),
+              invocation.getArgument(1),
+              invocation.getArgument(2)
+          );
+          if (fullBook == null) {
+            return List.of();
+          }
+          int limit = Math.max(1, invocation.getArgument(6));
+          String side = invocation.getArgument(1);
+          BigDecimal cursorPrice = invocation.getArgument(3);
+          Instant cursorCreatedAt = invocation.getArgument(4);
+          Long cursorOrderId = invocation.getArgument(5);
+
+          int startIndex = 0;
+          if (cursorPrice != null && cursorCreatedAt != null && cursorOrderId != null) {
+            startIndex = fullBook.size();
+            for (int index = 0; index < fullBook.size(); index++) {
+              Order candidate = fullBook.get(index);
+              int priceCompare = candidate.getOrderPrice().compareTo(cursorPrice);
+              boolean samePrice = priceCompare == 0;
+              boolean afterTimestamp = samePrice && candidate.getCreatedAt().isAfter(cursorCreatedAt);
+              boolean sameTimestamp = samePrice && candidate.getCreatedAt().equals(cursorCreatedAt);
+              boolean afterId = sameTimestamp && candidate.getId().compareTo(cursorOrderId) > 0;
+              boolean afterCursor = "SELL".equals(side)
+                  ? priceCompare > 0 || afterTimestamp || afterId
+                  : priceCompare < 0 || afterTimestamp || afterId;
+              if (afterCursor) {
+                startIndex = index;
+                break;
+              }
+            }
+          }
+
+          if (startIndex >= fullBook.size()) {
+            return List.of();
+          }
+          return fullBook.subList(startIndex, Math.min(fullBook.size(), startIndex + limit));
+        });
     lenient().when(accountRepository.existsById(anyLong()))
         .thenAnswer(invocation -> accountRepository.findById(invocation.getArgument(0)).isPresent());
     lenient().when(executionRepository.findAllByAccountIdAndSymbolInOrderBySymbolAscExecutedAtAscIdAsc(anyLong(), any()))
@@ -1264,8 +1316,8 @@ class CorebankOrderServiceTest {
     assertThat(savedOrderRef[0].getExecutionResult()).isNull();
     assertThat(position.getQty()).isEqualByComparingTo("0.0000");
     assertThat(makerOrder.getStatus()).isEqualTo("NEW");
-    assertThat(makerOrder.getExecutedQty()).isNull();
-    assertThat(makerOrder.getLeavesQty()).isNull();
+    assertThat(makerOrder.getExecutedQty()).isEqualByComparingTo("0.0000");
+    assertThat(makerOrder.getLeavesQty()).isEqualByComparingTo("2.0000");
     assertThat(fepClient.lastSubmitPayload()).isNotNull();
     assertThat(fepClient.lastSubmitPayload().orderType()).isEqualTo(com.fix.common.fep.FepOrderType.LIMIT);
     assertThat(fepClient.lastSubmitPayload().price()).isEqualTo(70200L);

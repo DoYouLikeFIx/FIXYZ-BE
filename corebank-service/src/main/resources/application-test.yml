@@ -15,3 +15,7 @@ corebank:
         unresolved-backlog-threshold: 10
         repair-pending-threshold: 5
         critical-anomaly-threshold: 1
+  order:
+    preparation-retry:
+      max-attempts: 3
+      backoff-ms: 10

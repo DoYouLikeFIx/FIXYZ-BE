@@ -23,6 +23,8 @@ class OrderTest {
     );
 
     assertThat(order.getStatus()).isEqualTo("NEW");
+    assertThat(order.getExecutedQty()).isEqualByComparingTo("0.0000");
+    assertThat(order.getLeavesQty()).isEqualByComparingTo("2.0000");
   }
 
   @Test
@@ -73,6 +75,20 @@ class OrderTest {
         BigDecimal.ZERO,
         new BigDecimal("70100.0000"),
         Instant.parse("2026-03-16T00:00:00Z")
+    ))
+        .isInstanceOf(BusinessException.class)
+        .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST));
+  }
+
+  @Test
+  void shouldRejectAcceptedOrderWhenOrderQuantityIsMissing() {
+    assertThatThrownBy(() -> Order.accepted(
+        1L,
+        "123e4567-e89b-42d3-a456-426614174299",
+        "005930",
+        "BUY",
+        null,
+        new BigDecimal("70100.0000")
     ))
         .isInstanceOf(BusinessException.class)
         .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.ORD_INVALID_REQUEST));
