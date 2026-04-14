@@ -144,7 +144,7 @@ class LedgerIntegrityObservabilityIntegrationTest extends CorebankContainersInte
   void shouldRejectLedgerIntegritySummaryWithoutInternalSecret() throws Exception {
     mockMvc.perform(get("/internal/v1/ledger-integrity/summary")
             .header(CommonHeaders.X_CORRELATION_ID, "corr-ledger-summary-unauthorized"))
-        .andExpect(status().isForbidden())
+        .andExpect(status().isUnauthorized())
         .andExpect(header().string(CommonHeaders.X_CORRELATION_ID, "corr-ledger-summary-unauthorized"))
         .andExpect(jsonPath("$.code").value("AUTH-003"))
         .andExpect(jsonPath("$.message").value("Missing or invalid X-Internal-Secret"))

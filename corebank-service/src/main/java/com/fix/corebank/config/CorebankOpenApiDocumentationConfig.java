@@ -61,7 +61,7 @@ public class CorebankOpenApiDocumentationConfig {
           );
           OpenApiDocumentationSupport.ensureAuthErrorResponse(
               operation,
-              "403",
+              "401",
               INTERNAL_SECRET_AUTH_FAILURE_DESCRIPTION
           );
         });

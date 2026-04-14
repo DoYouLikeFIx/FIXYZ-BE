@@ -68,7 +68,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -160,7 +160,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -244,7 +244,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -347,7 +347,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -450,7 +450,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -553,7 +553,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -656,7 +656,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -759,7 +759,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -852,7 +852,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -953,7 +953,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1032,7 +1032,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1117,7 +1117,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1215,7 +1215,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1291,7 +1291,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1384,7 +1384,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1477,7 +1477,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1570,7 +1570,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1663,7 +1663,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
@@ -1747,7 +1747,7 @@
                             }
                         }
                     },
-                    "403": {
+                    "401": {
                         "description": "Missing or invalid X-Internal-Secret rejected before controller execution",
                         "headers": {
                             "X-Correlation-Id": {
